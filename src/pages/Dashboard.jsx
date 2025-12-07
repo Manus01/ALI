@@ -52,7 +52,8 @@ export default function Dashboard(){
     score: completed.reduce((s, t) => s + (t.score || 0), 0) / (completed.length || 1)
   }), [integrations, completed]);
 
-  const progress = Math.round((completed.length / (available.length + completed.length || 1)) * 100);
+  const totalTutorials = (available ? available.length : 0) + (completed ? completed.length : 0);
+  const progress = Math.round((completed.length / (totalTutorials || 1)) * 100);
 
   const openSuggestions = async () => {
     const userUid = (window && window.currentUser && window.currentUser.uid) || 'TEST_USER_ID_123';
@@ -69,10 +70,12 @@ export default function Dashboard(){
     // optionally refresh suggestions data or analytics
   };
 
-  const problematic = PLATFORMS.filter(p => {
+  const problematic = (PLATFORMS || []).filter(p => {
     const status = integrations && integrations[`${p.id}_status`];
     return status && status !== 'OK';
   });
+
+  const safeAvg = (arr) => (arr && arr.length ? (arr.reduce((s,n) => s + n, 0) / arr.length) : 0);
 
   return (
     <div>
@@ -101,9 +104,9 @@ export default function Dashboard(){
 
           <Line data={lineData} />
           <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
-            <div title="Click-through rate: percentage of clicks per impressions">CTR: <strong>{(campaignData.ctr.reduce((s,n) => s + n,0)/campaignData.ctr.length).toFixed(2)}%</strong></div>
-            <div title="Conversion rate: percentage of conversions per clicks">Conversion Rate: <strong>{(campaignData.cr.reduce((s,n) => s + n,0)/campaignData.cr.length).toFixed(2)}%</strong></div>
-            <div title="Cost per click">CPC: <strong>${(campaignData.cpc.reduce((s,n) => s + n,0)/campaignData.cpc.length).toFixed(2)}</strong></div>
+            <div title="Click-through rate: percentage of clicks per impressions">CTR: <strong>{safeAvg(campaignData.ctr).toFixed(2)}%</strong></div>
+            <div title="Conversion rate: percentage of conversions per clicks">Conversion Rate: <strong>{safeAvg(campaignData.cr).toFixed(2)}%</strong></div>
+            <div title="Cost per click">CPC: <strong>${safeAvg(campaignData.cpc).toFixed(2)}</strong></div>
           </div>
         </div>
 
