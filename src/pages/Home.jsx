@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import { Link } from 'react-router-dom';
 
 export default function Home() {
@@ -10,17 +10,17 @@ export default function Home() {
         <div className="p-4 bg-white dark:bg-gray-800 rounded shadow-sm">
           <h3 className="font-semibold">Quick Start</h3>
           <p className="text-sm text-gray-600 dark:text-gray-300 mt-2">Jump in with a new tutorial or explore integrations.</p>
-          <Link to="/tutorials" className="inline-block mt-3 text-indigo-600 dark:text-indigo-400">Browse tutorials ?</Link>
+          <Link to="/tutorials" className="inline-block mt-3 text-indigo-600 dark:text-indigo-400">Browse tutorials →</Link>
         </div>
         <div className="p-4 bg-white dark:bg-gray-800 rounded shadow-sm">
           <h3 className="font-semibold">Integrations</h3>
           <p className="text-sm text-gray-600 dark:text-gray-300 mt-2">Connect external services to enhance functionality.</p>
-          <Link to="/integrations" className="inline-block mt-3 text-indigo-600 dark:text-indigo-400">Manage integrations ?</Link>
+          <Link to="/integrations" className="inline-block mt-3 text-indigo-600 dark:text-indigo-400">Manage integrations →</Link>
         </div>
         <div className="p-4 bg-white dark:bg-gray-800 rounded shadow-sm">
           <h3 className="font-semibold">Account</h3>
           <p className="text-sm text-gray-600 dark:text-gray-300 mt-2">Sign in to access personalized features.</p>
-          <Link to="/login" className="inline-block mt-3 text-indigo-600 dark:text-indigo-400">Sign in ?</Link>
+          <Link to="/login" className="inline-block mt-3 text-indigo-600 dark:text-indigo-400">Sign in →</Link>
         </div>
       </section>
 
