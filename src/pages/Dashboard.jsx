@@ -1,9 +1,48 @@
-import React from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import useIntegrations from '../hooks/useIntegrations';
 import { Link } from 'react-router-dom';
+import { Line } from 'react-chartjs-2';
+import { Chart, LineElement, PointElement, CategoryScale, LinearScale, Tooltip, Legend, Filler } from 'chart.js';
+
+Chart.register(LineElement, PointElement, CategoryScale, LinearScale, Tooltip, Legend, Filler);
+
+function mockCampaignData(rangeDays = 7) {
+  const labels = Array.from({ length: rangeDays }).map((_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (rangeDays - 1 - i));
+    return d.toISOString().slice(0, 10);
+  });
+  const ctr = labels.map(() => +(Math.random() * 5 + 0.5).toFixed(2));
+  const cr = labels.map(() => +(Math.random() * 3 + 0.2).toFixed(2));
+  const cpc = labels.map(() => +(Math.random() * 2 + 0.1).toFixed(2));
+  return { labels, ctr, cr, cpc };
+}
 
 export default function Dashboard(){
   const { integrations, PLATFORMS } = useIntegrations();
+  const [rangeDays, setRangeDays] = useState(7);
+  const [campaignData, setCampaignData] = useState(() => mockCampaignData(7));
+
+  useEffect(() => {
+    // placeholder: simulate fetching aggregated campaign data from integrations
+    setCampaignData(mockCampaignData(rangeDays));
+  }, [rangeDays]);
+
+  const lineData = useMemo(() => ({
+    labels: campaignData.labels,
+    datasets: [
+      { label: 'CTR (%)', data: campaignData.ctr, borderColor: '#6366F1', backgroundColor: 'rgba(99,102,241,0.2)', fill: true },
+      { label: 'Conversion Rate (%)', data: campaignData.cr, borderColor: '#10B981', backgroundColor: 'rgba(16,185,129,0.15)', fill: true }
+    ]
+  }), [campaignData]);
+
+  const learner = useMemo(() => ({
+    ranking: 42,
+    learningStyle: (integrations && integrations.hft_classification) || 'Unknown',
+    score: 72
+  }), [integrations]);
+
+  const progress = 60; // placeholder percentage
 
   const problematic = PLATFORMS.filter(p => {
     const status = integrations && integrations[`${p.id}_status`];
@@ -13,6 +52,57 @@ export default function Dashboard(){
   return (
     <div>
       <h2 className="text-2xl font-bold mb-4">Dashboard</h2>
+
+      <section className="grid gap-6 md:grid-cols-2 mb-6">
+        <div className="p-4 bg-white dark:bg-gray-800 rounded shadow-sm">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h3 className="font-semibold">Campaign Performance</h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Last {rangeDays} days</p>
+            </div>
+            <div>
+              <select value={rangeDays} onChange={(e) => setRangeDays(Number(e.target.value))} className="p-2 border rounded bg-white dark:bg-gray-900">
+                <option value={7}>7d</option>
+                <option value={14}>14d</option>
+                <option value={30}>30d</option>
+              </select>
+            </div>
+          </div>
+
+          <Line data={lineData} />
+          <div className="mt-3 grid grid-cols-3 gap-2 text-sm">
+            <div title="Click-through rate: percentage of clicks per impressions">CTR: <strong>{(campaignData.ctr.reduce((s,n) => s + n,0)/campaignData.ctr.length).toFixed(2)}%</strong></div>
+            <div title="Conversion rate: percentage of conversions per clicks">Conversion Rate: <strong>{(campaignData.cr.reduce((s,n) => s + n,0)/campaignData.cr.length).toFixed(2)}%</strong></div>
+            <div title="Cost per click">CPC: <strong>${(campaignData.cpc.reduce((s,n) => s + n,0)/campaignData.cpc.length).toFixed(2)}</strong></div>
+          </div>
+        </div>
+
+        <div className="p-4 bg-white dark:bg-gray-800 rounded shadow-sm">
+          <h3 className="font-semibold mb-2">Learner Profile</h3>
+          <div className="mb-3">Ranking: <strong>{learner.ranking}</strong></div>
+          <div className="mb-3">Learning style: <strong>{learner.learningStyle}</strong></div>
+          <div className="mb-3">Score: <strong>{learner.score}</strong></div>
+          <div className="mb-2">Progress</div>
+          <div className="w-full bg-gray-200 dark:bg-gray-700 h-4 rounded overflow-hidden">
+            <div style={{ width: `${progress}%` }} className="bg-indigo-600 h-4"></div>
+          </div>
+        </div>
+      </section>
+
+      <section className="mb-6">
+        <h3 className="font-semibold mb-3">Success Stories</h3>
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded">
+            <div className="font-semibold">Company A</div>
+            <div className="text-sm">CTR +2.3% after using ALI. Suggested action: increase bidding on top performers.</div>
+          </div>
+          <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded">
+            <div className="font-semibold">Company B</div>
+            <div className="text-sm">Conversion rate +1.5%. Suggested action: optimize landing page for mobile.</div>
+          </div>
+        </div>
+      </section>
+
       <section className="mb-6">
         <h3 className="font-semibold mb-2">Integrations health</h3>
         {problematic.length === 0 ? (
