@@ -1,14 +1,24 @@
 import React from 'react'
-import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom'
+import { BrowserRouter as Router, Routes, Route, Link, Navigate } from 'react-router-dom'
 import ThemeToggle from './components/ThemeToggle'
 
 import Home from './pages/Home'
 import Tutorials from './pages/Tutorials'
 import Integrations from './pages/Integrations'
-import Login from './pages/Login'
-import Register from './pages/Register'
+import LoginPage from './pages/LoginPage'
+import RegisterPage from './pages/RegisterPage'
+import ForgotPasswordPage from './pages/ForgotPasswordPage'
+
+// Simple auth stub; replace with real auth state listener
+const useAuth = () => {
+  // This should be replaced by an auth state hook using Firebase Auth
+  const user = null; // or { uid: '...' }
+  return { user };
+};
 
 export default function App() {
+  const { user } = useAuth();
+
   return (
     <Router>
       <div className="min-h-screen flex flex-col bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100">
@@ -34,11 +44,12 @@ export default function App() {
 
         <main className="flex-1 max-w-4xl mx-auto px-4 py-8 w-full">
           <Routes>
-            <Route path="/" element={<Home />} />
+            <Route path="/" element={user ? <Home /> : <Navigate to="/login" replace />} />
             <Route path="/tutorials" element={<Tutorials />} />
             <Route path="/integrations" element={<Integrations />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/register" element={<RegisterPage />} />
+            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
           </Routes>
         </main>
 
