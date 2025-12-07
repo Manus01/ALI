@@ -11,6 +11,8 @@ import ForgotPasswordPage from './pages/ForgotPasswordPage'
 import HiddenFiguresTestPage from './pages/HiddenFiguresTestPage'
 import MarketingKnowledgeTestPage from './pages/MarketingKnowledgeTestPage'
 import EQTestPage from './pages/EQTestPage'
+import Dashboard from './pages/Dashboard'
+import StrategyPage from './pages/StrategyPage'
 
 // Simple auth stub; replace with real auth state listener
 const useAuth = () => {
@@ -40,6 +42,7 @@ export default function App() {
               <Link to="/integrations" className="text-sm hover:underline">Integrations</Link>
               <Link to="/login" className="text-sm hover:underline">Login</Link>
               <Link to="/register" className="text-sm hover:underline">Register</Link>
+              <Link to="/strategy" className="text-sm hover:underline">Strategy</Link>
               <ThemeToggle />
             </nav>
           </div>
@@ -58,7 +61,8 @@ export default function App() {
             <Route path="/quiz/marketing" element={<MarketingKnowledgeTestPage />} />
             <Route path="/quiz/eq" element={<EQTestPage />} />
 
-            <Route path="/dashboard" element={user ? <Home /> : <Navigate to="/login" replace />} />
+            <Route path="/dashboard" element={user ? <Dashboard /> : <Navigate to="/login" replace />} />
+            <Route path="/strategy" element={user ? <StrategyPage /> : <Navigate to="/login" replace />} />
           </Routes>
         </main>
 
