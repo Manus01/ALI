@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
 import useIntegrations from '../hooks/useIntegrations';
+import { PLATFORMS } from '../hooks/useIntegrations';
 import IntegrationModal from '../components/IntegrationModal';
 
 export default function Integrations() {
-  const { integrations, loading, saveCredentials, PLATFORMS } = useIntegrations();
+  const { integrations, loading, saveCredentials } = useIntegrations();
   const [active, setActive] = useState(null);
 
   const openModal = (platform) => setActive(platform);
