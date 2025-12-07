@@ -1,18 +1,20 @@
-import React from 'react'
+import React, { Suspense } from 'react'
 import { BrowserRouter as Router, Routes, Route, Link, Navigate } from 'react-router-dom'
 import ThemeToggle from './components/ThemeToggle'
 
 import Home from './pages/Home'
-import TutorialsPage from './pages/TutorialsPage'
 import Integrations from './pages/Integrations'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
-import HiddenFiguresTestPage from './pages/HiddenFiguresTestPage'
-import MarketingKnowledgeTestPage from './pages/MarketingKnowledgeTestPage'
-import EQTestPage from './pages/EQTestPage'
-import Dashboard from './pages/Dashboard'
-import StrategyPage from './pages/StrategyPage'
+
+// Lazy-loaded route components for code-splitting
+const TutorialsPage = React.lazy(() => import('./pages/TutorialsPage'))
+const HiddenFiguresTestPage = React.lazy(() => import('./pages/HiddenFiguresTestPage'))
+const MarketingKnowledgeTestPage = React.lazy(() => import('./pages/MarketingKnowledgeTestPage'))
+const EQTestPage = React.lazy(() => import('./pages/EQTestPage'))
+const Dashboard = React.lazy(() => import('./pages/Dashboard'))
+const StrategyPage = React.lazy(() => import('./pages/StrategyPage'))
 
 // Simple auth stub; replace with real auth state listener
 const useAuth = () => {
@@ -49,21 +51,23 @@ export default function App() {
         </header>
 
         <main className="flex-1 max-w-4xl mx-auto px-4 py-8 w-full">
-          <Routes>
-            <Route path="/" element={user ? <Home /> : <Navigate to="/login" replace />} />
-            <Route path="/tutorials" element={<TutorialsPage />} />
-            <Route path="/integrations" element={<Integrations />} />
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/register" element={<RegisterPage />} />
-            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Suspense fallback={<div className="text-center py-10">Loading...</div>}>
+            <Routes>
+              <Route path="/" element={user ? <Home /> : <Navigate to="/login" replace />} />
+              <Route path="/tutorials" element={<TutorialsPage />} />
+              <Route path="/integrations" element={<Integrations />} />
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/register" element={<RegisterPage />} />
+              <Route path="/forgot-password" element={<ForgotPasswordPage />} />
 
-            <Route path="/quiz/hft" element={<HiddenFiguresTestPage />} />
-            <Route path="/quiz/marketing" element={<MarketingKnowledgeTestPage />} />
-            <Route path="/quiz/eq" element={<EQTestPage />} />
+              <Route path="/quiz/hft" element={<HiddenFiguresTestPage />} />
+              <Route path="/quiz/marketing" element={<MarketingKnowledgeTestPage />} />
+              <Route path="/quiz/eq" element={<EQTestPage />} />
 
-            <Route path="/dashboard" element={user ? <Dashboard /> : <Navigate to="/login" replace />} />
-            <Route path="/strategy" element={user ? <StrategyPage /> : <Navigate to="/login" replace />} />
-          </Routes>
+              <Route path="/dashboard" element={user ? <Dashboard /> : <Navigate to="/login" replace />} />
+              <Route path="/strategy" element={user ? <StrategyPage /> : <Navigate to="/login" replace />} />
+            </Routes>
+          </Suspense>
         </main>
 
         <footer className="border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">

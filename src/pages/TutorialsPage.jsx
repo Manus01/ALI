@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import useTutorials from '../hooks/useTutorials';
 
 export default function TutorialsPage() {
-  const { available, completed, generateAITutorial, submitQuizResult, rateTutorial } = useTutorials();
+  const { available, completed, generateAITutorial, submitQuizResult, rateTutorial, switchFormat } = useTutorials();
   const [format, setFormat] = useState('text');
   const [topic, setTopic] = useState('Getting started');
 
@@ -11,10 +11,18 @@ export default function TutorialsPage() {
   };
 
   const attemptQuiz = async (id) => {
-    // placeholder: random pass/fail
     const passed = Math.random() > 0.4;
     const score = Math.round(Math.random() * 100);
-    await submitQuizResult(id, passed, score);
+    const res = await submitQuizResult(id, passed, score);
+    if (!res.success && res.evaluation) {
+      // notify user that regenerated version was evaluated
+      alert('A new version was generated and evaluated: ' + JSON.stringify(res.evaluation));
+    }
+  };
+
+  const changeFormat = async (id, newFormat) => {
+    const res = await switchFormat(id, newFormat);
+    if (!res.success) alert('Format switch failed: ' + (res.error || JSON.stringify(res.evaluation)));
   };
 
   return (
@@ -44,6 +52,12 @@ export default function TutorialsPage() {
                   <button onClick={() => attemptQuiz(t.id)} className="px-3 py-1 bg-indigo-600 text-white rounded">Take Quiz</button>
                   <button onClick={() => rateTutorial(t.id, 'up')} className="px-3 py-1 border rounded">Thumbs Up</button>
                   <button onClick={() => rateTutorial(t.id, 'down')} className="px-3 py-1 border rounded">Thumbs Down</button>
+                  <div className="ml-4">Switch format:</div>
+                  <select className="p-1 border rounded" defaultValue={t.tutorial.format} onChange={(e) => changeFormat(t.id, e.target.value)}>
+                    <option value="text">Text</option>
+                    <option value="visual">Visual</option>
+                    <option value="video">Video/Podcast</option>
+                  </select>
                 </div>
               </div>
             ))}

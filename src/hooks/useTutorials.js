@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { collection, addDoc, doc, setDoc, getDoc, updateDoc, serverTimestamp, query, where, getDocs } from 'firebase/firestore';
+import { collection, addDoc, doc, setDoc, getDoc, updateDoc, serverTimestamp, getDocs, query } from 'firebase/firestore';
 import { db, auth } from '../firebase';
 
 const USER_ID_FALLBACK = 'TEST_USER_ID_123';
@@ -15,9 +15,6 @@ export default function useTutorials() {
   const fetchUserTutorials = useCallback(async () => {
     setLoading(true);
     try {
-      const userRef = doc(db, 'users', uid);
-      const q = query(collection(db, 'user_tutorials'));
-      // For simplicity, fetch by user field
       const snaps = await getDocs(query(collection(db, 'user_tutorials')));
       const userTuts = [];
       snaps.forEach(s => {
@@ -40,10 +37,17 @@ export default function useTutorials() {
     fetchUserTutorials();
   }, [fetchUserTutorials]);
 
+  // Placeholder AI evaluation of a regenerated version before exposing to users
+  async function evaluateVersionPlaceholder(tutorial) {
+    // Simulate model evaluation - accept if length > 20 chars or learningStyle matches
+    await new Promise(r => setTimeout(r, 200));
+    const ok = tutorial && tutorial.content && tutorial.content.length > 20;
+    return { ok, score: ok ? 0.9 : 0.1, note: ok ? 'Pass' : 'Fail' };
+  }
+
   async function generateAITutorial(topic, format = 'text', userProfile = {}) {
     setLoading(true);
     try {
-      // Placeholder generation logic that uses learningStyle etc.
       const learningStyle = userProfile.learningStyle || 'Balanced';
       const content = `Tutorial on ${topic} (${format}) tailored for ${learningStyle} learners.`;
       const tutorial = {
@@ -56,9 +60,9 @@ export default function useTutorials() {
       };
       // store global tutorial
       const ref = await addDoc(collection(db, 'tutorials'), tutorial);
-      // store user tutorial link
+      // store user tutorial link (use tutorial id as doc id)
       const userTutRef = doc(db, 'user_tutorials', ref.id);
-      await setDoc(userTutRef, { uid, tutorialId: ref.id, tutorial, completed: false, versions: [], createdAt: serverTimestamp() }, { merge: true });
+      await setDoc(userTutRef, { uid, tutorialId: ref.id, tutorial, completed: false, versions: [], preferredFormat: format, createdAt: serverTimestamp() }, { merge: true });
 
       // refresh
       await fetchUserTutorials();
@@ -71,30 +75,75 @@ export default function useTutorials() {
     }
   }
 
+  async function switchFormat(userTutorialId, newFormat) {
+    setLoading(true);
+    try {
+      const userTutDoc = doc(db, 'user_tutorials', userTutorialId);
+      const snap = await getDoc(userTutDoc);
+      if (!snap.exists()) return { success: false, error: 'Not found' };
+      const data = snap.data();
+      // generate a new version in desired format (placeholder)
+      const newContent = `${data.tutorial.content}\n\n[Converted to ${newFormat} format]`;
+      const newTutorial = { ...data.tutorial, content: newContent, format: newFormat, regeneratedAt: serverTimestamp() };
+      // archive old version
+      const versionRef = await addDoc(collection(db, 'tutorial_versions'), {
+        userTutorialId,
+        uid,
+        tutorialId: data.tutorialId,
+        tutorial: data.tutorial,
+        reason: 'format switch',
+        createdAt: serverTimestamp()
+      });
+      // evaluate via placeholder AI
+      const evalRes = await evaluateVersionPlaceholder(newTutorial);
+      if (!evalRes.ok) {
+        // if AI evaluation fails, keep old and return
+        return { success: false, evaluation: evalRes };
+      }
+      await updateDoc(userTutDoc, { tutorial: newTutorial, preferredFormat: newFormat, lastRegeneratedAt: serverTimestamp(), versions: (data.versions || []).concat([versionRef.id]) });
+      await fetchUserTutorials();
+      return { success: true, evaluation: evalRes };
+    } catch (e) {
+      console.error('switchFormat failed', e);
+      return { success: false, error: e.message };
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function submitQuizResult(userTutorialId, passed, score) {
     setLoading(true);
     try {
       const userTutDoc = doc(db, 'user_tutorials', userTutorialId);
+      const snap = await getDoc(userTutDoc);
+      if (!snap.exists()) return { success: false, error: 'Not found' };
+      const data = snap.data();
+
       if (passed) {
         await updateDoc(userTutDoc, { completed: true, score, completedAt: serverTimestamp() });
       } else {
         // failed -> versioning: archive current tutorial content and regenerate
-        const snap = await getDoc(userTutDoc);
-        if (snap.exists()) {
-          const data = snap.data();
-          // save previous tutorial to tutorial_versions
-          const versionRef = await addDoc(collection(db, 'tutorial_versions'), {
-            userTutorialId,
-            uid,
-            tutorialId: data.tutorialId,
-            tutorial: data.tutorial,
-            createdAt: serverTimestamp()
-          });
-          // regenerate tutorial (placeholder)
-          const newContent = data.tutorial.content + '\n\n[Regenerated version based on quiz results]';
-          const newTutorial = { ...data.tutorial, content: newContent, regeneratedAt: serverTimestamp() };
-          await updateDoc(userTutDoc, { tutorial: newTutorial, lastRegeneratedAt: serverTimestamp(), versions: (data.versions || []).concat([versionRef.id]) });
+        const versionRef = await addDoc(collection(db, 'tutorial_versions'), {
+          userTutorialId,
+          uid,
+          tutorialId: data.tutorialId,
+          tutorial: data.tutorial,
+          reason: 'failed_quiz',
+          createdAt: serverTimestamp()
+        });
+        // regenerate tutorial (placeholder logic creates new content)
+        const newContent = data.tutorial.content + '\n\n[Regenerated version based on quiz results]';
+        const newTutorial = { ...data.tutorial, content: newContent, regeneratedAt: serverTimestamp() };
+        // AI evaluate regenerated version before exposing
+        const evalRes = await evaluateVersionPlaceholder(newTutorial);
+        if (!evalRes.ok) {
+          // if AI says fail, still store version and keep it in available for manual review
+          await updateDoc(userTutDoc, { lastRegeneratedAt: serverTimestamp(), versions: (data.versions || []).concat([versionRef.id]) });
+          await fetchUserTutorials();
+          return { success: false, evaluation: evalRes };
         }
+        // if evaluation passes, replace tutorial for retry
+        await updateDoc(userTutDoc, { tutorial: newTutorial, lastRegeneratedAt: serverTimestamp(), versions: (data.versions || []).concat([versionRef.id]) });
       }
       await fetchUserTutorials();
       return { success: true };
@@ -107,7 +156,6 @@ export default function useTutorials() {
   }
 
   async function rateTutorial(userTutorialId, rating) {
-    // rating: 'up' | 'down'
     try {
       const ref = doc(db, 'user_tutorials', userTutorialId);
       await updateDoc(ref, { lastRating: rating, lastRatingAt: serverTimestamp() });
@@ -118,5 +166,5 @@ export default function useTutorials() {
     }
   }
 
-  return { available, completed, loading, generateAITutorial, submitQuizResult, rateTutorial, fetchUserTutorials };
+  return { available, completed, loading, generateAITutorial, submitQuizResult, rateTutorial, fetchUserTutorials, switchFormat, evaluateVersionPlaceholder };
 }
