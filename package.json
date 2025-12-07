@@ -11,7 +11,7 @@
     "start": "node src/server.js"
   },
   "dependencies": {
-    "express": "^4.18.3",
+    "express": "^4.19.2",
     "react": "latest",
     "react-dom": "latest",
     "react-router-dom": "^6.14.1",
