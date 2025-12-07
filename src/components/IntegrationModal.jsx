@@ -1,28 +1,63 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
-export default function IntegrationModal({ platform, defaultKey = '', onClose, onSave }) {
-  const [key, setKey] = useState(defaultKey);
+const PLATFORM_FIELDS = {
+  facebook: [{ name: 'apiKey', label: 'API Key' }],
+  instagram: [{ name: 'apiKey', label: 'API Key' }],
+  openai: [{ name: 'apiKey', label: 'API Key' }],
+  linkedin: [{ name: 'clientId', label: 'Client ID' }, { name: 'clientSecret', label: 'Client Secret' }],
+  google_analytics: [{ name: 'apiKey', label: 'API Key' }],
+  google_adwords: [{ name: 'apiKey', label: 'API Key' }],
+  facebook_ads: [{ name: 'accessToken', label: 'Access Token' }],
+  yandex_ads: [{ name: 'token', label: 'Token' }],
+  bing_ads: [{ name: 'apiKey', label: 'API Key' }]
+};
+
+export default function IntegrationModal({ platform, defaultCredentials = {}, onClose, onSave }) {
+  const [credentials, setCredentials] = useState(defaultCredentials || {});
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
+  const [validation, setValidation] = useState(null);
 
-  const instructions = {
-    google_ads: 'Go to Google Ads > API > Create/Copy your API key in the developer console.',
-    google_analytics: 'Go to Google Analytics > Admin > Data Streams > Measurement Protocol to get credentials.',
-    facebook_ads: 'Go to Facebook Business > Integrations > Generate access token.',
-    linkedin_ads: 'Go to LinkedIn Developer > Create App > Auth to get Client ID/Secret.',
-    openai: 'Visit OpenAI dashboard > API keys to create a new key.',
-    gemini: 'Go to Google AI Studio > API Key Management to generate your key.'
+  useEffect(() => {
+    setCredentials(defaultCredentials || {});
+    setValidation(null);
+    setMessage('');
+  }, [defaultCredentials, platform]);
+
+  const fields = PLATFORM_FIELDS[platform.id] || [{ name: 'apiKey', label: 'API Key' }];
+
+  const runValidation = async (creds) => {
+    // lightweight client-side heuristics
+    if (Object.values(creds).every(v => !v)) {
+      setValidation({ ok: false, message: 'Please enter credentials' });
+      return false;
+    }
+    setValidation({ ok: true, message: 'Looks good — will validate on save' });
+    return true;
+  };
+
+  const handleChange = (name, value) => {
+    const next = { ...credentials, [name]: value };
+    setCredentials(next);
+    runValidation(next);
   };
 
   const handleSave = async () => {
     setLoading(true);
     setMessage('');
     try {
-      const res = await onSave(key);
+      const ok = await runValidation(credentials);
+      if (!ok) {
+        setMessage('Fix validation errors');
+        setLoading(false);
+        return;
+      }
+      const res = await onSave(credentials);
       if (res && res.success) {
-        setMessage('Saved successfully');
+        setMessage('Saved and connected');
       } else {
-        setMessage(res.message || 'Failed to save');
+        const msg = (res && res.validation && res.validation.statusMessage) || res.message || 'Failed to save';
+        setMessage(msg);
       }
     } catch (e) {
       setMessage(e.message || 'Error');
@@ -40,14 +75,19 @@ export default function IntegrationModal({ platform, defaultKey = '', onClose, o
         </div>
 
         <div className="mb-4">
-          <p className="text-sm text-gray-700 dark:text-gray-300">{instructions[platform.id]}</p>
+          <p className="text-sm text-gray-700 dark:text-gray-300">Follow the instructions and enter the required credentials below.</p>
         </div>
 
-        <div className="mb-4">
-          <label className="block text-sm mb-1">API Key</label>
-          <input value={key} onChange={(e) => setKey(e.target.value)} className="w-full p-2 border rounded bg-white dark:bg-gray-800" />
+        <div className="space-y-3 mb-4">
+          {fields.map(f => (
+            <div key={f.name}>
+              <label className="block text-sm mb-1">{f.label}</label>
+              <input value={credentials[f.name] || ''} onChange={(e) => handleChange(f.name, e.target.value)} className="w-full p-2 border rounded bg-white dark:bg-gray-800" />
+            </div>
+          ))}
         </div>
 
+        {validation && <div className={`mb-3 text-sm ${validation.ok ? 'text-green-600' : 'text-red-600'}`}>{validation.message}</div>}
         {message && <div className="mb-3 text-sm">{message}</div>}
 
         <div className="flex justify-end space-x-2">
