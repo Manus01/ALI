@@ -1,0 +1,16 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --app-bg: #f9fafb;
+  --app-text: #111827;
+}
+
+.dark {
+  --app-bg: #0f172a;
+  --app-text: #f8fafc;
+}
+
+html, body, #root { height: 100%; }
+body { background-color: var(--app-bg); color: var(--app-text); }

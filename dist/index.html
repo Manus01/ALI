@@ -1,32 +1,47 @@
-<!DOCTYPE html>
-    <html lang="en">
-      <head>
-        <meta charset="UTF-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-        <title>ALI</title>
-        <script src="https://cdn.tailwindcss.com"></script>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ALI</title>
+    <meta name="description" content="ALI - web app" />
 
-    <link rel="stylesheet" href="/index.css">
-      <script type="importmap">
-{
-  "imports": {
-    "react/": "https://aistudiocdn.com/react@^19.2.0/",
-    "react": "https://aistudiocdn.com/react@^19.2.0",
-    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
-    "@google/genai": "https://aistudiocdn.com/@google/genai@^0.15.0",
-    "@firebase/auth": "https://aistudiocdn.com/@firebase/auth@^1.11.1",
-    "@firebase/app": "https://aistudiocdn.com/@firebase/app@^0.14.5",
-    "@firebase/firestore": "https://aistudiocdn.com/@firebase/firestore@^4.9.2",
-    "@firebase/functions": "https://aistudiocdn.com/@firebase/functions@^0.13.1",
-    "firebase-functions": "https://aistudiocdn.com/firebase-functions@^6.6.0",
-    "firebase-admin": "https://aistudiocdn.com/firebase-admin@^13.6.0",
-    "openai": "https://aistudiocdn.com/openai@^6.8.1"
-  }
-}
-</script>
-  <script type="module" crossorigin src="/assets/index-D5MLux11.js"></script>
-</head>
-      <body class="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
-        <div id="root"></div>
-      </body>
-    </html>
+    <!-- Theme initializer: runs BEFORE stylesheet to prevent flash-of-incorrect-theme -->
+    <script>
+      (function () {
+        try {
+          const stored = localStorage.getItem('theme'); // 'light' | 'dark' | 'system' | null
+          const mq = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
+          const prefersDark = mq ? mq.matches : false;
+          function apply(choice) {
+            const root = document.documentElement;
+            if (!choice || choice === 'system') {
+              root.classList.toggle('dark', prefersDark);
+            } else {
+              root.classList.toggle('dark', choice === 'dark');
+            }
+          }
+          apply(stored);
+          // expose for legacy calls
+          window.setTheme = function (choice) {
+            if (choice === 'system') localStorage.removeItem('theme'); else localStorage.setItem('theme', choice);
+            const isDark = mq ? mq.matches : false;
+            const root = document.documentElement;
+            if (choice === 'system') root.classList.toggle('dark', isDark);
+            else root.classList.toggle('dark', choice === 'dark');
+          };
+        } catch (e) {
+          /* ignore storage errors */
+        }
+      })();
+    </script>
+
+
+    <link rel="modulepreload" href="data:text/jsx;base64,aW1wb3J0IFJlYWN0IGZyb20gJ3JlYWN0Jw0KaW1wb3J0IHsgY3JlYXRlUm9vdCB9IGZyb20gJ3JlYWN0LWRvbS9jbGllbnQnDQppbXBvcnQgQXBwIGZyb20gJy4vQXBwJw0KaW1wb3J0ICcuL2luZGV4LmNzcycNCg0KY29uc3Qgcm9vdCA9IGRvY3VtZW50LmdldEVsZW1lbnRCeUlkKCdyb290JykNCmlmIChyb290KSB7DQogIGNyZWF0ZVJvb3Qocm9vdCkucmVuZGVyKA0KICAgIDxSZWFjdC5TdHJpY3RNb2RlPg0KICAgICAgPEFwcCAvPg0KICAgIDwvUmVhY3QuU3RyaWN0TW9kZT4NCiAgKQ0KfQ0K">
+    <script type="module" crossorigin src="/assets/index-C_hHqXbc.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-CmuAIbpC.css">
+  </head>
+  <body class="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100">
+    <div id="root"></div>
+  </body>
+</html>
