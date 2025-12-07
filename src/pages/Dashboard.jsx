@@ -1,8 +1,9 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import useIntegrations from '../hooks/useIntegrations';
-import { Link } from 'react-router-dom';
+import useAISuggestions from '../hooks/useAISuggestions';
 import { Line } from 'react-chartjs-2';
 import { Chart, LineElement, PointElement, CategoryScale, LinearScale, Tooltip, Legend, Filler } from 'chart.js';
+import SuggestionsModal from '../components/SuggestionsModal';
 
 Chart.register(LineElement, PointElement, CategoryScale, LinearScale, Tooltip, Legend, Filler);
 
@@ -20,11 +21,13 @@ function mockCampaignData(rangeDays = 7) {
 
 export default function Dashboard(){
   const { integrations, PLATFORMS } = useIntegrations();
+  const { generateAISuggestions, evaluateSuggestion } = useAISuggestions();
   const [rangeDays, setRangeDays] = useState(7);
   const [campaignData, setCampaignData] = useState(() => mockCampaignData(7));
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const [suggestions, setSuggestions] = useState([]);
 
   useEffect(() => {
-    // placeholder: simulate fetching aggregated campaign data from integrations
     setCampaignData(mockCampaignData(rangeDays));
   }, [rangeDays]);
 
@@ -44,6 +47,20 @@ export default function Dashboard(){
 
   const progress = 60; // placeholder percentage
 
+  const openSuggestions = async () => {
+    const userUid = (window && window.currentUser && window.currentUser.uid) || 'TEST_USER_ID_123';
+    const res = await generateAISuggestions(userUid, { sample: 'campaign snapshot' });
+    if (res && res.success) {
+      setSuggestions(res.suggestions);
+      setSuggestionsOpen(true);
+    }
+  };
+
+  const onEvaluate = async (id, feedback) => {
+    const userUid = (window && window.currentUser && window.currentUser.uid) || 'TEST_USER_ID_123';
+    await evaluateSuggestion(id, feedback, userUid);
+  };
+
   const problematic = PLATFORMS.filter(p => {
     const status = integrations && integrations[`${p.id}_status`];
     return status && status !== 'OK';
@@ -52,6 +69,11 @@ export default function Dashboard(){
   return (
     <div>
       <h2 className="text-2xl font-bold mb-4">Dashboard</h2>
+
+      <section className="flex justify-between items-center mb-4">
+        <div><h3 className="text-lg font-semibold">Overview</h3></div>
+        <div><button onClick={openSuggestions} className="px-3 py-1 bg-indigo-600 text-white rounded">Generate AI Suggestions</button></div>
+      </section>
 
       <section className="grid gap-6 md:grid-cols-2 mb-6">
         <div className="p-4 bg-white dark:bg-gray-800 rounded shadow-sm">
@@ -104,7 +126,7 @@ export default function Dashboard(){
       </section>
 
       <section className="mb-6">
-        <h3 className="font-semibold mb-2">Integrations health</h3>
+        <h3 className="font-semibold mb-3">Integration Health</h3>
         {problematic.length === 0 ? (
           <p className="text-sm text-gray-600 dark:text-gray-300">All integrations healthy.</p>
         ) : (
@@ -117,7 +139,7 @@ export default function Dashboard(){
                     <div className="text-sm text-gray-700 dark:text-gray-300">{(integrations && integrations[`${p.id}_statusMessage`]) || 'Needs attention'}</div>
                   </div>
                   <div>
-                    <Link to="/integrations" className="text-indigo-600">Manage</Link>
+                    <a href="/integrations" className="text-indigo-600">Manage</a>
                   </div>
                 </div>
               </div>
@@ -125,6 +147,10 @@ export default function Dashboard(){
           </div>
         )}
       </section>
+
+      {suggestionsOpen && (
+        <SuggestionsModal suggestions={suggestions} onClose={() => setSuggestionsOpen(false)} onEvaluate={onEvaluate} />
+      )}
     </div>
   );
 }
