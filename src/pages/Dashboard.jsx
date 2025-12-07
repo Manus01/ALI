@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import useIntegrations from '../hooks/useIntegrations';
 import useAISuggestions from '../hooks/useAISuggestions';
+import useTutorials from '../hooks/useTutorials';
 import { Line } from 'react-chartjs-2';
 import { Chart, LineElement, PointElement, CategoryScale, LinearScale, Tooltip, Legend, Filler } from 'chart.js';
 import SuggestionsModal from '../components/SuggestionsModal';
@@ -22,6 +23,7 @@ function mockCampaignData(rangeDays = 7) {
 export default function Dashboard(){
   const { integrations, PLATFORMS } = useIntegrations();
   const { generateAISuggestions, evaluateSuggestion } = useAISuggestions();
+  const { available, completed, fetchUserTutorials } = useTutorials();
   const [rangeDays, setRangeDays] = useState(7);
   const [campaignData, setCampaignData] = useState(() => mockCampaignData(7));
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
@@ -30,6 +32,11 @@ export default function Dashboard(){
   useEffect(() => {
     setCampaignData(mockCampaignData(rangeDays));
   }, [rangeDays]);
+
+  useEffect(() => {
+    // refresh tutorials to compute progress
+    fetchUserTutorials();
+  }, [fetchUserTutorials]);
 
   const lineData = useMemo(() => ({
     labels: campaignData.labels,
@@ -40,12 +47,12 @@ export default function Dashboard(){
   }), [campaignData]);
 
   const learner = useMemo(() => ({
-    ranking: 42,
+    ranking: Math.max(1, 100 - (completed.length * 3)),
     learningStyle: (integrations && integrations.hft_classification) || 'Unknown',
-    score: 72
-  }), [integrations]);
+    score: completed.reduce((s, t) => s + (t.score || 0), 0) / (completed.length || 1)
+  }), [integrations, completed]);
 
-  const progress = 60; // placeholder percentage
+  const progress = Math.round((completed.length / (available.length + completed.length || 1)) * 100);
 
   const openSuggestions = async () => {
     const userUid = (window && window.currentUser && window.currentUser.uid) || 'TEST_USER_ID_123';
@@ -59,6 +66,7 @@ export default function Dashboard(){
   const onEvaluate = async (id, feedback) => {
     const userUid = (window && window.currentUser && window.currentUser.uid) || 'TEST_USER_ID_123';
     await evaluateSuggestion(id, feedback, userUid);
+    // optionally refresh suggestions data or analytics
   };
 
   const problematic = PLATFORMS.filter(p => {
@@ -103,7 +111,7 @@ export default function Dashboard(){
           <h3 className="font-semibold mb-2">Learner Profile</h3>
           <div className="mb-3">Ranking: <strong>{learner.ranking}</strong></div>
           <div className="mb-3">Learning style: <strong>{learner.learningStyle}</strong></div>
-          <div className="mb-3">Score: <strong>{learner.score}</strong></div>
+          <div className="mb-3">Score: <strong>{Math.round(learner.score)}</strong></div>
           <div className="mb-2">Progress</div>
           <div className="w-full bg-gray-200 dark:bg-gray-700 h-4 rounded overflow-hidden">
             <div style={{ width: `${progress}%` }} className="bg-indigo-600 h-4"></div>
