@@ -3,7 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Link, Navigate } from 'react-ro
 import ThemeToggle from './components/ThemeToggle'
 
 import Home from './pages/Home'
-import Tutorials from './pages/Tutorials'
+import TutorialsPage from './pages/TutorialsPage'
 import Integrations from './pages/Integrations'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
@@ -51,7 +51,7 @@ export default function App() {
         <main className="flex-1 max-w-4xl mx-auto px-4 py-8 w-full">
           <Routes>
             <Route path="/" element={user ? <Home /> : <Navigate to="/login" replace />} />
-            <Route path="/tutorials" element={<Tutorials />} />
+            <Route path="/tutorials" element={<TutorialsPage />} />
             <Route path="/integrations" element={<Integrations />} />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
