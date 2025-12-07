@@ -8,6 +8,9 @@ import Integrations from './pages/Integrations'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
+import HiddenFiguresTestPage from './pages/HiddenFiguresTestPage'
+import MarketingKnowledgeTestPage from './pages/MarketingKnowledgeTestPage'
+import EQTestPage from './pages/EQTestPage'
 
 // Simple auth stub; replace with real auth state listener
 const useAuth = () => {
@@ -50,6 +53,12 @@ export default function App() {
             <Route path="/login" element={<LoginPage />} />
             <Route path="/register" element={<RegisterPage />} />
             <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+
+            <Route path="/quiz/hft" element={<HiddenFiguresTestPage />} />
+            <Route path="/quiz/marketing" element={<MarketingKnowledgeTestPage />} />
+            <Route path="/quiz/eq" element={<EQTestPage />} />
+
+            <Route path="/dashboard" element={user ? <Home /> : <Navigate to="/login" replace />} />
           </Routes>
         </main>
 
