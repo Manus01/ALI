@@ -1,4 +1,5 @@
 steps:
+# ... (all your existing steps remain here) ...
 # 1. Build the Docker image
 - name: 'gcr.io/cloud-builders/docker'
   args: ['build', '-t', 'gcr.io/$PROJECT_ID/ali-app:$COMMIT_SHA', '.']
@@ -22,3 +23,6 @@ steps:
 timeout: '1600s'
 images:
 - 'gcr.io/$PROJECT_ID/ali-app:$COMMIT_SHA'
+# --- ADD THIS NEW SECTION ---
+options:
+  logging: CLOUD_LOGGING_ONLY
