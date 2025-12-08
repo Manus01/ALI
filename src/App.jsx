@@ -2,7 +2,6 @@ import React, { Suspense } from 'react'
 import { BrowserRouter as Router, Routes, Route, Link, Navigate, useLocation } from 'react-router-dom'
 import ThemeToggle from './components/ThemeToggle'
 import Home from './pages/Home'
-import Integrations from './pages/Integrations'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import ForgotPasswordPage from './pages/ForgotPasswordPage'
@@ -10,6 +9,7 @@ import useTutorials from './hooks/useTutorials'
 import useIntegrations from './hooks/useIntegrations'
 
 // Lazy-loaded route components for code-splitting
+const Integrations = React.lazy(() => import('./pages/Integrations'))
 const TutorialsPage = React.lazy(() => import('./pages/TutorialsPage'))
 const HiddenFiguresTestPage = React.lazy(() => import('./pages/HiddenFiguresTestPage'))
 const MarketingKnowledgeTestPage = React.lazy(() => import('./pages/MarketingKnowledgeTestPage'))
@@ -72,7 +72,8 @@ export default function App() {
               </div>
             </div>
             <nav className="flex items-center space-x-4">
-              <Link to="/dashboard" className="text-sm hover:underline">Metrics</Link>
+              <Link to="/dashboard" className="text-sm hover:underline">Dashboard</Link>
+              <Link to="/integrations" className="text-sm hover:underline">Integrations</Link>
               <Link to="/strategy" className="text-sm hover:underline">Strategy</Link>
               <Link to="/tutorials" className="text-sm hover:underline">Learning</Link>
               <ThemeToggle />
