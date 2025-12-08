@@ -61,49 +61,53 @@ export default function App() {
 
   return (
     <Router>
-      <div className="min-h-screen flex flex-col bg-white dark:bg-gray-900 text-gray-900 dark:text-gray-100">
-        <header className="border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900">
-          <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between">
+      <div className="min-h-screen flex flex-col bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-gray-50">
+        <header className="sticky top-0 z-30 backdrop-blur bg-slate-900/70 border-b border-slate-800">
+          <div className="max-w-6xl mx-auto px-6 py-4 flex items-center justify-between">
             <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-indigo-600 rounded flex items-center justify-center text-white font-bold">A</div>
+              <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-cyan-400 via-indigo-500 to-purple-600 shadow-lg shadow-indigo-500/30 flex items-center justify-center text-white text-lg font-black">A</div>
               <div>
-                <h1 className="text-lg font-semibold">ALI</h1>
-                <p className="text-sm text-gray-500 dark:text-gray-400">Assistant Light Interface</p>
+                <h1 className="text-xl font-semibold tracking-tight">ALI</h1>
+                <p className="text-xs text-slate-300">Assistant Light Interface</p>
               </div>
             </div>
-            <nav className="flex items-center space-x-4">
-              <Link to="/dashboard" className="text-sm hover:underline">Dashboard</Link>
-              <Link to="/integrations" className="text-sm hover:underline">Integrations</Link>
-              <Link to="/strategy" className="text-sm hover:underline">Strategy</Link>
-              <Link to="/tutorials" className="text-sm hover:underline">Learning</Link>
-              <ThemeToggle />
+            <nav className="flex items-center space-x-2 text-sm font-medium">
+              <Link to="/dashboard" className="px-3 py-2 rounded-lg hover:bg-white/5 transition">Dashboard</Link>
+              <Link to="/integrations" className="px-3 py-2 rounded-lg hover:bg-white/5 transition">Integrations</Link>
+              <Link to="/strategy" className="px-3 py-2 rounded-lg hover:bg-white/5 transition">Strategy</Link>
+              <Link to="/tutorials" className="px-3 py-2 rounded-lg hover:bg-white/5 transition">Learning</Link>
+              <div className="ml-2"><ThemeToggle /></div>
             </nav>
           </div>
         </header>
 
-        <main className="flex-1 max-w-4xl mx-auto px-4 py-8 w-full">
-          <Suspense fallback={<div className="text-center py-10">Loading...</div>}>
-            <Routes>
-              <Route path="/" element={user ? <Navigate to="/dashboard" replace /> : <Navigate to="/login" replace />} />
+        <main className="flex-1 w-full">
+          <div className="max-w-6xl mx-auto px-6 py-10">
+            <div className="rounded-2xl bg-white/5 border border-white/10 shadow-2xl shadow-indigo-900/40 p-6 backdrop-blur-lg">
+              <Suspense fallback={<div className="text-center py-10">Loading...</div>}>
+                <Routes>
+                  <Route path="/" element={user ? <Navigate to="/dashboard" replace /> : <Navigate to="/login" replace />} />
 
-              <Route path="/tutorials" element={<TutorialsPage />} />
-              <Route path="/integrations" element={<Integrations />} />
-              <Route path="/login" element={<LoginPage />} />
-              <Route path="/register" element={<RegisterPage />} />
-              <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+                  <Route path="/tutorials" element={<TutorialsPage />} />
+                  <Route path="/integrations" element={<Integrations />} />
+                  <Route path="/login" element={<LoginPage />} />
+                  <Route path="/register" element={<RegisterPage />} />
+                  <Route path="/forgot-password" element={<ForgotPasswordPage />} />
 
-              <Route path="/quiz/hft" element={<HiddenFiguresTestPage />} />
-              <Route path="/quiz/marketing" element={<MarketingKnowledgeTestPage />} />
-              <Route path="/quiz/eq" element={<EQTestPage />} />
+                  <Route path="/quiz/hft" element={<HiddenFiguresTestPage />} />
+                  <Route path="/quiz/marketing" element={<MarketingKnowledgeTestPage />} />
+                  <Route path="/quiz/eq" element={<EQTestPage />} />
 
-              <Route path="/dashboard" element={<OnboardingGuard>{user ? <Dashboard /> : <Navigate to="/login" replace />}</OnboardingGuard>} />
-              <Route path="/strategy" element={<OnboardingGuard>{user ? <StrategyPage /> : <Navigate to="/login" replace />}</OnboardingGuard>} />
-            </Routes>
-          </Suspense>
+                  <Route path="/dashboard" element={<OnboardingGuard>{user ? <Dashboard /> : <Navigate to="/login" replace />}</OnboardingGuard>} />
+                  <Route path="/strategy" element={<OnboardingGuard>{user ? <StrategyPage /> : <Navigate to="/login" replace />}</OnboardingGuard>} />
+                </Routes>
+              </Suspense>
+            </div>
+          </div>
         </main>
 
-        <footer className="border-t border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
-          <div className="max-w-4xl mx-auto px-4 py-4 text-sm text-gray-500 dark:text-gray-400">© {new Date().getFullYear()} ALI</div>
+        <footer className="border-t border-white/10 bg-slate-900/80 backdrop-blur">
+          <div className="max-w-6xl mx-auto px-6 py-4 text-sm text-slate-300"> {new Date().getFullYear()} ALI</div>
         </footer>
       </div>
     </Router>

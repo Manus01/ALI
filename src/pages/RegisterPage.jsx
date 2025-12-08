@@ -70,76 +70,79 @@ export default function RegisterPage() {
     }
   };
 
-  const inputClass = (name) => `w-full p-3 border rounded focus:outline-none focus:ring-2 focus:ring-indigo-300 placeholder-gray-400 ${fieldErrors[name] ? 'border-red-500' : 'border-gray-200 dark:border-gray-700'}`;
+  const inputClass = (name) => `w-full p-3 rounded-lg bg-slate-900/60 border ${fieldErrors[name] ? 'border-red-500/60' : 'border-white/10'} text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500`;
 
   return (
-    <div className="max-w-md mx-auto p-6">
-      <h2 className="text-2xl font-bold mb-4">Create account</h2>
-      {error && <div className="mb-3 text-red-600">{error}</div>}
-      <form onSubmit={onSubmit} className="space-y-3">
-        <div>
-          <label className="text-sm">Email</label>
-          <input name="email" value={form.email} onChange={onChange} placeholder="you@example.com" className={inputClass('email')} />
-          {fieldErrors.email && <div className="text-xs text-red-500 mt-1">{fieldErrors.email}</div>}
-        </div>
-
-        <div>
-          <label className="text-sm">Password</label>
-          <input name="password" value={form.password} onChange={onChange} placeholder="At least 6 characters" type="password" className={inputClass('password')} />
-          {fieldErrors.password && <div className="text-xs text-red-500 mt-1">{fieldErrors.password}</div>}
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
+    <div className="max-w-3xl mx-auto p-6">
+      <div className="rounded-2xl bg-white/5 border border-white/10 shadow-2xl shadow-indigo-900/40 p-6 backdrop-blur">
+        <h2 className="text-3xl font-bold mb-2 text-white">Create account</h2>
+        <p className="text-sm text-slate-300 mb-4">Tell us about yourself to personalize your learning path.</p>
+        {error && <div className="mb-3 text-red-300 bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2">{error}</div>}
+        <form onSubmit={onSubmit} className="space-y-3">
           <div>
-            <label className="text-sm">First name</label>
-            <input name="name" value={form.name} onChange={onChange} placeholder="First name" className={inputClass('name')} />
-            {fieldErrors.name && <div className="text-xs text-red-500 mt-1">{fieldErrors.name}</div>}
+            <label className="text-xs uppercase tracking-wide text-slate-300">Email</label>
+            <input name="email" value={form.email} onChange={onChange} placeholder="you@example.com" className={inputClass('email')} />
+            {fieldErrors.email && <div className="text-xs text-red-500 mt-1">{fieldErrors.email}</div>}
           </div>
+
           <div>
-            <label className="text-sm">Surname</label>
-            <input name="surname" value={form.surname} onChange={onChange} placeholder="Surname" className={inputClass('surname')} />
-            {fieldErrors.surname && <div className="text-xs text-red-500 mt-1">{fieldErrors.surname}</div>}
+            <label className="text-xs uppercase tracking-wide text-slate-300">Password</label>
+            <input name="password" value={form.password} onChange={onChange} placeholder="At least 6 characters" type="password" className={inputClass('password')} />
+            {fieldErrors.password && <div className="text-xs text-red-500 mt-1">{fieldErrors.password}</div>}
           </div>
-        </div>
 
-        <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-xs uppercase tracking-wide text-slate-300">First name</label>
+              <input name="name" value={form.name} onChange={onChange} placeholder="First name" className={inputClass('name')} />
+              {fieldErrors.name && <div className="text-xs text-red-500 mt-1">{fieldErrors.name}</div>}
+            </div>
+            <div>
+              <label className="text-xs uppercase tracking-wide text-slate-300">Surname</label>
+              <input name="surname" value={form.surname} onChange={onChange} placeholder="Surname" className={inputClass('surname')} />
+              {fieldErrors.surname && <div className="text-xs text-red-500 mt-1">{fieldErrors.surname}</div>}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="text-xs uppercase tracking-wide text-slate-300">Age</label>
+              <input name="age" value={form.age} onChange={onChange} placeholder="Age" className={inputClass('age')} />
+              {fieldErrors.age && <div className="text-xs text-red-500 mt-1">{fieldErrors.age}</div>}
+            </div>
+            <div>
+              <label className="text-xs uppercase tracking-wide text-slate-300">Sex</label>
+              <input name="sex" value={form.sex} onChange={onChange} placeholder="M / F / Other" className={inputClass('sex')} />
+            </div>
+            <div>
+              <label className="text-xs uppercase tracking-wide text-slate-300">Job</label>
+              <input name="job" value={form.job} onChange={onChange} placeholder="Your role" className={inputClass('job')} />
+              {fieldErrors.job && <div className="text-xs text-red-500 mt-1">{fieldErrors.job}</div>}
+            </div>
+          </div>
+
           <div>
-            <label className="text-sm">Age</label>
-            <input name="age" value={form.age} onChange={onChange} placeholder="Age" className={inputClass('age')} />
-            {fieldErrors.age && <div className="text-xs text-red-500 mt-1">{fieldErrors.age}</div>}
+            <label className="text-xs uppercase tracking-wide text-slate-300">Industry</label>
+            <input name="industry" value={form.industry} onChange={onChange} placeholder="Industry" className={inputClass('industry')} />
+            {fieldErrors.industry && <div className="text-xs text-red-500 mt-1">{fieldErrors.industry}</div>}
           </div>
+
           <div>
-            <label className="text-sm">Sex</label>
-            <input name="sex" value={form.sex} onChange={onChange} placeholder="M / F / Other" className={inputClass('sex')} />
+            <label className="text-xs uppercase tracking-wide text-slate-300">Education level</label>
+            <input name="education" value={form.education} onChange={onChange} placeholder="e.g., Bachelor's, Master's" className={inputClass('education')} />
+            {fieldErrors.education && <div className="text-xs text-red-500 mt-1">{fieldErrors.education}</div>}
           </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <input name="companySize" value={form.companySize} onChange={onChange} placeholder="Company size (optional)" className="w-full p-3 rounded-lg bg-slate-900/60 border border-white/10 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+            <input name="website" value={form.website} onChange={onChange} placeholder="Website URL (optional)" className="w-full p-3 rounded-lg bg-slate-900/60 border border-white/10 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500" />
+          </div>
+
           <div>
-            <label className="text-sm">Job</label>
-            <input name="job" value={form.job} onChange={onChange} placeholder="Your role" className={inputClass('job')} />
-            {fieldErrors.job && <div className="text-xs text-red-500 mt-1">{fieldErrors.job}</div>}
+            <button type="submit" className="w-full px-4 py-3 bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-white rounded-lg font-semibold shadow-lg hover:shadow-xl transition">Create account</button>
           </div>
-        </div>
-
-        <div>
-          <label className="text-sm">Industry</label>
-          <input name="industry" value={form.industry} onChange={onChange} placeholder="Industry" className={inputClass('industry')} />
-          {fieldErrors.industry && <div className="text-xs text-red-500 mt-1">{fieldErrors.industry}</div>}
-        </div>
-
-        <div>
-          <label className="text-sm">Education level</label>
-          <input name="education" value={form.education} onChange={onChange} placeholder="e.g., Bachelor's, Master's" className={inputClass('education')} />
-          {fieldErrors.education && <div className="text-xs text-red-500 mt-1">{fieldErrors.education}</div>}
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <input name="companySize" value={form.companySize} onChange={onChange} placeholder="Company size (optional)" className="w-full p-3 border rounded focus:outline-none focus:ring-2 focus:ring-indigo-300" />
-          <input name="website" value={form.website} onChange={onChange} placeholder="Website URL (optional)" className="w-full p-3 border rounded focus:outline-none focus:ring-2 focus:ring-indigo-300" />
-        </div>
-
-        <div>
-          <button type="submit" className="w-full px-4 py-3 bg-green-600 hover:bg-green-700 text-white rounded font-medium">Create account</button>
-        </div>
-      </form>
+        </form>
+      </div>
     </div>
   );
 }
