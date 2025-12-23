@@ -7,7 +7,7 @@
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', 'gcr.io/$PROJECT_ID/ali-backend']
 
-  # --- 3. Deploy Backend to Cloud Run ---
+  # --- 3. Deploy Backend to Cloud Run (UPDATED WITH TIMEOUT) ---
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
@@ -23,6 +23,8 @@
       - '--allow-unauthenticated'
       - '--port'
       - '8080'
+      - '--timeout'  # <--- NEW
+      - '300'        # <--- NEW (300 seconds = 5 minutes)
 
   # --- 4. Build the Frontend Image ---
   - name: 'gcr.io/cloud-builders/docker'
@@ -53,6 +55,5 @@ images:
   - 'gcr.io/$PROJECT_ID/ali-backend'
   - 'gcr.io/$PROJECT_ID/ali-frontend'
 
-# 👇 THIS IS THE FIX 👇
 options:
   logging: CLOUD_LOGGING_ONLY
