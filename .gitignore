@@ -1,0 +1,18 @@
+﻿# --- ROOT .GITIGNORE ---
+# System & Editor Junk
+.vs/
+.vscode/
+*.suo
+*.user
+.DS_Store
+
+# Dependencies
+node_modules/
+venv/
+__pycache__/
+*.pyc
+
+# Secrets (NEVER UPLOAD THESE)
+key.json
+firebase_credentials.json
+.env

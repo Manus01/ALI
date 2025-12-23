@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+google-cloud-firestore
+google-cloud-kms
+firebase-admin
+cryptography
+pydantic
+pydantic-settings
+python-dotenv
+dlt
+litellm
+langgraph
+langchain
+pandas
+numpy

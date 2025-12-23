@@ -1,0 +1,36 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Fix for the Chrome/Edge warning */
+html {
+    -webkit-text-size-adjust: 100%; /* Chrome/Safari */
+    text-size-adjust: 100%; /* Standard */
+}
+
+/* Custom Glassmorphism Utility */
+.glass-panel {
+    @apply bg-white/80 backdrop-blur-lg border border-white/60 shadow-lg;
+}
+
+/* Ensure smooth background */
+body {
+    @apply bg-slate-50 text-slate-900 antialiased;
+}
+
+/* Animation for page loads */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.animate-fade-in {
+    animation: fadeIn 0.5s ease-out forwards;
+}
