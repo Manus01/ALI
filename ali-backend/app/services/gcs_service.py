@@ -9,15 +9,27 @@ class GCSService:
     def __init__(self):
         self.storage_client = None
         try:
+            # 1. Initialize Client 
+            # This automatically picks up the 'GOOGLE_APPLICATION_CREDENTIALS' env var 
+            # we set in Cloud Run (pointing to /app/secrets/service-account.json)
             self.storage_client = storage.Client()
+            
+            # 2. Robust Project ID Detection (The Fix)
+            # If "PROJECT_ID" env var is missing, get it directly from the authenticated client
+            self.project_id = os.getenv("PROJECT_ID") or self.storage_client.project
+            
+            if not self.project_id:
+                logger.warning("⚠️ Could not determine Project ID. Bucket operations may fail.")
+
+            # 3. Define Bucket Name
+            self.bucket_name = f"{self.project_id}-assets"
+            self.location = os.getenv("AI_STUDIO_LOCATION", "us-central1")
+            
+            logger.info(f"✅ GCS Service Active. Using Bucket: {self.bucket_name}")
+
         except Exception as e:
             logger.error(f"⚠️ Storage Client Init Failed: {e}")
 
-        # Mimic the logic from ai_studio.py to find the correct bucket
-        self.project_id = os.getenv("PROJECT_ID")
-        self.bucket_name = f"{self.project_id}-assets"
-        self.location = os.getenv("AI_STUDIO_LOCATION", "us-central1")
-        
         # Expiration for signed URLs (default 1 hour)
         try:
             self.expiration = int(os.getenv("GCS_SIGNED_URL_EXPIRATION", "3600"))
@@ -36,13 +48,15 @@ class GCSService:
         try:
             bucket = self.storage_client.bucket(self.bucket_name)
             if not bucket.exists():
+                logger.info(f"Creating new bucket: {self.bucket_name}")
                 bucket = self.storage_client.create_bucket(self.bucket_name, location=self.location)
-        except Exception:
-            # Fallback: try getting it again, maybe checking exists() failed due to permissions
+        except Exception as e:
+            logger.warning(f"Bucket check failed (might already exist or permission issue): {e}")
+            # Fallback: Just try to grab the bucket object assuming it exists
             bucket = self.storage_client.bucket(self.bucket_name)
 
         # 2. Create Blob
-        # Generate a unique name if one wasn't provided, or enforce uniqueness
+        # Generate a unique name if one wasn't provided
         if not filename:
             filename = f"published_video_{int(time.time())}.mp4"
         
@@ -51,20 +65,26 @@ class GCSService:
         blob = bucket.blob(blob_path)
 
         # 3. Upload
-        if isinstance(file_obj, bytes):
-            blob.upload_from_string(file_obj, content_type=content_type)
-        else:
-            blob.upload_from_file(file_obj, content_type=content_type)
+        logger.info(f"Uploading {filename} to {self.bucket_name}...")
+        try:
+            if isinstance(file_obj, bytes):
+                blob.upload_from_string(file_obj, content_type=content_type)
+            else:
+                blob.upload_from_file(file_obj, content_type=content_type)
+        except Exception as e:
+            logger.error(f"❌ Upload failed: {e}")
+            raise e
 
         # 4. Generate URL (Signed V4 preferred for security, else Public)
         try:
             # Try to generate a signed URL first (safer)
-            return blob.generate_signed_url(
+            url = blob.generate_signed_url(
                 version="v4",
                 expiration=self.expiration,
                 method="GET"
             )
+            return url
         except Exception as e:
-            logger.warning(f"Could not sign URL, attempting to return public link: {e}")
+            logger.warning(f"Could not sign URL, attempting fallback to public link: {e}")
             # Fallback to public link (requires bucket to be public)
             return blob.public_url
