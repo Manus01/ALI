@@ -1,59 +1,48 @@
 ﻿import os
-from fastapi import Header, HTTPException
 import firebase_admin
-from firebase_admin import auth, credentials
-from dotenv import load_dotenv
+from firebase_admin import credentials, firestore
 
-# Ensure env vars are loaded if this file is imported directly
-load_dotenv()
+# Global DB instance
+db = None
 
-# Get the Project ID explicitly from environment
-PROJECT_ID = os.getenv("PROJECT_ID")
-
-# Initialize Firebase Admin if not already done
-if not firebase_admin._apps:
-    try:
-        # 1. Try to load Application Default Credentials (from gcloud auth)
-        cred = credentials.ApplicationDefault()
-        
-        # 2. Initialize with EXPLICIT Project ID to fix the "None" error
-        print(f"🔄 Initializing Firebase for Project: {PROJECT_ID}...")
-        firebase_admin.initialize_app(cred, {
-            'projectId': PROJECT_ID,
-        })
-        print("✅ Firebase Admin Initialized Successfully.")
-        
-    except Exception as e:
-        print(f"❌ Failed to init Firebase: {e}")
-
-def verify_token(authorization: str = Header(...)):
-    """
-    Validates the Firebase ID Token.
-    """
-    print(f"\n🔑 AUTH DEBUG: Received header: {authorization[:30]}...")
-
-    if not authorization.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Invalid authentication header format")
-
-    token = authorization.split("Bearer ")[1]
-    print(f"🔑 AUTH DEBUG: Token start: {token[:10]}...")
+def initialize_firebase():
+    global db
+    
+    # Avoid initializing twice
+    if firebase_admin._apps:
+        db = firestore.client()
+        return db
 
     try:
-        # Verify the token
-        decoded_token = auth.verify_id_token(token)
-        return decoded_token
+        # 1. CLOUD RUN: Check for the environment variable we set in the console
+        cred_path = os.getenv('FIREBASE_CREDENTIALS_PATH')
+
+        # 2. LOCAL FALLBACK: If env var is missing, look for local file
+        if not cred_path:
+            # Check current directory
+            if os.path.exists("firebase_credentials.json"):
+                cred_path = "firebase_credentials.json"
+            # Check parent directory (common in some setups)
+            elif os.path.exists("../firebase_credentials.json"):
+                cred_path = "../firebase_credentials.json"
+        
+        if not cred_path or not os.path.exists(cred_path):
+            raise FileNotFoundError("firebase_credentials.json not found in secrets or local path.")
+
+        print(f"🔐 Loading Firebase credentials from: {cred_path}")
+        cred = credentials.Certificate(cred_path)
+        firebase_admin.initialize_app(cred)
+        
+        db = firestore.client()
+        return db
 
     except Exception as e:
-        # Enhanced Debugging
-        print(f"\n❌ AUTH ERROR: {e}")
-        try:
-            app = firebase_admin.get_app()
-            print(f"🏢 Configured Backend Project ID: {app.project_id}")
-        except:
-            print("🏢 Backend Project ID: Unknown")
-            
-        # Specific error for expired tokens
-        if "expired" in str(e).lower():
-             raise HTTPException(status_code=401, detail="Token expired. Please refresh page.")
-             
-        raise HTTPException(status_code=401, detail="Invalid token")
+        print(f"❌ CRITICAL FIREBASE ERROR: {e}")
+        # In production, we might want to raise this to stop the app if DB is essential
+        raise e
+
+# Auto-initialize on import
+try:
+    db = initialize_firebase()
+except Exception:
+    pass

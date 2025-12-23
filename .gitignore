@@ -16,3 +16,4 @@ __pycache__/
 key.json
 firebase_credentials.json
 .env
+ali-backend/service-account.json
