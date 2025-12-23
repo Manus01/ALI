@@ -2,6 +2,7 @@
 import axios from 'axios';
 import { useAuth } from '../hooks/useAuth';
 import { FaRobot, FaLightbulb, FaChartLine, FaArrowRight } from 'react-icons/fa';
+import { BASE_URL } from '../api_config';
 
 export default function StrategyPage() {
     const { currentUser } = useAuth();
@@ -20,7 +21,7 @@ export default function StrategyPage() {
             const token = await currentUser.getIdToken();
 
             // Simple POST request - The backend does all the heavy data fetching now
-            const response = await axios.post('http://localhost:8001/api/strategy/generate',
+            const response = await axios.post(`${BASE_URL}/api/strategy/generate`,
                 { prompt: prompt },
                 { headers: { Authorization: `Bearer ${token}` } }
             );

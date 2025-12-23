@@ -10,6 +10,7 @@ import {
     FaTools, FaCheckCircle, FaExclamationTriangle, FaPlug, FaLightbulb, FaVideo, FaArrowRight,
     FaInstagram, FaLinkedin, FaFacebook, FaTiktok, FaLayerGroup // <--- New Icons
 } from 'react-icons/fa';
+import { BASE_URL } from '../api_config';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
@@ -40,7 +41,7 @@ export default function DashboardPage() {
             const token = await currentUser.getIdToken();
 
             const response = await axios.get(
-                'http://localhost:8001/api/dashboard/overview',
+                `${BASE_URL}/api/dashboard/overview`,
                 { headers: { Authorization: `Bearer ${token}` } }
             );
 
@@ -64,7 +65,7 @@ export default function DashboardPage() {
         setMaintenanceLoading(true);
         try {
             const token = await currentUser.getIdToken();
-            await axios.post('http://localhost:8001/api/maintenance/run', {}, {
+            await axios.post(`${BASE_URL}/api/maintenance/run`, {}, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             alert("Maintenance triggered successfully.");

@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { FaPlus, FaRobot, FaCheckCircle, FaLightbulb, FaSearch, FaArrowRight, FaGraduationCap } from 'react-icons/fa';
 // 1. Import Firestore methods
 import { getFirestore, collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
+import { BASE_URL } from '../api_config';
 
 export default function TutorialsPage() {
     const { currentUser } = useAuth();
@@ -46,7 +47,7 @@ export default function TutorialsPage() {
             try {
                 const token = await currentUser.getIdToken();
                 // 🛑 FIX: Explicitly point to Port 8001
-                const res = await axios.get('http://localhost:8001/api/tutorials/suggestions', {
+                const res = await axios.get(`${BASE_URL}/api/tutorials/suggestions`, {
                     headers: { Authorization: `Bearer ${token}` }
                 });
                 setSuggestions(res.data);
@@ -70,7 +71,7 @@ export default function TutorialsPage() {
         try {
             const token = await currentUser.getIdToken();
             // 🛑 FIX: Explicitly point to Port 8001
-            await axios.post('http://localhost:8001/api/generate/tutorial', null, {
+            await axios.post(`${BASE_URL}/api/generate/tutorial`, null, {
                 params: { topic: finalTopic },
                 headers: { Authorization: `Bearer ${token}` }
             });

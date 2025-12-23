@@ -89,17 +89,13 @@ class MetricoolClient:
         }
         
         try:
-            # res = requests.get(url, headers=self.headers, params=params)
-            # data = res.json()
+            # Attempt real call
+            res = requests.get(url, headers=self.headers, params=params)
+            if res.status_code == 200:
+                return res.json()
             
-            # MOCKING RESPONSE to ensure downstream logic works (Replace with real calls)
-            # In production, replace this dict with the parsed JSON from Metricool
-            return {
-                "total_spend": 120.50,   # From Ads
-                "total_clicks": 340,     # From Organic + Ads
-                "impressions": 15000,
-                "ctr": 2.25              # Calculated or retrieved
-            }
+            # If call fails but not exception, return zero state
+            return {"total_spend": 0.0, "total_clicks": 0, "impressions": 0, "ctr": 0.0}
         except Exception as e:
             logger.error(f"Stats Fetch Failed: {e}")
-            return {"total_spend": 0, "total_clicks": 0, "impressions": 0, "ctr": 0}
+            return {"total_spend": 0.0, "total_clicks": 0, "impressions": 0, "ctr": 0.0}

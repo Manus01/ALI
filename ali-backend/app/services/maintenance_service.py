@@ -1,10 +1,14 @@
 ﻿from google.cloud import firestore
-from app.agents.maintenance_agent import review_tutorial_relevance
-from app.agents.tutorial_agent import generate_tutorial
-from app.agents.nodes import analyst_node
 
 def run_weekly_maintenance(user_id: str):
     print(f"🧹 Maintenance: Starting run for {user_id}...")
+    
+    # --- LAZY IMPORTS ---
+    # Import heavy agents only when the function runs
+    from app.agents.maintenance_agent import review_tutorial_relevance
+    from app.agents.tutorial_agent import generate_tutorial
+    from app.agents.nodes import analyst_node
+    
     db = firestore.Client()
     
     # 1. Get User Data & Real Metrics

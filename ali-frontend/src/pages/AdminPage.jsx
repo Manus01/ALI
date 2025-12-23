@@ -2,6 +2,7 @@
 import axios from 'axios';
 import { useAuth } from '../hooks/useAuth';
 import { FaUserCog, FaDatabase, FaPlay, FaDownload, FaCheck } from 'react-icons/fa';
+import { BASE_URL } from '../api_config';
 
 export default function AdminPage() {
     const { currentUser } = useAuth();
@@ -33,7 +34,7 @@ export default function AdminPage() {
     const fetchLogs = async () => {
         try {
             const token = await currentUser.getIdToken();
-            const res = await axios.get('http://localhost:8001/api/admin/research/logs', {
+            const res = await axios.get(`${BASE_URL}/api/admin/research/logs`, {
                 headers: { Authorization: `Bearer ${token}` }
             });
             setLogs(res.data.data);
@@ -46,7 +47,7 @@ export default function AdminPage() {
         if (!targetUid || !blogId) return;
         try {
             const token = await currentUser.getIdToken();
-            await axios.post('http://localhost:8001/api/admin/users/link-metricool',
+            await axios.post(`${BASE_URL}/api/admin/users/link-metricool`,
                 { target_user_id: targetUid, metricool_blog_id: blogId },
                 { headers: { Authorization: `Bearer ${token}` } }
             );
@@ -62,7 +63,7 @@ export default function AdminPage() {
         setLoading(true);
         try {
             const token = await currentUser.getIdToken();
-            const res = await axios.post('http://localhost:8001/api/admin/jobs/trigger-nightly-log', {},
+            const res = await axios.post(`${BASE_URL}/api/admin/jobs/trigger-nightly-log`, {},
                 { headers: { Authorization: `Bearer ${token}` } }
             );
             setActionMsg(`✅ Job Complete: Processed ${res.data.processed} users.`);

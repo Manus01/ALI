@@ -1,6 +1,7 @@
 ﻿import os
 import requests
 import logging
+from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
@@ -122,7 +123,34 @@ class MetricoolClient:
         # Note: Implementation depends on specific Metricool endpoints for "All Stats".
         # This is a simplified fetcher for the Strategy Engine.
         return [] # Placeholder: You would implement specific GET /stats/instagram calls here
-    # ... inside MetricoolClient class ...
+
+    def get_yesterday_stats(self, blog_id: str) -> Dict[str, float]:
+        """
+        Fetches a simplified snapshot of YESTERDAY'S performance across all networks.
+        Used for the nightly research log.
+        """
+        # Calculate 'Yesterday' date range
+        yesterday = (datetime.utcnow() - timedelta(days=1)).strftime('%Y-%m-%d')
+        
+        url = f"{BASE_URL}/stats/summary" # Hypothetical unified endpoint or logic wrapper
+        params = {
+            "blogId": blog_id, 
+            "from": yesterday, 
+            "to": yesterday, 
+            "userId": self.user_id
+        }
+        
+        try:
+            # Attempt real call
+            res = requests.get(url, headers=self.headers, params=params)
+            if res.status_code == 200:
+                return res.json()
+            
+            # If call fails but not exception, return zero state
+            return {"total_spend": 0.0, "total_clicks": 0, "impressions": 0, "ctr": 0.0}
+        except Exception as e:
+            logger.error(f"Stats Fetch Failed: {e}")
+            return {"total_spend": 0.0, "total_clicks": 0, "impressions": 0, "ctr": 0.0}
 
     def get_dashboard_snapshot(self, blog_id: str) -> Dict[str, Any]:
         """
@@ -152,7 +180,7 @@ class MetricoolClient:
                     "impressions": stats.get('impressions', 0),
                     "clicks": stats.get('total_clicks', 0),
                     "ctr": ctr,
-                    "engagement_rate": 4.5, # Example placeholder for organic
+                    "engagement_rate": 0.0, # Zero state for organic
                 },
                 "health_score": {
                     "status": health,
@@ -166,32 +194,28 @@ class MetricoolClient:
             # Fallback so dashboard doesn't crash
             return {"status": "error", "message": "Could not fetch live metrics"}
 
-        # ... inside MetricoolClient class ...
-
     def get_historical_breakdown(self, blog_id: str, days: int = 30) -> Dict[str, Any]:
         """
         Generates daily time-series data broken down by platform.
         Returns: {
             "dates": ["2023-10-01", ...],
             "datasets": {
-                "instagram": [12, 15, ...],
-                "linkedin": [5, 8, ...],
-                "all": [17, 23, ...]
+                "instagram": [0, 0, ...],
+                "linkedin": [0, 0, ...],
+                "all": [0, 0, ...]
             }
         }
         """
         dates = []
-        import random
-        from datetime import timedelta
         
         # 1. Generate Dates
         for i in range(days):
             d = datetime.now() - timedelta(days=days-1-i)
             dates.append(d.strftime("%Y-%m-%d"))
 
-        # 2. Fetch/Simulate Platform Data
+        # 2. Fetch Platform Data
         # In a full production app, you would call GET /stats/instagram/daily here.
-        # For responsiveness, we will simulate the spread based on the connection status.
+        # We return ZERO STATE instead of fake random data.
         
         datasets = {}
         
@@ -200,16 +224,9 @@ class MetricoolClient:
         combined = [0] * days
 
         for plat in platforms:
-            # Generate a realistic curve
-            # Base value + Random variance
-            base = random.randint(5, 50) 
-            daily_data = [max(0, base + random.randint(-10, 20)) for _ in range(days)]
-            
+            # Zero state for now
+            daily_data = [0] * days
             datasets[plat] = daily_data
-            
-            # Add to aggregate
-            for i, val in enumerate(daily_data):
-                combined[i] += val
 
         datasets["all"] = combined
         
