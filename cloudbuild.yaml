@@ -7,7 +7,7 @@
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', 'gcr.io/$PROJECT_ID/ali-backend']
 
-  # --- 3. Deploy Backend to Cloud Run (UPDATED WITH TIMEOUT) ---
+  # --- 3. Deploy Backend to Cloud Run (OPTIMIZED) ---
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
@@ -23,8 +23,13 @@
       - '--allow-unauthenticated'
       - '--port'
       - '8080'
-      - '--timeout'  # <--- NEW
-      - '300'        # <--- NEW (300 seconds = 5 minutes)
+      - '--timeout'
+      - '300'
+      - '--memory'     # <--- NEW: Ensures heavy AI libs don't crash
+      - '2Gi'          # <--- NEW: Increased from 512Mi
+      - '--cpu'        # <--- NEW: Better processing for startup
+      - '2'            # <--- NEW: Increased from 1
+      - '--cpu-boost'  # <--- NEW: Extra power during initial boot
 
   # --- 4. Build the Frontend Image ---
   - name: 'gcr.io/cloud-builders/docker'
