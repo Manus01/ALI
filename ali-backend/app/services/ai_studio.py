@@ -3,11 +3,6 @@ import time
 import json
 import logging
 import re
-from google import genai
-from google.genai import types
-from google.cloud import texttospeech
-from google.cloud import storage
-from google.api_core.exceptions import Unauthorized, Forbidden, DeadlineExceeded
 
 # --- CONFIGURATION & INIT ---
 logger = logging.getLogger(__name__)
@@ -20,6 +15,12 @@ standard_env_id = os.getenv("PROJECT_ID")
 PROJECT_ID = None
 
 if numeric_env_id:
+    from google import genai
+    from google.genai import types
+    from google.cloud import texttospeech
+    from google.cloud import storage
+    from google.api_core.exceptions import Unauthorized, Forbidden, DeadlineExceeded
+
     try:
         PROJECT_ID = int(numeric_env_id)
         print(f"🏢 Creative Service: Using Numeric GenAI ID: {PROJECT_ID}")
