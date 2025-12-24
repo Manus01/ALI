@@ -1,9 +1,9 @@
-import pandas as pd
 import numpy as np
-from sklearn.linear_model import LinearRegression
 from datetime import datetime, timedelta
 
 def generate_forecast(history_data: list, days=7) -> list:
+    import pandas as pd
+    from sklearn.linear_model import LinearRegression
     """
     Predicts next 7 days of CPC/Spend using Linear Regression.
     """
