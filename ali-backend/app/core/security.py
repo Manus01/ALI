@@ -1,57 +1,43 @@
 ﻿import os
 import logging
 import firebase_admin
-from firebase_admin import credentials, firestore, auth # Added auth here
+from firebase_admin import credentials, firestore, auth
 
 logger = logging.getLogger(__name__)
 
-# Global DB instance
-db = None
-
 def initialize_firebase():
-    global db
     if firebase_admin._apps:
-        db = firestore.client()
-        return db
+        return firestore.client()
+
+    # 1. Check Env Var first
+    cred_path = os.getenv('FIREBASE_CREDENTIALS_PATH')
+    
+    # 2. If Env Var is empty, or file doesn't exist, try common Cloud Run mount paths
+    if not cred_path or not os.path.exists(cred_path):
+        fallbacks = [
+            "/app/secrets/service-account.json",
+            "/app/secrets/master-service-account",
+            "service-account.json",
+            "firebase_credentials.json"
+        ]
+        for path in fallbacks:
+            if os.path.exists(path):
+                cred_path = path
+                break
 
     try:
-        # Robust Path Detection
-        cred_path = os.getenv('FIREBASE_CREDENTIALS_PATH')
-        if not cred_path:
-            # Local fallback paths
-            for path in ["service-account.json", "firebase_credentials.json", "../service-account.json"]:
-                if os.path.exists(path):
-                    cred_path = path
-                    break
-        
-        if not cred_path or not os.path.exists(cred_path):
-            logger.error(f"❌ Firebase Credentials not found at: {cred_path}")
-            # We don't raise here to let the app start so we can see logs
+        if cred_path and os.path.exists(cred_path):
+            logger.info(f"🔐 Initializing Firebase with: {cred_path}")
+            cred = credentials.Certificate(cred_path)
+            firebase_admin.initialize_app(cred)
+            return firestore.client()
+        else:
+            # THIS IS THE CRITICAL LOG: It tells us exactly what the container sees
+            available = os.listdir("/app/secrets") if os.path.exists("/app/secrets") else "Folder missing"
+            logger.error(f"❌ FIREBASE ERROR: No credentials found. /app/secrets contains: {available}")
             return None
-
-        logger.info(f"🔐 Loading Firebase credentials from: {cred_path}")
-        cred = credentials.Certificate(cred_path)
-        firebase_admin.initialize_app(cred)
-        
-        db = firestore.client()
-        return db
-
     except Exception as e:
-        logger.error(f"❌ CRITICAL FIREBASE ERROR: {e}")
+        logger.error(f"❌ Firebase Init Failed: {e}")
         return None
 
-# --- CRUCIAL: The missing function that was causing the crash ---
-def verify_token(id_token: str):
-    """
-    Verifies a Firebase ID token.
-    Used by auth.py and other routers.
-    """
-    try:
-        decoded_token = auth.verify_id_token(id_token)
-        return decoded_token
-    except Exception as e:
-        logger.error(f"🛡️ Token verification failed: {e}")
-        return None
-
-# Auto-initialize
-db = initialize_firebase()
+# Rest of your verify_token logic...
