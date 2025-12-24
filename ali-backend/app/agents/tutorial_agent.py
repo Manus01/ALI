@@ -2,15 +2,15 @@
 import json
 import datetime
 import time
-import google.generativeai as genai
 from google.cloud import firestore
 from app.services.ai_studio import CreativeService
 
-# Use the robust PRO model
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-
 # --- 1. THE ARCHITECT (Curriculum + Metaphor) ---
 def generate_curriculum_blueprint(topic, profile, campaign_context):
+    import google.generativeai as genai
+    api_key = os.getenv("GEMINI_API_KEY")
+    if api_key:
+        genai.configure(api_key=api_key)
     model = genai.GenerativeModel('gemini-2.5-pro')
     
     prompt = f"""
@@ -51,6 +51,10 @@ def write_section_narrative(section_meta, topic, metaphor, profile):
     Writes the educational text. 
     FIX: Now strictly bans conversational filler ("Of course...").
     """
+    import google.generativeai as genai
+    api_key = os.getenv("GEMINI_API_KEY")
+    if api_key:
+        genai.configure(api_key=api_key)
     model = genai.GenerativeModel('gemini-2.5-pro')
     
     prompt = f"""
@@ -77,6 +81,10 @@ def design_section_assets(section_text, section_meta, metaphor):
     Generates supporting assets.
     FIX: Enforces 'correct_answer' (Integer) for ALL quizzes to prevent scoring errors.
     """
+    import google.generativeai as genai
+    api_key = os.getenv("GEMINI_API_KEY")
+    if api_key:
+        genai.configure(api_key=api_key)
     model = genai.GenerativeModel('gemini-2.5-pro')
     
     # Determine required assets based on section type

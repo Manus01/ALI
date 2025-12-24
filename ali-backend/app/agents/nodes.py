@@ -1,17 +1,7 @@
 ﻿import os
 import json
-import pandas as pd
-import google.generativeai as genai
 from google.cloud import firestore
 from app.agents.state import AgentState
-
-# Configure the native SDK
-# This bypasses litellm issues entirely
-api_key = os.getenv("GEMINI_API_KEY")
-if api_key:
-    genai.configure(api_key=api_key)
-else:
-    print("⚠️ GEMINI_API_KEY not found. Strategist node will fail.")
 
 # --- NODE 1: THE ANALYST ---
 def analyst_node(state: AgentState) -> dict:
@@ -33,7 +23,12 @@ def analyst_node(state: AgentState) -> dict:
     if not data:
         return {"anomalies": ["No data found. Please connect an integration first."]}
 
-    # 2. Convert to DataFrame
+    # 2. Convert to DataFrame (lazy import to avoid heavy startup cost)
+    try:
+        import pandas as pd
+    except Exception:
+        return {"anomalies": ["Analytics temporarily unavailable (pandas missing)."]}
+    
     df = pd.DataFrame(data)
 
     # Normalize columns (handle different APIs)
@@ -124,6 +119,11 @@ def strategist_node(state: AgentState) -> dict:
     """
 
     try:
+        import google.generativeai as genai
+        api_key = os.getenv("GEMINI_API_KEY")
+        if api_key:
+            genai.configure(api_key=api_key)
+
         model = genai.GenerativeModel('gemini-2.5-flash')
         response = model.generate_content(prompt)
         

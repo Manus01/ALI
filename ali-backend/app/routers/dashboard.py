@@ -3,17 +3,17 @@ from app.core.security import verify_token
 from app.services.metricool_client import MetricoolClient # <--- New Import
 from google.cloud import firestore
 
-# Try to import forecasting, fallback if missing
-try:
-    from app.services.forecasting import generate_forecast
-except ImportError:
-    def generate_forecast(data): return []
 
 router = APIRouter()
 db = firestore.Client() # <--- Move Init outside function for efficiency
 
 @router.get("/overview")
 def get_dashboard_overview(user: dict = Depends(verify_token)):
+    # Try to import forecasting, fallback if missing
+    try:
+        from app.services.forecasting import generate_forecast
+    except ImportError:
+        def generate_forecast(data): return []
     """
     Aggregates user profile, REAL performance metrics, and Multi-Channel History.
     Priority: Live Metricool Data > Stored Firestore Data > Empty List (Safe Fallback).
@@ -91,6 +91,7 @@ def get_dashboard_overview(user: dict = Depends(verify_token)):
         forecast = []
         if metrics:
             try:
+                from app.services.forecasting import generate_forecast
                 forecast = generate_forecast(metrics)
             except Exception:
                 forecast = []

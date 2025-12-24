@@ -1,13 +1,18 @@
-import numpy as np
 from datetime import datetime, timedelta
 
 def generate_forecast(history_data: list, days=7) -> list:
-    import pandas as pd
-    from sklearn.linear_model import LinearRegression
     """
     Predicts next 7 days of CPC/Spend using Linear Regression.
     """
     if not history_data or len(history_data) < 3:
+        return []
+
+    try:
+        import pandas as pd
+        import numpy as np
+        from sklearn.linear_model import LinearRegression
+    except Exception as e:
+        # If heavy deps are unavailable, gracefully skip forecasting
         return []
 
     df = pd.DataFrame(history_data)

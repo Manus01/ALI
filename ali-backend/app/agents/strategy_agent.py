@@ -1,11 +1,9 @@
+import os
 import json
 import logging
 from typing import List, Dict, Optional
 from datetime import datetime
 from pydantic import BaseModel, Field
-from google import genai
-from google.genai import types
-from google.genai.errors import APIError
 
 from .base_agent import BaseAgent
 from app.services.windsor_client import WindsorClient
@@ -50,6 +48,13 @@ def predict_cpc_change(
     """
 
     try:
+        from google import genai
+        from google.genai import types
+
+        api_key = os.getenv("GEMINI_API_KEY")
+        if api_key:
+            genai.configure(api_key=api_key)
+
         # Use Gemini to act as the Prediction Engine
         client = genai.Client()
         
@@ -84,12 +89,26 @@ class StrategyAgent(BaseAgent):
     def __init__(self, agent_name: str = "Strategy Agent"):
         super().__init__(agent_name)
         self.model = 'gemini-2.0-pro-exp-02-05' # High reasoning capability
-        self.client = genai.Client()
+        self.client = None
         self.tools = [predict_cpc_change]
         
         # Services for data fetching
         self.db = firestore.Client()
         self.crypto_service = CryptoService()
+
+    def _ensure_client(self):
+        if self.client:
+            return self.client
+        try:
+            from google import genai
+            api_key = os.getenv("GEMINI_API_KEY")
+            if api_key:
+                genai.configure(api_key=api_key)
+            self.client = genai.Client()
+        except Exception as e:
+            logger.error(f"GenAI client init failed: {e}")
+            self.client = None
+        return self.client
 
     def _fetch_real_data(self, user_id: str) -> List[Dict]:
         """
@@ -125,7 +144,17 @@ class StrategyAgent(BaseAgent):
         """
         Generates a marketing strategy based on REAL Windsor.ai data.
         """
-        
+        client = self._ensure_client()
+        if not client:
+            return json.dumps({
+                "title": "AI Unavailable",
+                "summary": "GenAI client not initialized.",
+                "strategy_steps": [],
+                "metrics_to_watch": [],
+                "prediction": None,
+                "created_at": datetime.now().isoformat()
+            })
+
         # 1. GET REAL DATA
         historical_data = self._fetch_real_data(user_id)
         
@@ -181,17 +210,30 @@ class StrategyAgent(BaseAgent):
         """
 
         # 4. AGENT EXECUTION LOOP
+        try:
+            from google.genai import types
+        except Exception as e:
+            logger.error(f"Types import failed: {e}")
+            return json.dumps({
+                "title": "AI Unavailable",
+                "summary": "GenAI types not available.",
+                "strategy_steps": [],
+                "metrics_to_watch": [],
+                "prediction": None,
+                "created_at": datetime.now().isoformat()
+            })
+        
         messages = [types.Content(role="user", parts=[types.Part.from_text(user_prompt_with_data)])]
         
         # A. Plan & Tool Call
-        response = self.client.models.generate_content(
-            model=self.model,
-            contents=messages,
-            config=types.GenerateContentConfig(
-                system_instruction=system_instruction,
-                tools=self.tools
-            )
-        )
+        response = client.models.generate_content(
+             model=self.model,
+             contents=messages,
+             config=types.GenerateContentConfig(
+                 system_instruction=system_instruction,
+                 tools=self.tools
+             )
+         )
 
         # B. Handle Tool Call
         if response.function_calls:
@@ -204,22 +246,22 @@ class StrategyAgent(BaseAgent):
                 tool_output = predict_cpc_change(**args)
                 
                 tool_result_part = types.Part.from_function_response(
-                    name="predict_cpc_change",
-                    response={"prediction_result": tool_output.model_dump()}
-                )
+                     name="predict_cpc_change",
+                     response={"prediction_result": tool_output.model_dump()}
+                 )
                 
                 # Append result and ask for final JSON
                 messages.append(response.candidates[0].content)
                 messages.append(types.Content(role="tool", parts=[tool_result_part]))
                 
-                final_response = self.client.models.generate_content(
-                    model=self.model,
-                    contents=messages,
-                    config=types.GenerateContentConfig(
-                        system_instruction=system_instruction,
-                        response_mime_type="application/json"
-                    )
-                )
+                final_response = client.models.generate_content(
+                     model=self.model,
+                     contents=messages,
+                     config=types.GenerateContentConfig(
+                         system_instruction=system_instruction,
+                         response_mime_type="application/json"
+                     )
+                 )
                 return final_response.text
 
         # Fallback if no tool called (rare)

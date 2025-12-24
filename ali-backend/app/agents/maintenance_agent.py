@@ -1,10 +1,8 @@
 ﻿import os
 import json
-import google.generativeai as genai
 from dotenv import load_dotenv
 
 load_dotenv()
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 def review_tutorial_relevance(tutorial_data: dict, current_metrics: list, user_profile: dict) -> dict:
     """
@@ -46,6 +44,11 @@ def review_tutorial_relevance(tutorial_data: dict, current_metrics: list, user_p
     """
     
     try:
+        import google.generativeai as genai
+        api_key = os.getenv("GEMINI_API_KEY")
+        if api_key:
+            genai.configure(api_key=api_key)
+
         model = genai.GenerativeModel('gemini-2.5-flash')
         response = model.generate_content(prompt)
         text = response.text.replace("```json", "").replace("```", "").strip()

@@ -1,15 +1,23 @@
-﻿from fastapi import FastAPI
+﻿import os
+import logging
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
-import os
 
-# --- ROUTER IMPORTS ---
-# We verify these exist based on our work so far
+# --- 1. GLOBAL LOGGING SETUP ---
+# Standardized for Cloud Run observability
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("ali_platform")
+
+load_dotenv()
+
+# --- 2. ROUTER IMPORTS ---
+# Audit confirmed these routers now use lazy loading internally
 from app.routers import (
     auth, 
     dashboard, 
     tutorials, 
-    jobs,          
+    jobs,           
     assessments, 
     notifications,
     publisher,
@@ -18,22 +26,25 @@ from app.routers import (
     admin
 )
 
-# These appear to be placeholders or future files you have. 
-# Ensure these files actually exist in app/routers/, or the app will crash.
+# Optional Routers with Defensive Imports
 try:
     from app.routers import strategy, studio, repurpose, execution, maintenance
 except ImportError:
     strategy = studio = repurpose = execution = maintenance = None
-    print("⚠️ Warning: Some optional routers (strategy, studio, etc.) were not found. Skipping them.")
+    logger.warning("⚠️ Some optional routers (strategy, studio, etc.) were not found. Skipping.")
 
-load_dotenv()
+# --- 3. APP INITIALIZATION ---
+app = FastAPI(
+    title="ALI Platform", 
+    version="4.0",
+    description="Optimized for GCP Cloud Run with Lazy Loading"
+)
 
-app = FastAPI(title="ALI Platform", version="4.0")
-
-# --- 1. CORS CONFIGURATION (Mandatory for Frontend) ---
+# --- 4. CORS CONFIGURATION (Updated for Production) ---
 origins = [
-    "http://localhost:5173",  # React Localhost
+    "http://localhost:5173",
     "http://127.0.0.1:5173",
+    "https://ali-frontend-1016401242911.us-central1.run.app", # Production URL
 ]
 
 app.add_middleware(
@@ -44,9 +55,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# --- 2. REGISTER ROUTERS ---
+# --- 5. REGISTER ROUTERS ---
 
-# Core Systems
+# Core Identity & Data Systems
 app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
 app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"])
 app.include_router(notifications.router, prefix="/api/notifications", tags=["Notifications"])
@@ -54,21 +65,27 @@ app.include_router(webhook.router, prefix="/api", tags=["Webhooks"])
 app.include_router(integration.router, prefix="/api", tags=["Integrations"])
 app.include_router(admin.router, prefix="/api/admin", tags=["Admin Research"])
 
-# Publisher System
+# Media & Publisher System
 app.include_router(publisher.router, prefix="/api", tags=["Publisher"])
 
-# Learning Engine
+# AI Learning & Agent Engine
 app.include_router(tutorials.router, prefix="/api", tags=["Tutorials"])
-app.include_router(jobs.router, prefix="/api", tags=["Jobs"]) # <--- Added this
+app.include_router(jobs.router, prefix="/api", tags=["Jobs"])
 app.include_router(assessments.router, prefix="/api", tags=["Assessments"])
 
-# Future Modules (Only include if import succeeded)
+# Future/Optional Modules
 if strategy: app.include_router(strategy.router, prefix="/api", tags=["Strategy"])
 if studio: app.include_router(studio.router, prefix="/api", tags=["Studio"])
 if repurpose: app.include_router(repurpose.router, prefix="/api", tags=["Repurpose"])
 if execution: app.include_router(execution.router, prefix="/api", tags=["Execution"])
 if maintenance: app.include_router(maintenance.router, prefix="/api", tags=["Maintenance"])
 
+# --- 6. HEALTH CHECK ---
 @app.get("/")
 def read_root():
-    return {"status": "alive", "service": "ALI Platform v4.0"}
+    """Returns system status and current project environment."""
+    return {
+        "status": "alive", 
+        "service": "ALI Platform v4.0",
+        "project_id": os.getenv("PROJECT_ID", "unknown")
+    }

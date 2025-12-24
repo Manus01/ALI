@@ -1,19 +1,26 @@
 ﻿import os
 import time
 import csv
+import logging
 from typing import Any, Dict, Iterable, List, Optional
-import dlt
 import requests
-from google.cloud import firestore # Added missing import
 
+# --- CONFIGURATION ---
+logger = logging.getLogger(__name__)
 # TikTok Ads integrated report endpoint
 TIKTOK_REPORT_URL = "https://business-api.tiktok.com/open_api/v1.3/report/integrated/get/"
 
-@dlt.source(name="tiktok_ads")
 def tiktok_ads_source(access_token: str, advertiser_id: str):
     """
     DLT source factory for TikTok Ads reporting.
+    Lazily imports dlt to avoid heavy startup cost.
     """
+    try:
+        import dlt
+    except Exception as e:
+        logger.error(f"❌ dlt library unavailable: {e}")
+        raise RuntimeError(f"dlt library unavailable: {e}")
+
     @dlt.resource(write_disposition="append")
     def campaign_performance() -> Iterable[List[Dict[str, Any]]]:
         headers = {"Access-Token": access_token}
@@ -71,11 +78,17 @@ def tiktok_ads_source(access_token: str, advertiser_id: str):
 
     return [campaign_performance]
 
-@dlt.source(name="yandex_ads")
 def yandex_ads_source(access_token: str, client_login: str):
     """
     DLT source factory for Yandex.Direct reporting.
+    Lazily imports dlt to avoid heavy startup cost.
     """
+    try:
+        import dlt
+    except Exception as e:
+        logger.error(f"❌ dlt library unavailable: {e}")
+        raise RuntimeError(f"dlt library unavailable: {e}")
+
     YANDEX_REPORT_URL = "https://api.direct.yandex.com/json/v5/reports"
 
     @dlt.resource(write_disposition="append")
@@ -133,8 +146,6 @@ def yandex_ads_source(access_token: str, client_login: str):
                 return
 
             lines = [ln for ln in text.splitlines() if ln.strip()]
-            # Skip report header lines (usually start with report name)
-            # A simple heuristic: find the header row starting with "Date"
             start_index = 0
             for i, line in enumerate(lines):
                 if line.startswith("Date"):
@@ -154,14 +165,17 @@ def yandex_ads_source(access_token: str, client_login: str):
 def run_ingestion_pipeline(source_name: str, access_token: str, ad_account_id: str, user_id: str) -> dict:
     """
     Runs the pipeline and loads data into Firestore under the user's document.
+    Ensures Firestore client is initialized only when called.
     """
-    print(f"🚀 Starting Ingestion for User: {user_id}...")
+    logger.info(f"🚀 Starting Ingestion for User: {user_id}...")
+    
+    # Lazy init of Firestore to prevent global client overhead at boot
+    from google.cloud import firestore
     db = firestore.Client()
     
     if source_name == 'tiktok':
         data_generator = tiktok_ads_source(access_token, ad_account_id)
     elif source_name == 'yandex':
-        # Yandex uses ad_account_id as client_login for this signature
         data_generator = yandex_ads_source(access_token, ad_account_id) 
     else:
         raise ValueError("Unknown source")
@@ -169,8 +183,7 @@ def run_ingestion_pipeline(source_name: str, access_token: str, ad_account_id: s
     record_count = 0
     batch = db.batch()
     
-    # Iterate through the dlt resource
-    # dlt sources return a list of resources, we pick the first one
+    # pick the first dlt resource
     resource = list(data_generator)[0]
     
     for page in resource():
@@ -178,7 +191,7 @@ def run_ingestion_pipeline(source_name: str, access_token: str, ad_account_id: s
             # Create unique ID. Fallback to random if fields missing.
             date_val = record.get('stat_time_day') or record.get('Date') or str(int(time.time()))
             camp_id = record.get('campaign_id') or record.get('CampaignName') or 'unknown'
-            doc_id = f"{date_val}_{camp_id}".replace("/", "-") # Sanitize ID
+            doc_id = f"{date_val}_{camp_id}".replace("/", "-")
             
             doc_ref = db.collection('users').document(user_id)\
                         .collection('campaign_performance').document(doc_id)
@@ -186,12 +199,12 @@ def run_ingestion_pipeline(source_name: str, access_token: str, ad_account_id: s
             batch.set(doc_ref, record)
             record_count += 1
 
-            if record_count % 400 == 0: # Firestore limit is 500, safer at 400
+            if record_count % 400 == 0: # Safe Firestore batch limit
                 batch.commit()
                 batch = db.batch()
 
     if record_count > 0:
         batch.commit()
         
-    print(f"✅ Ingested {record_count} records for {user_id}")
+    logger.info(f"✅ Ingested {record_count} records for {user_id}")
     return {"status": "success", "count": record_count}
