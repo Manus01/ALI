@@ -9,35 +9,39 @@ def initialize_firebase():
     if firebase_admin._apps:
         return firestore.client()
 
-    # 1. Check Env Var first
-    cred_path = os.getenv('FIREBASE_CREDENTIALS_PATH')
+    # 1. Get path from Env Var
+    cred_path = os.getenv('FIREBASE_CREDENTIALS_PATH', '/app/secrets/service-account.json')
     
-    # 2. If Env Var is empty, or file doesn't exist, try common Cloud Run mount paths
-    if not cred_path or not os.path.exists(cred_path):
-        fallbacks = [
-            "/app/secrets/service-account.json",
-            "/app/secrets/master-service-account",
-            "service-account.json",
-            "firebase_credentials.json"
-        ]
-        for path in fallbacks:
-            if os.path.exists(path):
-                cred_path = path
-                break
+    # 2. Safety Check: If folder exists but file name is different
+    if not os.path.exists(cred_path):
+        logger.info("🔍 Credential path not found, scanning /app/secrets...")
+        if os.path.exists("/app/secrets"):
+            files = os.listdir("/app/secrets")
+            if files:
+                # If there's only one file, use it regardless of name
+                cred_path = os.path.join("/app/secrets", files[0])
+                logger.info(f"💡 Auto-detected secret file: {cred_path}")
 
     try:
-        if cred_path and os.path.exists(cred_path):
+        if os.path.exists(cred_path):
             logger.info(f"🔐 Initializing Firebase with: {cred_path}")
             cred = credentials.Certificate(cred_path)
             firebase_admin.initialize_app(cred)
             return firestore.client()
         else:
-            # THIS IS THE CRITICAL LOG: It tells us exactly what the container sees
-            available = os.listdir("/app/secrets") if os.path.exists("/app/secrets") else "Folder missing"
-            logger.error(f"❌ FIREBASE ERROR: No credentials found. /app/secrets contains: {available}")
+            logger.error(f"❌ FIREBASE ERROR: No credentials at {cred_path}. Folder exists: {os.path.exists('/app/secrets')}")
             return None
     except Exception as e:
         logger.error(f"❌ Firebase Init Failed: {e}")
         return None
 
-# Rest of your verify_token logic...
+# Ensure verify_token is present below as we restored it earlier
+def verify_token(id_token: str):
+    try:
+        decoded_token = auth.verify_id_token(id_token)
+        return decoded_token
+    except Exception as e:
+        logger.error(f"🛡️ Token verification failed: {e}")
+        return None
+
+db = initialize_firebase()
