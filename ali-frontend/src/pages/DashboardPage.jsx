@@ -8,7 +8,7 @@ import { useAuth } from '../hooks/useAuth';
 import { useNavigate, Link } from 'react-router-dom';
 import {
     FaTools, FaCheckCircle, FaExclamationTriangle, FaPlug, FaLightbulb, FaVideo, FaArrowRight,
-    FaInstagram, FaLinkedin, FaFacebook, FaTiktok, FaLayerGroup // <--- New Icons
+    FaInstagram, FaLinkedin, FaFacebook, FaTiktok, FaLayerGroup
 } from 'react-icons/fa';
 import { API_URL } from '../api_config';
 
@@ -34,39 +34,50 @@ export default function DashboardPage() {
     // --- NEW: Filter State (Default to 'all') ---
     const [activeFilter, setActiveFilter] = useState('all');
 
-    // 1. Data Fetching (UNCHANGED)
+    // 1. Data Fetching
     const fetchDashboardData = useCallback(async () => {
         try {
             if (!currentUser) return;
             const token = await currentUser.getIdToken();
 
+            // SENIOR DEV FIX: Added params object with id_token
+            // This prevents the 422 Unprocessable Entity error
             const response = await axios.get(
                 `${API_URL}/api/dashboard/overview`,
-                { headers: { Authorization: `Bearer ${token}` } }
+                {
+                    headers: { Authorization: `Bearer ${token}` },
+                    params: { id_token: token }
+                }
             );
 
             setData(response.data);
             setLoading(false);
         } catch (error) {
             console.error('❌ Dashboard Error:', error);
-            setError(error.response?.data?.detail || "Failed to load dashboard data");
+            // Safety check: Ensure error message is a string to prevent React Crash #31
+            const msg = typeof error.response?.data?.detail === 'string'
+                ? error.response.data.detail
+                : "Failed to load dashboard data";
+            setError(msg);
             setLoading(false);
         }
     }, [currentUser]);
 
-    // 2. Trigger Fetch (UNCHANGED)
+    // 2. Trigger Fetch
     useEffect(() => {
         fetchDashboardData();
     }, [fetchDashboardData]);
 
-    // 3. Maintenance Handler (UNCHANGED)
+    // 3. Maintenance Handler
     const handleMaintenance = async () => {
         if (!currentUser) return;
         setMaintenanceLoading(true);
         try {
             const token = await currentUser.getIdToken();
+            // SENIOR DEV FIX: Added params object here too
             await axios.post(`${API_URL}/api/maintenance/run`, {}, {
-                headers: { Authorization: `Bearer ${token}` }
+                headers: { Authorization: `Bearer ${token}` },
+                params: { id_token: token }
             });
             alert("Maintenance triggered successfully.");
         } catch (err) {
@@ -77,7 +88,7 @@ export default function DashboardPage() {
         }
     };
 
-    // 4. Chart Data Preparation (UPDATED FOR MULTI-CHANNEL)
+    // 4. Chart Data Preparation
     const getChartData = () => {
         // Fallback checks
         if (!data) return null;
@@ -152,7 +163,7 @@ export default function DashboardPage() {
         return null;
     };
 
-    // 5. Loading / Error States (UNCHANGED)
+    // 5. Loading / Error States
     if (loading) return (
         <div className="p-10 flex items-center justify-center text-slate-400 h-screen">
             <div className="animate-spin w-6 h-6 border-2 border-primary border-t-transparent rounded-full mr-2"></div>
@@ -165,7 +176,7 @@ export default function DashboardPage() {
             <div className="bg-red-50 p-6 rounded-lg border border-red-100 shadow-sm text-center">
                 <FaExclamationTriangle className="text-3xl mb-2 mx-auto" />
                 <p className="font-bold text-lg">System Error</p>
-                <p className="text-sm opacity-80">{error}</p>
+                <p className="text-sm opacity-80">{typeof error === 'string' ? error : "Unknown Error"}</p>
                 <button
                     onClick={fetchDashboardData}
                     className="mt-4 px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition"
@@ -201,7 +212,7 @@ export default function DashboardPage() {
 
     return (
         <div className="p-8 max-w-7xl mx-auto space-y-8 animate-fade-in pb-20">
-            {/* Header (UNCHANGED) */}
+            {/* Header */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
                 <div>
                     <h1 className="text-3xl font-bold text-slate-800 tracking-tight">Command Center</h1>
@@ -311,7 +322,7 @@ export default function DashboardPage() {
                 </div>
             )}
 
-            {/* --- PROFILE SUMMARY (UNCHANGED) --- */}
+            {/* --- PROFILE SUMMARY --- */}
             <div className="glass-panel p-6 rounded-xl border border-white/50 bg-white shadow-sm">
                 {userProfile ? (
                     <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -352,7 +363,7 @@ export default function DashboardPage() {
                 )}
             </div>
 
-            {/* Agent Status & Rank (UNCHANGED) */}
+            {/* Agent Status & Rank */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="glass-panel p-6 rounded-xl flex items-center gap-4 border border-white/50 bg-white shadow-sm">
                     <div className="relative flex-shrink-0">
@@ -392,7 +403,7 @@ export default function DashboardPage() {
                 </div>
             )}
 
-            {/* Insight (UNCHANGED) */}
+            {/* Insight */}
             <div className="bg-gradient-to-r from-slate-800 to-slate-900 rounded-xl p-8 text-white relative overflow-hidden shadow-xl">
                 <div className="absolute -top-4 -right-4 p-8 opacity-10 text-9xl rotate-12">💡</div>
                 <div className="relative z-10">
