@@ -3,12 +3,14 @@
  * Dynamically detects the backend environment.
  */
 
-// 1. Prioritize the Cloud Run environment variable
-// 2. Fallback to local development server if VITE_API_URL is missing
+// 1. Prioritize the Cloud Run environment variable, fallback to local
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8001";
 
-// Defensive check: Ensure no trailing slashes to prevent double-slash errors in endpoints
+// 2. Clean trailing slashes
 export const API_URL = API_BASE_URL.replace(/\/$/, "");
+
+// 3. COMPATIBILITY ALIAS: Components like DashboardPage.jsx expect 'BASE_URL'
+export const BASE_URL = API_URL;
 
 console.log(`🌐 ALI Frontend: Connected to Backend at ${API_URL}`);
 

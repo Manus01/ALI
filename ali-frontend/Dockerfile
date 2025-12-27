@@ -1,11 +1,11 @@
 # --- Stage 1: Build the React App ---
-FROM node:18-alpine as build
+# UPGRADED: Changed from node:18 to node:20 to satisfy Vite 7 requirements
+FROM node:20-alpine as build
 
 WORKDIR /app
 
 # Copy package info and install dependencies
 COPY package*.json ./
-# FIXED: Removed the extra 's' from the flag
 RUN npm install --legacy-peer-deps
 
 # Copy source code and build
