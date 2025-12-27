@@ -17,11 +17,12 @@ export default function StudioPage() {
         setError('');
 
         try {
-            const token = await currentUser.getIdToken();
-            const response = await axios.post('/api/generate/video',
-                { prompt, style: "cinematic" },
-                { headers: { Authorization: `Bearer ${token}` } }
-            );
+            // 2. UPDATE THIS LINE
+            // Old: const response = await axios.post('/api/generate/video', ...
+            const response = await axios.post(`${API_URL}/api/generate/video`, {
+                prompt: promptText,
+                style: style
+            });
 
             setAssetUrl(response.data.video_url);
         } catch (err) {
