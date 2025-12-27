@@ -3,6 +3,7 @@ import { useAuth } from '../hooks/useAuth';
 import axios from 'axios';
 import { FaHashtag, FaCheckCircle, FaClock, FaEnvelope, FaPaperPlane } from 'react-icons/fa';
 import { getFirestore, collection, query, where, onSnapshot } from 'firebase/firestore';
+import { API_URL } from '../api_config'; // <--- FIX 1: Import the dynamic URL
 
 export default function IntegrationsPage() {
     const { currentUser } = useAuth();
@@ -36,7 +37,8 @@ export default function IntegrationsPage() {
     const handleRequestAccess = async () => {
         try {
             const token = await currentUser.getIdToken();
-            await axios.post('http://localhost:8001/api/connect/metricool/request', {},
+            // FIX 2: Use dynamic API_URL instead of localhost
+            await axios.post(`${API_URL}/api/connect/metricool/request`, {},
                 { headers: { Authorization: `Bearer ${token}` } }
             );
             // No need to set state manually, Firestore listener will update UI to 'pending'

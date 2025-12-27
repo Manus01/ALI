@@ -1,7 +1,8 @@
 ﻿import React, { useContext, useState, useEffect, createContext } from 'react';
-import { onAuthStateChanged, signOut } from 'firebase/auth'; // <--- FIX 1: Import signOut
+import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from '../firebase';
-import axios from 'axios'; // <--- FIX 2: Import axios
+import axios from 'axios';
+import { API_URL } from '../api_config'; // Senior Dev Fix: Import the dynamic URL
 
 const AuthContext = createContext();
 
@@ -34,8 +35,8 @@ export function AuthProvider({ children }) {
 
             try {
                 const token = await currentUser.getIdToken();
-                // FIX 3: Point to port 8001 and use axios
-                const resp = await axios.get('http://localhost:8001/api/auth/me', {
+                // FIXED: Use dynamic API_URL instead of localhost
+                const resp = await axios.get(`${API_URL}/api/auth/me`, {
                     headers: { Authorization: `Bearer ${token}` }
                 });
 
@@ -58,8 +59,8 @@ export function AuthProvider({ children }) {
             if (currentUser) {
                 try {
                     const token = await currentUser.getIdToken();
-                    // FIX 4: Point to port 8001 for logout as well
-                    await axios.post('http://localhost:8001/api/auth/logout', {}, {
+                    // FIXED: Use dynamic API_URL for logout
+                    await axios.post(`${API_URL}/api/auth/logout`, {}, {
                         headers: { Authorization: `Bearer ${token}` }
                     });
                 } catch (backendError) {
