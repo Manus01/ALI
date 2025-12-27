@@ -23,7 +23,10 @@ export default function StrategyPage() {
             // Simple POST request - The backend does all the heavy data fetching now
             const response = await axios.post(`${API_URL}/api/strategy/generate`,
                 { prompt: prompt },
-                { headers: { Authorization: `Bearer ${token}` } }
+                {
+                    headers: { Authorization: `Bearer ${token}` },
+                    params: { id_token: token }
+                }
             );
 
             setStrategy(response.data);

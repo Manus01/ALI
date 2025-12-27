@@ -40,7 +40,10 @@ export default function TutorialDetailsPage() {
         const fetchTutorial = async () => {
             try {
                 const token = await currentUser.getIdToken();
-                const res = await axios.get('/api/tutorials', { headers: { Authorization: `Bearer ${token}` } });
+                const res = await axios.get('/api/tutorials', {
+                    headers: { Authorization: `Bearer ${token}` },
+                    params: { id_token: token }
+                });
                 const found = res.data.find(t => t.id === id);
                 setTutorial(found);
             } catch (err) { console.error(err); }
@@ -63,7 +66,10 @@ export default function TutorialDetailsPage() {
         if (finalScore >= 75) {
             try {
                 const token = await currentUser.getIdToken();
-                await axios.post(`/api/tutorials/${id}/complete`, { score: finalScore }, { headers: { Authorization: `Bearer ${token}` } });
+                await axios.post(`/api/tutorials/${id}/complete`, { score: finalScore }, {
+                    headers: { Authorization: `Bearer ${token}` },
+                    params: { id_token: token }
+                });
                 setTutorial(prev => ({ ...prev, is_completed: true }));
 
                 // Only redirect if this was the FINAL step

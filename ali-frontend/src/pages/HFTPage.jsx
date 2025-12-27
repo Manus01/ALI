@@ -158,7 +158,10 @@ export default function HFTPage() {
                         raw_score: score,
                         total_rounds: TOTAL_ROUNDS,
                         details: results
-                    }, { headers: { Authorization: `Bearer ${token}` } });
+                    }, {
+                        headers: { Authorization: `Bearer ${token}` },
+                        params: { id_token: token }
+                    });
                     setTimeout(() => navigate('/quiz/marketing'), 1500);
                 } catch (error) { console.error("❌ Save failed:", error); setIsSaving(false); }
             }

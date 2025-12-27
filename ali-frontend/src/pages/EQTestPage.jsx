@@ -86,7 +86,8 @@ export default function EQTestPage() {
                 score: averageScore,
                 details: []
             }, {
-                headers: { Authorization: `Bearer ${token}` }
+                headers: { Authorization: `Bearer ${token}` },
+                params: { id_token: token }
             });
             // Final Destination: Dashboard
             navigate("/dashboard");

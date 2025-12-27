@@ -195,7 +195,8 @@ export default function MarketingTestPage() {
                     raw_answers: finalAnswers
                 }
             }, {
-                headers: { Authorization: `Bearer ${token}` }
+                headers: { Authorization: `Bearer ${token}` },
+                params: { id_token: token }
             });
 
             // Navigate to Next Test

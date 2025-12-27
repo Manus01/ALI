@@ -127,7 +127,10 @@ function RepurposeWidget() {
             const token = await currentUser.getIdToken();
             const res = await axios.post('/api/repurpose/content',
                 { origin_content: topic, platform_target: "LinkedIn" },
-                { headers: { Authorization: `Bearer ${token}` } }
+                {
+                    headers: { Authorization: `Bearer ${token}` },
+                    params: { id_token: token }
+                }
             );
             setResult(res.data.data);
         } catch (err) {

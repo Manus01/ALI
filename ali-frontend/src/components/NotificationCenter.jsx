@@ -77,7 +77,8 @@ export default function NotificationCenter() {
             const token = await currentUser.getIdToken();
             // Call the backend endpoint we created earlier
             await axios.delete(`/api/notifications/${noteId}`, {
-                headers: { Authorization: `Bearer ${token}` }
+                headers: { Authorization: `Bearer ${token}` },
+                params: { id_token: token }
             });
         } catch (err) {
             console.error("Failed to delete notification", err);

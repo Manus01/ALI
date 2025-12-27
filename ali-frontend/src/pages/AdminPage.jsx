@@ -35,7 +35,8 @@ export default function AdminPage() {
         try {
             const token = await currentUser.getIdToken();
             const res = await axios.get(`${API_URL}/api/admin/research/logs`, {
-                headers: { Authorization: `Bearer ${token}` }
+                headers: { Authorization: `Bearer ${token}` },
+                params: { id_token: token }
             });
             setLogs(res.data.data);
         } catch (err) {
@@ -49,7 +50,10 @@ export default function AdminPage() {
             const token = await currentUser.getIdToken();
             await axios.post(`${API_URL}/api/admin/users/link-metricool`,
                 { target_user_id: targetUid, metricool_blog_id: blogId },
-                { headers: { Authorization: `Bearer ${token}` } }
+                {
+                    headers: { Authorization: `Bearer ${token}` },
+                    params: { id_token: token }
+                }
             );
             setActionMsg(`✅ Success: User ${targetUid.slice(0, 5)}... linked to Brand ${blogId}`);
             setTargetUid("");
@@ -64,7 +68,10 @@ export default function AdminPage() {
         try {
             const token = await currentUser.getIdToken();
             const res = await axios.post(`${API_URL}/api/admin/jobs/trigger-nightly-log`, {},
-                { headers: { Authorization: `Bearer ${token}` } }
+                {
+                    headers: { Authorization: `Bearer ${token}` },
+                    params: { id_token: token }
+                }
             );
             setActionMsg(`✅ Job Complete: Processed ${res.data.processed} users.`);
             fetchLogs(); // Refresh table

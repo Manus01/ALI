@@ -39,7 +39,10 @@ export default function IntegrationsPage() {
             const token = await currentUser.getIdToken();
             // FIX 2: Use dynamic API_URL instead of localhost
             await axios.post(`${API_URL}/api/connect/metricool/request`, {},
-                { headers: { Authorization: `Bearer ${token}` } }
+                {
+                    headers: { Authorization: `Bearer ${token}` },
+                    params: { id_token: token }
+                }
             );
             // No need to set state manually, Firestore listener will update UI to 'pending'
         } catch (err) {

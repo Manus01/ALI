@@ -78,7 +78,10 @@ export default function StrategyKanban({ initialActions }) {
             const token = await currentUser.getIdToken();
             const res = await axios.post('/api/execute',
                 { tool: item.tool, params: item.params },
-                { headers: { Authorization: `Bearer ${token}` } }
+                {
+                    headers: { Authorization: `Bearer ${token}` },
+                    params: { id_token: token }
+                }
             );
 
             alert(res.data.message);

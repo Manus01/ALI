@@ -48,7 +48,8 @@ export default function TutorialsPage() {
                 const token = await currentUser.getIdToken();
                 // 🛑 FIX: Explicitly point to Port 8001
                 const res = await axios.get(`${API_URL}/api/tutorials/suggestions`, {
-                    headers: { Authorization: `Bearer ${token}` }
+                    headers: { Authorization: `Bearer ${token}` },
+                    params: { id_token: token }
                 });
                 setSuggestions(res.data);
             } catch (err) {
@@ -72,7 +73,7 @@ export default function TutorialsPage() {
             const token = await currentUser.getIdToken();
             // 🛑 FIX: Explicitly point to Port 8001
             await axios.post(`${API_URL}/api/generate/tutorial`, null, {
-                params: { topic: finalTopic },
+                params: { topic: finalTopic, id_token: token },
                 headers: { Authorization: `Bearer ${token}` }
             });
             setCustomTopic('');
