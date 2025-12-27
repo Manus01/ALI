@@ -1,8 +1,7 @@
 ﻿import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../api/axiosInterceptor';
 import { useAuth } from '../hooks/useAuth';
 import { FaUserCog, FaDatabase, FaPlay, FaDownload, FaCheck } from 'react-icons/fa';
-import { API_URL } from '../api_config';
 
 export default function AdminPage() {
     const { currentUser } = useAuth();
@@ -33,11 +32,7 @@ export default function AdminPage() {
 
     const fetchLogs = async () => {
         try {
-            const token = await currentUser.getIdToken();
-            const res = await axios.get(`${API_URL}/api/admin/research/logs`, {
-                headers: { Authorization: `Bearer ${token}` },
-                params: { id_token: token }
-            });
+            const res = await api.get('/api/admin/research/logs');
             setLogs(res.data.data);
         } catch (err) {
             console.error("Failed to fetch logs", err);
@@ -47,13 +42,8 @@ export default function AdminPage() {
     const handleLinkUser = async () => {
         if (!targetUid || !blogId) return;
         try {
-            const token = await currentUser.getIdToken();
-            await axios.post(`${API_URL}/api/admin/users/link-metricool`,
-                { target_user_id: targetUid, metricool_blog_id: blogId },
-                {
-                    headers: { Authorization: `Bearer ${token}` },
-                    params: { id_token: token }
-                }
+            await api.post('/api/admin/users/link-metricool',
+                { target_user_id: targetUid, metricool_blog_id: blogId }
             );
             setActionMsg(`✅ Success: User ${targetUid.slice(0, 5)}... linked to Brand ${blogId}`);
             setTargetUid("");
@@ -66,13 +56,7 @@ export default function AdminPage() {
     const handleRunJob = async () => {
         setLoading(true);
         try {
-            const token = await currentUser.getIdToken();
-            const res = await axios.post(`${API_URL}/api/admin/jobs/trigger-nightly-log`, {},
-                {
-                    headers: { Authorization: `Bearer ${token}` },
-                    params: { id_token: token }
-                }
-            );
+            const res = await api.post('/api/admin/jobs/trigger-nightly-log', {});
             setActionMsg(`✅ Job Complete: Processed ${res.data.processed} users.`);
             fetchLogs(); // Refresh table
         } catch (err) {

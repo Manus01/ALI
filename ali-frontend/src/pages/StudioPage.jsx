@@ -1,8 +1,7 @@
-import React, { useState } from 'react';
-import axios from 'axios';
+import React, { useState, useEffect } from 'react';
+import api from '../api/axiosInterceptor';
 import { useAuth } from '../hooks/useAuth';
-import { API_URL } from '../api_config';
-import { FaVideo, FaMagic, FaDownload, FaImage } from 'react-icons/fa';
+import { FaMagic, FaDownload, FaImage } from 'react-icons/fa';
 
 export default function StudioPage() {
     const { currentUser } = useAuth();
@@ -11,6 +10,16 @@ export default function StudioPage() {
     const [assetUrl, setAssetUrl] = useState(null);
     const [error, setError] = useState('');
 
+    // Cleanup previously created blob URLs to prevent memory leaks
+    useEffect(() => {
+        let urlToRevoke = assetUrl;
+        return () => {
+            if (urlToRevoke && urlToRevoke.startsWith('blob:')) {
+                URL.revokeObjectURL(urlToRevoke);
+            }
+        };
+    }, [assetUrl]);
+
     const handleGenerate = async () => {
         if (!prompt) return;
         setLoading(true);
@@ -18,22 +27,20 @@ export default function StudioPage() {
         setError('');
 
         try {
-            const token = await currentUser.getIdToken();
-            const response = await axios.post(`${API_URL}/api/generate/video`,
+            const response = await api.post('/api/generate/video',
                 {
                     prompt: prompt,
                     style: 'cinematic'
                 },
                 {
-                    headers: { Authorization: `Bearer ${token}` },
-                    params: { id_token: token }
+                    timeout: 120000
                 }
             );
 
             setAssetUrl(response.data.video_url);
         } catch (err) {
             console.error(err);
-            setError(err.response?.data?.detail || "Failed to generate asset.");
+            setError('AI is resting, try again in a moment.');
         } finally {
             setLoading(false);
         }
@@ -125,22 +132,22 @@ function RepurposeWidget() {
     const [topic, setTopic] = useState('');
     const [result, setResult] = useState(null);
     const [loading, setLoading] = useState(false);
+    const [error, setError] = useState('');
 
     const handleRepurpose = async () => {
         if (!topic) return;
         setLoading(true);
+        setError('');
         try {
-            const token = await currentUser.getIdToken();
-            const res = await axios.post('/api/repurpose/content',
+            const res = await api.post('/api/repurpose/content',
                 { origin_content: topic, platform_target: "LinkedIn" },
                 {
-                    headers: { Authorization: `Bearer ${token}` },
-                    params: { id_token: token }
+                    timeout: 120000
                 }
             );
             setResult(res.data.data);
         } catch (err) {
-            alert("Failed to repurpose content.");
+            setError('AI is resting, try again in a moment.');
         } finally {
             setLoading(false);
         }
@@ -171,6 +178,12 @@ function RepurposeWidget() {
                 </div>
             </div>
 
+            {error && (
+                <div className="p-3 bg-red-50 text-red-600 text-sm rounded-lg border border-red-100">
+                    {error}
+                </div>
+            )}
+
             {/* Output Side - Full Width & Centered */}
             {result && (
                 <div className="w-full animate-fade-in border-t border-slate-200 pt-8">
@@ -193,7 +206,7 @@ function RepurposeWidget() {
                                 {result.body}
                             </div>
                             <div className="flex flex-wrap gap-2">
-                                {result.hashtags.map(tag => (
+                                {result.hashtags?.map(tag => (
                                     <span key={tag} className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded-md font-bold">
                                         {tag}
                                     </span>

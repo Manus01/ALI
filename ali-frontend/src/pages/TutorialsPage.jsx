@@ -1,11 +1,10 @@
 ﻿import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import api from '../api/axiosInterceptor';
 import { useAuth } from '../hooks/useAuth';
 import { useNavigate } from 'react-router-dom';
 import { FaPlus, FaRobot, FaCheckCircle, FaLightbulb, FaSearch, FaArrowRight, FaGraduationCap } from 'react-icons/fa';
 // 1. Import Firestore methods
 import { getFirestore, collection, query, where, onSnapshot, orderBy } from 'firebase/firestore';
-import { API_URL } from '../api_config';
 
 export default function TutorialsPage() {
     const { currentUser } = useAuth();
@@ -15,6 +14,7 @@ export default function TutorialsPage() {
     const [activeTab, setActiveTab] = useState('active');
     const [customTopic, setCustomTopic] = useState('');
     const [generationState, setGenerationState] = useState('idle');
+    const [errorMessage, setErrorMessage] = useState('');
 
     // --- 2. REAL-TIME LISTENER ---
     useEffect(() => {
@@ -45,17 +45,13 @@ export default function TutorialsPage() {
         // Still fetch suggestions via API (since they are calculated)
         const fetchSuggestions = async () => {
             try {
-                const token = await currentUser.getIdToken();
-                // GET requests use params for everything
-                const res = await axios.get(`${API_URL}/api/tutorials/suggestions`, {
-                    headers: { Authorization: `Bearer ${token}` },
-                    params: { id_token: token }
-                });
+                const res = await api.get('/api/tutorials/suggestions');
                 setSuggestions(res.data);
             } catch (err) {
                 console.error("Suggestion Fetch Error:", err);
                 // Strict "No Fake Data": default to empty if failed
                 setSuggestions([]);
+                setErrorMessage('AI is resting, try again in a moment.');
             }
         };
         fetchSuggestions();
@@ -69,16 +65,13 @@ export default function TutorialsPage() {
         if (!finalTopic) return;
 
         setGenerationState('loading');
+        setErrorMessage('');
         try {
-            const token = await currentUser.getIdToken();
-
-            // Backend expects topic as query param; id_token also in params for auth
-            await axios.post(
-                `${API_URL}/api/generate/tutorial`,
+            await api.post(
+                '/api/generate/tutorial',
                 null,
                 {
-                    params: { topic: finalTopic, id_token: token },
-                    headers: { Authorization: `Bearer ${token}` }
+                    params: { topic: finalTopic }
                 }
             );
 
@@ -87,7 +80,7 @@ export default function TutorialsPage() {
             setTimeout(() => setGenerationState('idle'), 3000);
         } catch (err) {
             console.error(err);
-            alert("Failed to start generation. Check backend logs.");
+            setErrorMessage('AI is resting, try again in a moment.');
             setGenerationState('idle');
         }
     };
@@ -107,6 +100,12 @@ export default function TutorialsPage() {
                         <p className="text-sm md:text-base text-slate-500">AI-generated curriculum based on your learning style.</p>
                     </div>
                 </div>
+
+                {errorMessage && (
+                    <div className="p-3 bg-red-50 text-red-600 text-sm rounded-lg border border-red-100">
+                        {errorMessage}
+                    </div>
+                )}
 
                 {/* Input Bar */}
                 <div className="flex gap-2 w-full md:max-w-2xl">
@@ -211,4 +210,4 @@ export default function TutorialsPage() {
             </div>
         </div>
     );
-}
+}}

@@ -1,5 +1,5 @@
-﻿from fastapi import APIRouter, Depends, HTTPException, Body
-from pydantic import BaseModel
+﻿from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel, Field
 from app.core.security import verify_token
 from app.agents.strategy_agent import StrategyAgent
 import logging
@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 agent = StrategyAgent()
 
 class StrategyRequest(BaseModel):
-    prompt: str
+    prompt: str = Field(..., min_length=3, max_length=1000)
 
 @router.post("/generate")
 async def generate_marketing_strategy(

@@ -1,8 +1,7 @@
 ﻿import React, { useState } from 'react';
-import axios from 'axios';
+import api from '../api/axiosInterceptor';
 import { useAuth } from '../hooks/useAuth';
 import { FaRobot, FaLightbulb, FaChartLine, FaArrowRight } from 'react-icons/fa';
-import { API_URL } from '../api_config';
 
 export default function StrategyPage() {
     const { currentUser } = useAuth();
@@ -18,21 +17,13 @@ export default function StrategyPage() {
         setStrategy(null);
 
         try {
-            const token = await currentUser.getIdToken();
-
             // Simple POST request - The backend does all the heavy data fetching now
-            const response = await axios.post(`${API_URL}/api/strategy/generate`,
-                { prompt: prompt },
-                {
-                    headers: { Authorization: `Bearer ${token}` },
-                    params: { id_token: token }
-                }
-            );
+            const response = await api.post('/api/strategy/generate', { prompt });
 
             setStrategy(response.data);
         } catch (err) {
             console.error(err);
-            setError("Failed to generate strategy. Please ensure you have connected your Data Sources in the 'Integrations' page.");
+            setError('AI is resting, try again in a moment.');
         } finally {
             setLoading(false);
         }

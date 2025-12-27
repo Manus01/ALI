@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
+import { API_URL } from "../api_config";
 import { useAuth } from "../hooks/useAuth";
 
 // --- EXPANDED QUESTION BANK (Categorized) ---
@@ -188,7 +189,7 @@ export default function MarketingTestPage() {
             const token = await currentUser.getIdToken();
 
             // Send the sophisticated matrix to backend
-            await axios.post("/api/assessments/marketing", {
+            await axios.post(`${API_URL}/api/assessments/marketing`, {
                 score: globalScore,
                 details: {
                     skill_matrix: skillMatrix,

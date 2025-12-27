@@ -1,5 +1,5 @@
 ﻿from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from app.core.security import verify_token
 from app.services.ai_studio import CreativeService
 import google.generativeai as genai
@@ -12,8 +12,8 @@ router = APIRouter()
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 class RepurposeRequest(BaseModel):
-    origin_content: str  # e.g., "Video about sustainable coffee"
-    platform_target: str # e.g., "LinkedIn" or "Blog"
+    origin_content: str = Field(..., min_length=3, max_length=2000)  # e.g., "Video about sustainable coffee"
+    platform_target: str = Field(..., min_length=2, max_length=50) # e.g., "LinkedIn" or "Blog"
 
 @router.post("/repurpose/content")
 def repurpose_content(body: RepurposeRequest, user: dict = Depends(verify_token)):

@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import axios from "axios";
+import api from "../api/axiosInterceptor";
 import { useAuth } from "../hooks/useAuth";
 
 const QUESTIONS = [
@@ -81,13 +81,9 @@ export default function EQTestPage() {
         const averageScore = Math.round(totalScore / QUESTIONS.length);
 
         try {
-            const token = await currentUser.getIdToken();
-            await axios.post("/api/assessments/eq", {
+            await api.post('/api/assessments/eq', {
                 score: averageScore,
                 details: []
-            }, {
-                headers: { Authorization: `Bearer ${token}` },
-                params: { id_token: token }
             });
             // Final Destination: Dashboard
             navigate("/dashboard");

@@ -1,6 +1,7 @@
 ﻿import React, { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
+import { API_URL } from "../api_config";
 import { useAuth } from "../hooks/useAuth";
 
 // --- 1. SHAPE DATABASE (18 Variants) ---
@@ -153,7 +154,7 @@ export default function HFTPage() {
                 setIsSaving(true);
                 try {
                     const token = await currentUser.getIdToken();
-                    await axios.post('/api/assessments/hft', {
+                    await axios.post(`${API_URL}/api/assessments/hft`, {
                         score: Math.round((score / TOTAL_ROUNDS) * 100),
                         raw_score: score,
                         total_rounds: TOTAL_ROUNDS,

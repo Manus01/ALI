@@ -1,5 +1,5 @@
 ﻿from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from app.core.security import verify_token
 from app.services.job_runner import process_tutorial_job
 from app.agents.nodes import analyst_node
@@ -12,7 +12,7 @@ import datetime
 router = APIRouter()
 
 class CompletionRequest(BaseModel):
-    score: float
+    score: float = Field(..., ge=0, le=100)
 
 # --- 1. ASYNC GENERATION (Standard) ---
 @router.post("/generate/tutorial")

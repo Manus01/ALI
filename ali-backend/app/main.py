@@ -1,7 +1,8 @@
 ﻿import os
 import logging
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from dotenv import load_dotenv
 
 # --- 1. GLOBAL LOGGING SETUP ---
@@ -39,6 +40,23 @@ app = FastAPI(
     version="4.0",
     description="Optimized for GCP Cloud Run with Lazy Loading"
 )
+
+
+# --- 3b. REQUEST SIZE LIMIT ---
+MAX_REQUEST_SIZE = int(os.getenv("MAX_REQUEST_SIZE_BYTES", 5 * 1024 * 1024))  # Default 5MB
+
+class LimitRequestSizeMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        content_length = request.headers.get("content-length")
+        if content_length:
+            try:
+                if int(content_length) > MAX_REQUEST_SIZE:
+                    raise HTTPException(status_code=413, detail="Request body too large")
+            except ValueError:
+                pass
+        return await call_next(request)
+
+app.add_middleware(LimitRequestSizeMiddleware)
 
 # --- 4. CORS CONFIGURATION (Updated for Production) ---
 origins = [
@@ -89,3 +107,7 @@ def read_root():
         "service": "ALI Platform v4.0",
         "project_id": os.getenv("PROJECT_ID", "unknown")
     }
+
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}

@@ -1,38 +1,42 @@
 ﻿from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
 from app.core.security import verify_token
 from app.services.ai_studio import CreativeService
+import json
 
 router = APIRouter()
 
 class VideoRequest(BaseModel):
-    prompt: str
-    style: str = "cinematic"
+    prompt: str = Field(..., min_length=3, max_length=1000)
+    style: str = Field("cinematic", min_length=2, max_length=100)
 
 @router.post("/generate/video")
-def generate_video_endpoint(body: VideoRequest, user: dict = Depends(verify_token)):
+async def generate_video_endpoint(body: VideoRequest, user: dict = Depends(verify_token)):
     """
-    Triggers the Creative Engine.
+    Triggers the Creative Engine with a streaming response to keep Cloud Run connections alive.
     """
-    try:
-        service = CreativeService()
-        # This will block for 10-20 seconds while generating
-        asset_url = service.generate_video(body.prompt, body.style)
-        
-        return {
-            "status": "completed",
-            "video_url": asset_url,
-            "message": "Asset generated successfully."
-        }
+    async def stream():
+        # Initial tiny chunk keeps the connection warm during cold starts
+        yield b" "
+        try:
+            service = CreativeService()
+            asset_url = await run_in_threadpool(service.generate_video, body.prompt, body.style)
+            payload = {
+                "status": "completed",
+                "video_url": asset_url,
+                "message": "Asset generated successfully."
+            }
+            yield json.dumps(payload).encode()
+        except Exception as e:
+            error_msg = str(e)
+            print(f"❌ Studio Error: {error_msg}")
+            if "429" in error_msg:
+                yield json.dumps({"status": "error", "detail": "Daily AI quota exceeded."}).encode()
+            elif "404" in error_msg:
+                yield json.dumps({"status": "error", "detail": "AI Model not found (Check Vertex AI Model Garden)."}).encode()
+            else:
+                yield json.dumps({"status": "error", "detail": error_msg}).encode()
 
-    except Exception as e:
-        error_msg = str(e)
-        print(f"❌ Studio Error: {error_msg}")
-        
-        # Friendly error if quota is hit
-        if "429" in error_msg:
-            raise HTTPException(status_code=429, detail="Daily AI quota exceeded.")
-        if "404" in error_msg:
-            raise HTTPException(status_code=404, detail="AI Model not found (Check Vertex AI Model Garden).")
-            
-        raise HTTPException(status_code=500, detail=error_msg)
+    return StreamingResponse(stream(), media_type="application/json")

@@ -1,12 +1,10 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { getFirestore, collection, query, where, onSnapshot, updateDoc, doc } from 'firebase/firestore';
-import axios from 'axios';
+import api from '../api/axiosInterceptor';
 import { useAuth } from '../hooks/useAuth';
 import { FaBell, FaCheck, FaRobot, FaSpinner, FaTimes } from 'react-icons/fa';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-// SENIOR DEV FIX: Import API_URL to fix 405 Error
-import { API_URL } from '../api_config';
 
 export default function NotificationCenter() {
     const { currentUser } = useAuth();
@@ -76,14 +74,7 @@ export default function NotificationCenter() {
     const handleDelete = async (e, noteId) => {
         e.stopPropagation(); // Prevent triggering the click on the card
         try {
-            const token = await currentUser.getIdToken();
-
-            // SENIOR DEV FIX: Use absolute API_URL to prevent 405 Method Not Allowed
-            // Also keeps the id_token param to prevent 422 Unprocessable Entity
-            await axios.delete(`${API_URL}/api/notifications/${noteId}`, {
-                headers: { Authorization: `Bearer ${token}` },
-                params: { id_token: token }
-            });
+            await api.delete(`/api/notifications/${noteId}`);
         } catch (err) {
             console.error("Failed to delete notification", err);
         }

@@ -1,7 +1,7 @@
 ﻿import React, { useState, useEffect } from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { FaGripVertical, FaBolt, FaCheckCircle, FaUserEdit } from 'react-icons/fa';
-import axios from 'axios';
+import api from '../api/axiosInterceptor';
 import { useAuth } from '../hooks/useAuth';
 
 // Columns Configuration
@@ -75,14 +75,7 @@ export default function StrategyKanban({ initialActions }) {
 
         setExecutingId(item.id);
         try {
-            const token = await currentUser.getIdToken();
-            const res = await axios.post('/api/execute',
-                { tool: item.tool, params: item.params },
-                {
-                    headers: { Authorization: `Bearer ${token}` },
-                    params: { id_token: token }
-                }
-            );
+            const res = await api.post('/api/execute', { tool: item.tool, params: item.params });
 
             alert(res.data.message);
 
