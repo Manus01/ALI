@@ -46,7 +46,7 @@ export default function TutorialsPage() {
         const fetchSuggestions = async () => {
             try {
                 const token = await currentUser.getIdToken();
-                // 🛑 FIX: Explicitly point to Port 8001
+                // GET requests use params for everything
                 const res = await axios.get(`${API_URL}/api/tutorials/suggestions`, {
                     headers: { Authorization: `Bearer ${token}` },
                     params: { id_token: token }
@@ -71,11 +71,21 @@ export default function TutorialsPage() {
         setGenerationState('loading');
         try {
             const token = await currentUser.getIdToken();
-            // 🛑 FIX: Explicitly point to Port 8001
-            await axios.post(`${API_URL}/api/generate/tutorial`, null, {
-                params: { topic: finalTopic, id_token: token },
-                headers: { Authorization: `Bearer ${token}` }
-            });
+
+            // 🛑 SENIOR DEV FIX: 
+            // 1. `topic` goes in the BODY (2nd argument) as JSON
+            // 2. `id_token` stays in PARAMS (3rd argument) for Auth
+            await axios.post(
+                `${API_URL}/api/generate/tutorial`,
+                {
+                    topic: finalTopic
+                },
+                {
+                    params: { id_token: token },
+                    headers: { Authorization: `Bearer ${token}` }
+                }
+            );
+
             setCustomTopic('');
             setGenerationState('success');
             setTimeout(() => setGenerationState('idle'), 3000);
