@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import axios from 'axios';
 import { useAuth } from '../hooks/useAuth';
+import { API_URL } from '../api_config';
 import { FaVideo, FaMagic, FaDownload, FaImage } from 'react-icons/fa';
 
 export default function StudioPage() {
@@ -17,12 +18,17 @@ export default function StudioPage() {
         setError('');
 
         try {
-            // 2. UPDATE THIS LINE
-            // Old: const response = await axios.post('/api/generate/video', ...
-            const response = await axios.post(`${API_URL}/api/generate/video`, {
-                prompt: promptText,
-                style: style
-            });
+            const token = await currentUser.getIdToken();
+            const response = await axios.post(`${API_URL}/api/generate/video`,
+                {
+                    prompt: prompt,
+                    style: 'cinematic'
+                },
+                {
+                    headers: { Authorization: `Bearer ${token}` },
+                    params: { id_token: token }
+                }
+            );
 
             setAssetUrl(response.data.video_url);
         } catch (err) {

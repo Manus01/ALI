@@ -72,16 +72,12 @@ export default function TutorialsPage() {
         try {
             const token = await currentUser.getIdToken();
 
-            // 🛑 SENIOR DEV FIX: 
-            // 1. `topic` goes in the BODY (2nd argument) as JSON
-            // 2. `id_token` stays in PARAMS (3rd argument) for Auth
+            // Backend expects topic as query param; id_token also in params for auth
             await axios.post(
                 `${API_URL}/api/generate/tutorial`,
+                null,
                 {
-                    topic: finalTopic
-                },
-                {
-                    params: { id_token: token },
+                    params: { topic: finalTopic, id_token: token },
                     headers: { Authorization: `Bearer ${token}` }
                 }
             );
