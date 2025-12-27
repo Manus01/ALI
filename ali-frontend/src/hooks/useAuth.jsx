@@ -19,7 +19,6 @@ export function AuthProvider({ children }) {
         const unsubscribe = onAuthStateChanged(auth, (user) => {
             setCurrentUser(user);
             if (!user) {
-                // If no user, stop loading immediately
                 setLoading(false);
             }
         });
@@ -39,13 +38,14 @@ export function AuthProvider({ children }) {
             try {
                 const token = await currentUser.getIdToken();
 
-                // SENIOR DEV FIX: Explicitly set Content-Type and Accept headers
-                // This resolves the 422 "Unprocessable Entity" error if the backend expects JSON
+                // SENIOR DEV FIX: Pass id_token as a Query Parameter to satisfy Backend requirement
+                // This fixes the 422 Error: "Field required: ['query', 'id_token']"
                 const resp = await axios.get(`${API_URL}/api/auth/me`, {
                     headers: {
-                        'Authorization': `Bearer ${token}`,
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json'
+                        'Authorization': `Bearer ${token}`
+                    },
+                    params: {
+                        'id_token': token
                     }
                 });
 
@@ -54,7 +54,6 @@ export function AuthProvider({ children }) {
                 }
             } catch (e) {
                 console.error('Failed to load user profile', e);
-                // Don't clear profile on error to prevent flashing, just log it
             } finally {
                 if (mounted) setLoading(false);
             }
@@ -70,12 +69,10 @@ export function AuthProvider({ children }) {
             if (currentUser) {
                 try {
                     const token = await currentUser.getIdToken();
-                    // SENIOR DEV FIX: Explicit headers for logout too
+                    // SENIOR DEV FIX: Pass id_token here as well
                     await axios.post(`${API_URL}/api/auth/logout`, {}, {
-                        headers: {
-                            'Authorization': `Bearer ${token}`,
-                            'Content-Type': 'application/json'
-                        }
+                        headers: { Authorization: `Bearer ${token}` },
+                        params: { 'id_token': token }
                     });
                 } catch (backendError) {
                     console.warn("Backend logout warning:", backendError.message);
