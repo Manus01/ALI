@@ -2,7 +2,7 @@
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from '../firebase';
 import axios from 'axios';
-import { API_URL } from '../api_config'; // Senior Dev Fix: Import the dynamic URL
+import { API_URL } from '../api_config';
 
 const AuthContext = createContext();
 
@@ -18,15 +18,18 @@ export function AuthProvider({ children }) {
     useEffect(() => {
         const unsubscribe = onAuthStateChanged(auth, (user) => {
             setCurrentUser(user);
-            setLoading(false);
+            if (!user) {
+                // If no user, stop loading immediately
+                setLoading(false);
+            }
         });
-
         return unsubscribe;
     }, []);
 
-    // Fetch full user profile (including onboarding status) when user logs in
+    // Fetch full user profile when user logs in
     useEffect(() => {
         let mounted = true;
+
         async function loadProfile() {
             if (!currentUser) {
                 setUserProfile(null);
@@ -35,57 +38,58 @@ export function AuthProvider({ children }) {
 
             try {
                 const token = await currentUser.getIdToken();
-                // FIXED: Use dynamic API_URL instead of localhost
+
+                // SENIOR DEV FIX: Explicitly set Content-Type and Accept headers
+                // This resolves the 422 "Unprocessable Entity" error if the backend expects JSON
                 const resp = await axios.get(`${API_URL}/api/auth/me`, {
-                    headers: { Authorization: `Bearer ${token}` }
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    }
                 });
 
-                if (!mounted) return;
-                setUserProfile(resp.data);
-
+                if (mounted) {
+                    setUserProfile(resp.data);
+                }
             } catch (e) {
                 console.error('Failed to load user profile', e);
-                setUserProfile(null);
+                // Don't clear profile on error to prevent flashing, just log it
+            } finally {
+                if (mounted) setLoading(false);
             }
         }
 
-        loadProfile();
-        return () => { mounted = false; };
+        if (currentUser) {
+            loadProfile();
+        }
     }, [currentUser]);
 
     const logout = async () => {
         try {
-            // 1. Notify backend (Optional: invalidate session on server)
             if (currentUser) {
                 try {
                     const token = await currentUser.getIdToken();
-                    // FIXED: Use dynamic API_URL for logout
+                    // SENIOR DEV FIX: Explicit headers for logout too
                     await axios.post(`${API_URL}/api/auth/logout`, {}, {
-                        headers: { Authorization: `Bearer ${token}` }
+                        headers: {
+                            'Authorization': `Bearer ${token}`,
+                            'Content-Type': 'application/json'
+                        }
                     });
                 } catch (backendError) {
-                    console.warn("Backend logout notification failed (ignoring):", backendError.message);
+                    console.warn("Backend logout warning:", backendError.message);
                 }
             }
-
-            // 2. Firebase SignOut (Destroys the session)
             await signOut(auth);
-
-            // 3. Force Local State Clear
             setCurrentUser(null);
             setUserProfile(null);
-
         } catch (error) {
             console.error("Logout Error:", error);
         }
     };
 
-    const value = {
-        currentUser,
-        loading,
-        userProfile,
-        logout
-    };
+    const value = { currentUser, loading, userProfile, logout };
 
     return (
         <AuthContext.Provider value={value}>
