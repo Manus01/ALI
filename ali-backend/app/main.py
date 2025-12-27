@@ -44,7 +44,7 @@ app = FastAPI(
 origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-    "https://ali-frontend-1016401242911.us-central1.run.app", # Production URL
+    "https://ali-frontend-776425171266.us-central1.run.app", # Production URL
 ]
 
 app.add_middleware(
