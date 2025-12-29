@@ -2,8 +2,6 @@
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
     FaHome,
-    FaBolt,
-    FaVideo,
     FaGraduationCap,
     FaLock,
     FaMoon,
@@ -13,12 +11,12 @@ import {
     FaTimes,
     FaCheckCircle,
     FaClipboardList,
-    FaUserCog // <--- Added Admin Icon
+    FaUserCog,
+    FaRocket // <--- FIXED: Added missing FaRocket import
 } from 'react-icons/fa';
 import { useAuth } from '../hooks/useAuth';
 
 export default function Sidebar() {
-    // Added currentUser to access email for Admin check
     const { logout, userProfile, currentUser } = useAuth();
     const navigate = useNavigate();
     const [darkMode, setDarkMode] = useState(() => localStorage.getItem('theme') === 'dark');
@@ -42,10 +40,11 @@ export default function Sidebar() {
         navigate('/login');
     };
 
+    // FIXED: navItems must be an array of consistent objects for the .map() loop to work
     const navItems = [
         { to: '/dashboard', label: 'Dashboard', icon: <FaHome /> },
-        { to: '/strategy', label: 'Strategy', icon: <FaBolt /> },
-        { to: '/studio', label: 'Studio', icon: <FaVideo /> },
+        { to: '/campaign-center', label: 'Campaign Center', icon: <FaRocket /> }, // <--- FIXED Structure
+        { to: '/onboarding', label: 'Brand DNA', icon: <FaRocket /> },
         { to: '/tutorials', label: 'Learning', icon: <FaGraduationCap /> },
         { to: '/integrations', label: 'Vault', icon: <FaLock /> },
     ];

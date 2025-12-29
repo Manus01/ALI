@@ -10,9 +10,9 @@ import RegisterPage from './pages/RegisterPage';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import IntegrationsPage from './pages/IntegrationsPage';
-import StrategyPage from './pages/StrategyPage';
-import StudioPage from './pages/StudioPage';
 import AdminPage from './pages/AdminPage';
+import CampaignCenter from './pages/CampaignCenter';
+import BrandOnboarding from './pages/BrandOnboarding';
 
 // Assessment & Tutorials
 import HFTPage from './pages/HFTPage';
@@ -62,9 +62,9 @@ function App() {
                         </ProtectedRoute>
                     }>
                         <Route path="/dashboard" element={<DashboardPage />} />
+                        <Route path="/onboarding" element={<BrandOnboarding />} />
                         <Route path="/integrations" element={<IntegrationsPage />} />
-                        <Route path="/strategy" element={<StrategyPage />} />
-                        <Route path="/studio" element={<StudioPage />} />
+                        <Route path="/campaign-center" element={<CampaignCenter />} />
 
                         {/* 🔐 The Admin Route (Now inside Layout!) */}
                         <Route path="/admin" element={
