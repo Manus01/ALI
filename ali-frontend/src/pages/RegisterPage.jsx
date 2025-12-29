@@ -41,7 +41,7 @@ export default function RegisterPage() {
         created_at: new Date().toISOString(),
       };
 
-      await setDoc(doc(db, "users", user.uid), userData);
+      await setDoc(doc(db, "users", user.uid), userData, { merge: true });
 
       navigate("/quiz/hft");
     } catch (err) {

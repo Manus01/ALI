@@ -30,9 +30,8 @@ def save_hft_result(data: HFTResult, user: dict = Depends(verify_token)):
         if data.score >= 70: cognitive_style = "Field Independent"
         elif data.score >= 40: cognitive_style = "Mixed"
 
-        # Save Log
-        db.collection("assessments").add({
-            "user_id": user['uid'],
+        # Save Log (Secure User Sub-collection)
+        user_ref.collection("assessments").add({
             "type": "HFT",
             "score": data.score,
             "style": cognitive_style,
@@ -61,17 +60,16 @@ def save_marketing_result(data: StandardTestResult, user: dict = Depends(verify_
         level = "NOVICE"
         if data.score >= 80: level = "EXPERT"
         elif data.score >= 60: level = "INTERMEDIATE"
-
-        # Save Log
-        db.collection("assessments").add({
-            "user_id": user['uid'],
+ 
+        # Save Log (Secure User Sub-collection)
+        user_ref.collection("assessments").add({
             "type": "MARKETING_KNOWLEDGE",
             "score": data.score,
             "level": level,
             "details": data.details,
             "timestamp": firestore.SERVER_TIMESTAMP
         })
-
+ 
         # Update Profile
         user_ref.set({
             "profile": { "marketing_knowledge": level, "marketing_score": data.score }
@@ -89,14 +87,13 @@ def save_eq_result(data: StandardTestResult, user: dict = Depends(verify_token))
         db = firestore.Client()
         user_ref = db.collection("users").document(user['uid'])
         
-        # Save Log
-        db.collection("assessments").add({
-            "user_id": user['uid'],
+        # Save Log (Secure User Sub-collection)
+        user_ref.collection("assessments").add({
             "type": "EQ_TEST",
             "score": data.score,
             "timestamp": firestore.SERVER_TIMESTAMP
         })
-
+ 
         # Update Profile AND Mark Onboarding Complete
         # 👇 THIS IS THE CRITICAL FIX 👇
         user_ref.set({
