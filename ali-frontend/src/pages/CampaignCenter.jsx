@@ -4,7 +4,7 @@ import api from '../api/axiosInterceptor';
 import { useAuth } from '../hooks/useAuth';
 import {
     FaPaperPlane, FaMagic, FaCheckCircle, FaSpinner,
-    FaSyncAlt, FaDownload, FaRocket, FaExclamationTriangle, FaTimes, FaArrowRight,
+    FaSyncAlt, FaDownload, FaRocket, FaExclamationTriangle, FaTimes, FaArrowRight, FaArrowLeft,
     FaPalette, FaGlobe, FaWindowMaximize, FaEdit, FaCloudUploadAlt, FaInfoCircle
 } from 'react-icons/fa';
 import { getFirestore, doc, onSnapshot } from 'firebase/firestore';
@@ -279,7 +279,7 @@ export default function CampaignCenter() {
                             {/* Logo Asset Vault */}
                             <div className="space-y-4 pt-4 border-t border-slate-50">
                                 <div className="flex items-center justify-between">
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Brand Logo</label>
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Brand Logo</label>
                                     <span className="flex items-center gap-1 text-[10px] text-blue-500 font-bold"><FaInfoCircle /> High-Res PNG or SVG</span>
                                 </div>
                                 <div className="relative group border-2 border-dashed border-slate-200 rounded-2xl p-6 hover:border-primary transition-all bg-slate-50/50">
