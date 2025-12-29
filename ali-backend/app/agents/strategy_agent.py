@@ -5,7 +5,7 @@ from typing import List, Dict, Optional
 from datetime import datetime
 from pydantic import BaseModel, Field
 
-from .base_agent import BaseAgent
+from app.agents.base_agent import BaseAgent
 from app.services.windsor_client import WindsorClient
 from app.services.crypto_service import CryptoService
 from google.cloud import firestore
@@ -86,8 +86,8 @@ class StrategyAgent(BaseAgent):
     """
     An agent that fetches REAL data from Windsor.ai and generates actionable strategies.
     """
-    def __init__(self, agent_name: str = "Strategy Agent"):
-        super().__init__(agent_name)
+    def __init__(self, agent_name: str = "StrategyAgent"):
+        super().__init__("StrategyAgent")
         self.model = 'gemini-2.0-pro-exp-02-05' # High reasoning capability
         self.client = None
         self.tools = [predict_cpc_change]
