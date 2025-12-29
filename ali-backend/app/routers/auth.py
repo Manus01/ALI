@@ -69,7 +69,19 @@ def get_current_user_profile(user: dict = Depends(verify_token)):
                 "profile": {}
             }
             
-        return doc.to_dict()
+        user_data = doc.to_dict()
+        
+        # FETCH BRAND DNA from subcollection
+        # This ensures the frontend knows the user has an active brand identity
+        try:
+            brand_ref = doc_ref.collection('brand_profile').document('current').get()
+            if brand_ref.exists:
+                user_data['brand_dna'] = brand_ref.to_dict()
+        except Exception as e:
+            print(f"⚠️ Warning fetching brand DNA: {e}")
+            # Don't fail the whole profile load if just this part fails
+        
+        return user_data
             
     except Exception as e:
         print(f"❌ Error fetching profile: {e}")

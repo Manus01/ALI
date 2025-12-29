@@ -172,6 +172,9 @@ export default function CampaignCenter() {
             await api.post('/onboarding/complete', {
                 brand_dna: {
                     ...dna,
+                    url,
+                    description,
+                    countries,
                     selected_style: style.id,
                     logo_url: finalLogoUrl
                 }
