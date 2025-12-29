@@ -68,6 +68,8 @@ export default function CampaignCenter() {
     // Identity Data for Branding
     const primaryColor = userProfile?.brand_dna?.color_palette?.primary || '#4F46E5';
     const hasBrandDna = !!userProfile?.brand_dna;
+    // Local override to ensure immediate UI update after save
+    const [localDnaSaved, setLocalDnaSaved] = useState(false);
     
     // Force Edit Mode if requested via navigation state
     const [forceEditDna, setForceEditDna] = useState(false);
@@ -77,10 +79,19 @@ export default function CampaignCenter() {
             setForceEditDna(true);
             // Pre-fill data if available (optional, but good UX)
             if (userProfile?.brand_dna) {
-                // We could pre-fill url/description here if we stored them
-                // For now, we just open the flow
-            }
-        }
+                const dna = userProfile.brand_dna;
+                if (dna.url) {
+                    setUrl(dna.url);
+                    setUseDescription(false);
+                } else if (dna.description) {
+                    setDescription(dna.description);
+                    setUseDescription(true);
+                }
+                if (dna.countries) {
+                    setCountries(dna.countries);
+                }
+             }
+         }
     }, [location.state, userProfile]);
 
     // --- 1. REAL-TIME PROGRESS LISTENER (SECURE PATH) ---
@@ -169,6 +180,7 @@ export default function CampaignCenter() {
             await refreshProfile();
             // No navigation needed, state update will trigger re-render to Campaign view
             setForceEditDna(false); // Exit edit mode
+            setLocalDnaSaved(true); // Force view switch immediately
         } catch (err) {
             console.error("Failed to save onboarding", err);
             alert("Failed to save selection. Please try again.");
@@ -235,7 +247,7 @@ export default function CampaignCenter() {
     };
 
     // --- RENDER: BRAND DNA FLOW (If missing) ---
-    if (!hasBrandDna || forceEditDna) {
+    if ((!hasBrandDna && !localDnaSaved) || forceEditDna) {
         return (
             <div className="p-8 max-w-4xl mx-auto animate-fade-in pb-20">
                 {/* STEP 1: INPUT */}
@@ -261,15 +273,32 @@ export default function CampaignCenter() {
                                 </label>
                                 {!useDescription ? (
                                     <div className="group relative">
-                                        <input type="text" placeholder="https://your-business.com" className="w-full p-5 rounded-2xl border border-slate-200 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none text-lg text-center transition-all" value={url} onChange={(e) => setUrl(e.target.value)} />
-                                        <button onClick={() => setUseDescription(true)} className="w-full mt-4 flex items-center justify-center gap-2 text-xs font-bold text-slate-400 hover:text-primary transition-colors">
+                                        <input 
+                                            type="text" 
+                                            name="brandUrl"
+                                            id="brandUrl"
+                                            aria-label="Website URL"
+                                            placeholder="https://your-business.com" 
+                                            className="w-full p-5 rounded-2xl border border-slate-200 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none text-lg text-center transition-all text-slate-800" 
+                                            value={url} 
+                                            onChange={(e) => setUrl(e.target.value)} 
+                                        />
+                                         <button onClick={() => setUseDescription(true)} className="w-full mt-4 flex items-center justify-center gap-2 text-xs font-bold text-slate-400 hover:text-primary transition-colors">
                                             <FaEdit /> I don't have a website yet
                                         </button>
                                     </div>
                                 ) : (
                                     <div className="group relative">
-                                        <textarea placeholder="Describe your products and 'vibe'..." className="w-full p-5 rounded-2xl border border-slate-200 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none text-lg min-h-[140px] transition-all" value={description} onChange={(e) => setDescription(e.target.value)} />
-                                        <button onClick={() => setUseDescription(false)} className="w-full mt-4 flex items-center justify-center gap-2 text-xs font-bold text-slate-400 hover:text-primary transition-colors">
+                                        <textarea 
+                                            name="brandDescription"
+                                            id="brandDescription"
+                                            aria-label="Business Description"
+                                            placeholder="Describe your products and 'vibe'..." 
+                                            className="w-full p-5 rounded-2xl border border-slate-200 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none text-lg min-h-[140px] transition-all text-slate-800" 
+                                            value={description} 
+                                            onChange={(e) => setDescription(e.target.value)} 
+                                        />
+                                         <button onClick={() => setUseDescription(false)} className="w-full mt-4 flex items-center justify-center gap-2 text-xs font-bold text-slate-400 hover:text-primary transition-colors">
                                             <FaWindowMaximize /> Use a website URL instead
                                         </button>
                                     </div>
@@ -283,9 +312,17 @@ export default function CampaignCenter() {
                                     <span className="flex items-center gap-1 text-[10px] text-blue-500 font-bold"><FaInfoCircle /> High-Res PNG or SVG</span>
                                 </div>
                                 <div className="relative group border-2 border-dashed border-slate-200 rounded-2xl p-6 hover:border-primary transition-all bg-slate-50/50">
-                                    <input type="file" accept=".png,.svg" className="absolute inset-0 opacity-0 cursor-pointer z-10" onChange={handleLogoChange} />
-                                    {logoPreview ? (
-                                        <div className="flex items-center gap-4 animate-scale-up">
+                                    <input 
+                                        type="file" 
+                                        name="brandLogo"
+                                        id="brandLogo"
+                                        aria-label="Upload Brand Logo"
+                                        accept=".png,.svg" 
+                                        className="absolute inset-0 opacity-0 cursor-pointer z-10" 
+                                        onChange={handleLogoChange} 
+                                    />
+                                     {logoPreview ? (
+                                         <div className="flex items-center gap-4 animate-scale-up">
                                             <img src={logoPreview} alt="Preview" className="h-12 w-12 object-contain bg-white p-2 rounded-lg shadow-sm" />
                                             <p className="text-sm font-bold text-slate-700 truncate max-w-[200px]">{logoFile.name}</p>
                                         </div>
@@ -405,6 +442,9 @@ export default function CampaignCenter() {
                     <FaMagic className="text-5xl text-primary mx-auto mb-6 opacity-10" style={{ color: primaryColor }} />
                     <h2 className="text-2xl font-black mb-6 text-slate-800 tracking-tight">What is your objective today?</h2>
                     <textarea
+                        name="campaignGoal"
+                        id="campaignGoal"
+                        aria-label="Campaign Goal"
                         className="w-full p-8 rounded-3xl border-2 border-slate-50 bg-slate-50 text-xl focus:border-primary focus:bg-white outline-none transition-all mb-8 min-h-[200px]"
                         placeholder="e.g., 'Launch a luxury holiday campaign for our Cyprus resort...'"
                         value={goal} onChange={(e) => setGoal(e.target.value)}
@@ -430,11 +470,13 @@ export default function CampaignCenter() {
                     </div>
                     {questions.map((q, i) => (
                         <div key={i} className="bg-white p-8 border border-slate-100 rounded-[2rem] shadow-sm">
-                            <label className="block text-[10px] font-black text-slate-400 uppercase mb-4 tracking-[0.2em]">{q}</label>
+                            <label htmlFor={`question-${i}`} className="block text-[10px] font-black text-slate-400 uppercase mb-4 tracking-[0.2em]">{q}</label>
                             <input
-                                className="w-full p-5 rounded-xl border border-slate-100 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-primary outline-none transition-all font-medium"
-                                placeholder="Enter details..."
-                                onChange={(e) => setAnswers({ ...answers, [i]: e.target.value })}
+                                id={`question-${i}`}
+                                name={`question-${i}`}
+                                 className="w-full p-5 rounded-xl border border-slate-100 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-primary outline-none transition-all font-medium"
+                                 placeholder="Enter details..."
+                                 onChange={(e) => setAnswers({ ...answers, [i]: e.target.value })}
                             />
                         </div>
                     ))}
@@ -486,11 +528,19 @@ export default function CampaignCenter() {
                                 <div className="flex gap-3">
                                     <button
                                         onClick={() => { setRecyclingAsset({ url: finalAssets.assets.instagram }); setShowRecycleModal(true); }}
+                                        aria-label="Recycle Asset"
+                                        title="Recycle Asset"
                                         className="p-2.5 text-slate-400 hover:text-primary transition-colors bg-slate-50 rounded-xl"
                                     >
                                         <FaSyncAlt size={14} />
                                     </button>
-                                    <button className="p-2.5 text-slate-400 hover:text-green-500 transition-colors bg-slate-50 rounded-xl"><FaDownload size={14} /></button>
+                                    <button 
+                                        aria-label="Download Asset"
+                                        title="Download Asset"
+                                        className="p-2.5 text-slate-400 hover:text-green-500 transition-colors bg-slate-50 rounded-xl"
+                                    >
+                                        <FaDownload size={14} />
+                                    </button>
                                 </div>
                             </div>
                             <div className="aspect-square bg-slate-50 rounded-[2rem] overflow-hidden border border-slate-100">
@@ -528,11 +578,14 @@ export default function CampaignCenter() {
                     <div className="bg-white rounded-[3rem] w-full max-w-xl overflow-hidden shadow-2xl animate-scale-up border border-white/20">
                         <div className="p-8 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                             <h3 className="font-black text-slate-800 uppercase tracking-tight">Recycle Content</h3>
-                            <button onClick={() => setShowRecycleModal(false)} className="p-2 hover:bg-slate-200 rounded-full transition-all"><FaTimes className="text-slate-400" /></button>
+                            <button onClick={() => setShowRecycleModal(false)} aria-label="Close Modal" className="p-2 hover:bg-slate-200 rounded-full transition-all"><FaTimes className="text-slate-400" /></button>
                         </div>
                         <div className="p-10">
                             <p className="text-sm text-slate-500 font-medium mb-8">Repurpose this visual into a new format while maintaining brand consistency.</p>
                             <textarea
+                                name="recyclePrompt"
+                                id="recyclePrompt"
+                                aria-label="Recycle Instructions"
                                 className="w-full p-6 rounded-2xl border-2 border-slate-50 bg-slate-50 focus:bg-white focus:border-primary outline-none transition-all mb-6 h-40 text-lg"
                                 placeholder="e.g., 'Extract the color palette and create a LinkedIn banner'..."
                                 value={recyclePrompt} onChange={(e) => setRecyclePrompt(e.target.value)}
