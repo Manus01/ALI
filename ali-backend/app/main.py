@@ -50,7 +50,6 @@ origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "https://ali-frontend-776425171266.us-central1.run.app",
-    "https://ali-frontend-776425171266.us-central1.run.app/", # Added trailing slash
 ]
 
 app.add_middleware(
