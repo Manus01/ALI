@@ -63,6 +63,64 @@ def get_performance_logs(target_user_id: Optional[str] = None, admin: dict = Dep
     query = db.collection("ad_performance_logs").order_by("date").limit(100)
     return {"data": [doc.to_dict() for doc in query.stream()]}
 
+@router.get("/research/users")
+def get_research_users(admin: dict = Depends(verify_admin)):
+    """
+    Aggregates user statistics for the Research Admin Dashboard.
+    Returns: List of users with Profile, Integrations, and Performance Stats.
+    """
+    users_ref = db.collection("users").limit(100) # Increased limit for better visibility
+    users = users_ref.stream()
+    
+    results = []
+    for user_doc in users:
+        uid = user_doc.id
+        data = user_doc.to_dict()
+        profile = data.get("profile", {})
+        
+        # 1. Integrations
+        integrations = []
+        int_docs = db.collection("users").document(uid).collection("user_integrations").stream()
+        for d in int_docs:
+            i_data = d.to_dict()
+            if i_data.get("status") == "active" or i_data.get("metricool_blog_id"):
+                integrations.append(i_data.get("platform", "unknown"))
+        
+        # 2. Performance (Quick Aggregation)
+        # Note: In a real app, this should be pre-calculated. Here we scan the last 20 logs.
+        perf_docs = db.collection("users").document(uid).collection("campaign_performance").limit(20).stream()
+        total_spend = 0.0
+        total_clicks = 0
+        count = 0
+        
+        for p in perf_docs:
+            p_data = p.to_dict()
+            total_spend += float(p_data.get("spend", 0))
+            total_clicks += int(p_data.get("clicks", 0))
+            count += 1
+            
+        avg_ctr = 0
+        if count > 0:
+            # Simple average of CTRs might be misleading, but sufficient for "at a glance"
+            # Better: Total Clicks / Total Impressions (if we had impressions)
+            pass 
+
+        results.append({
+            "uid": uid,
+            "email": data.get("email", "Unknown"),
+            "name": data.get("name", "Anonymous"),
+            "learning_style": profile.get("cognitive_style", "Not Assessed"),
+            "marketing_level": profile.get("marketing_knowledge", "N/A"),
+            "connected_platforms": integrations,
+            "stats": {
+                "total_spend": round(total_spend, 2),
+                "total_clicks": total_clicks,
+                "data_points": count
+            }
+        })
+        
+    return {"users": results}
+
 # PRESERVED: Original Nightly Job Trigger
 @router.post("/jobs/trigger-nightly-log")
 def trigger_logging_job(admin: dict = Depends(verify_admin)):
