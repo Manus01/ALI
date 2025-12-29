@@ -39,7 +39,7 @@ export default function StudioPage() {
                 }
             );
 
-            console.log('Video generation response:', response.data);
+            console.log("Full Server Response:", response.data);
             setAssetUrl(response.data.video_url);
         } catch (err) {
             console.error("Video Generation Failed:", err);

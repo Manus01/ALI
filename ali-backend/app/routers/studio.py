@@ -3,10 +3,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 from app.core.security import verify_token
-from app.services.ai_studio import CreativeService
 import json
 import os
-import google.generativeai as genai
 
 router = APIRouter()
 
@@ -26,13 +24,12 @@ async def generate_video_endpoint(body: VideoRequest, user: dict = Depends(verif
     except (TypeError, ValueError):
         raise HTTPException(status_code=500, detail="GENAI_PROJECT_ID must be a valid integer")
 
-    # Ensure module import is exercised (configuration handled in CreativeService)
-    _ = genai  # touch to satisfy linter and surface ImportError early
-
     async def stream():
         # Initial tiny chunk keeps the connection warm during cold starts
         yield b" "
         try:
+            import google.generativeai as genai
+            from app.services.ai_studio import CreativeService
             service = CreativeService()
             asset_url = await run_in_threadpool(service.generate_video, body.prompt, body.style)
             payload = {

@@ -26,7 +26,10 @@ from app.routers import (
     admin,
     repurpose,
     execution,
-    maintenance
+    maintenance,
+    tutorials,
+    strategy,
+    studio
 )
 
 # --- 3. APP INITIALIZATION ---
@@ -90,22 +93,9 @@ app.include_router(repurpose.router, prefix="/api", tags=["Repurpose"])
 app.include_router(execution.router, prefix="/api", tags=["Execution"])
 app.include_router(maintenance.router, prefix="/api", tags=["Maintenance"])
 
-
-# --- Lazy-load heavy AI routers (strategy, studio, tutorials) ---
-def _include_ai_routers_once(app_instance: FastAPI):
-    if getattr(app_instance, "_ai_routers_loaded", False):
-        return
-    from app.routers import strategy, studio, tutorials
-    app_instance.include_router(tutorials.router, prefix="/api", tags=["Tutorials"])
-    app_instance.include_router(strategy.router, prefix="/api", tags=["Strategy"])
-    app_instance.include_router(studio.router, prefix="/api", tags=["Studio"])
-    app_instance._ai_routers_loaded = True
-
-
-@app.on_event("startup")
-async def load_ai_routers_on_startup():
-    _include_ai_routers_once(app)
-
+app.include_router(tutorials.router, prefix="/api", tags=["Tutorials"])
+app.include_router(strategy.router, prefix="/api", tags=["Strategy"])
+app.include_router(studio.router, prefix="/api", tags=["Studio"])
 
 # --- 6. HEALTH CHECK ---
 @app.get("/")

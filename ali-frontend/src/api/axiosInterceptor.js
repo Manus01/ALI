@@ -2,18 +2,17 @@ import axios from 'axios';
 import { auth } from '../firebase';
 import { API_URL } from '../api_config';
 
-// Ensure baseURL is just the domain, no /api
-const base = API_URL.replace(/\/api\/?$/, '').replace(/\/$/, '');
+// 1. Clean baseURL: Force it to be just the domain
+const cleanBaseURL = API_URL.replace(/\/api\/?$/, '').replace(/\/$/, '');
 
-const api = axios.create({ baseURL: base });
+const api = axios.create({ baseURL: cleanBaseURL });
 
 api.interceptors.request.use(async (config) => {
-    // 1. Force the /api prefix exactly once
+    // 2. Surgical Pathing: Prepend /api ONLY if missing
     if (config.url && !config.url.startsWith('/api')) {
-        config.url = `/api${config.url.startsWith('/') ? '' : '/'}${config.url}`;
+        config.url = `/api/${config.url.replace(/^\//, '')}`;
     }
 
-    // 2. Inject Auth
     const user = auth.currentUser;
     if (user) {
         const token = await user.getIdToken();

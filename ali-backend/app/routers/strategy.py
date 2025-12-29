@@ -1,14 +1,10 @@
 ﻿from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from app.core.security import verify_token
-from app.agents.strategy_agent import StrategyAgent
 import logging
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
-
-# Initialize the Agent
-agent = StrategyAgent()
 
 class StrategyRequest(BaseModel):
     prompt: str = Field(..., min_length=3, max_length=1000)
@@ -25,6 +21,8 @@ async def generate_marketing_strategy(
     logger.info(f"🧠 Strategy Generation requested by User {user_id}")
 
     try:
+        from app.agents.strategy_agent import StrategyAgent
+        agent = StrategyAgent()
         # We pass the user_id so the agent can look up the correct API keys and fetch data
         result_json = agent.generate_strategy(
             user_prompt=request.prompt,
