@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { getFirestore, collection, query, where, onSnapshot, updateDoc, doc } from 'firebase/firestore';
+import { getFirestore, collection, onSnapshot, updateDoc, doc } from 'firebase/firestore';
 import api from '../api/axiosInterceptor';
 import { useAuth } from '../hooks/useAuth';
 import { FaBell, FaCheck, FaRobot, FaSpinner, FaTimes } from 'react-icons/fa';
@@ -16,16 +16,15 @@ export default function NotificationCenter() {
     const [unreadCount, setUnreadCount] = useState(0);
     const menuRef = useRef(null);
 
-    // 1. Listen for Notifications
+    // 1. Listen for Notifications (FIXED PATH FOR SECURITY)
     useEffect(() => {
         if (!currentUser) return;
 
-        const q = query(
-            collection(db, "notifications"),
-            where("user_id", "==", currentUser.uid)
-        );
+        // SENIOR DEV FIX: Target the sub-collection inside the user's secure folder
+        // This matches the {allPaths=**} rule we set earlier.
+        const notificationsRef = collection(db, "users", currentUser.uid, "notifications");
 
-        const unsubscribe = onSnapshot(q, (snapshot) => {
+        const unsubscribe = onSnapshot(notificationsRef, (snapshot) => {
             const notes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
             // Sort in Memory (Newest First)
@@ -37,10 +36,13 @@ export default function NotificationCenter() {
 
             setNotifications(notes);
             setUnreadCount(notes.filter(n => !n.read).length);
+        }, (err) => {
+            // Gracefully handle any background permission issues
+            console.warn("Notification listener blocked or empty:", err.message);
         });
 
         return () => unsubscribe();
-    }, [currentUser]);
+    }, [currentUser, db]);
 
     // 2. Close on Click Outside
     useEffect(() => {
@@ -55,7 +57,9 @@ export default function NotificationCenter() {
 
     const handleMarkRead = async (note) => {
         if (!note.read) {
-            await updateDoc(doc(db, "notifications", note.id), { read: true });
+            // UPDATED: Use the secure path
+            const noteRef = doc(db, "users", currentUser.uid, "notifications", note.id);
+            await updateDoc(noteRef, { read: true });
         }
         if (note.link) {
             setIsOpen(false);
@@ -66,13 +70,13 @@ export default function NotificationCenter() {
     const handleMarkAllRead = async () => {
         const unread = notifications.filter(n => !n.read);
         unread.forEach(note => {
-            updateDoc(doc(db, "notifications", note.id), { read: true });
+            const noteRef = doc(db, "users", currentUser.uid, "notifications", note.id);
+            updateDoc(noteRef, { read: true });
         });
     };
 
-    // --- DELETE FUNCTION (FIXED) ---
     const handleDelete = async (e, noteId) => {
-        e.stopPropagation(); // Prevent triggering the click on the card
+        e.stopPropagation();
         try {
             await api.delete(`/api/notifications/${noteId}`);
         } catch (err) {
@@ -89,8 +93,8 @@ export default function NotificationCenter() {
             <button
                 onClick={() => setIsOpen(!isOpen)}
                 className={`relative p-3 rounded-full shadow-lg transition-all active:scale-95
-          ${isOpen ? 'bg-primary text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}
-        `}
+                    ${isOpen ? 'bg-primary text-white' : 'bg-white text-slate-600 hover:bg-slate-50'}
+                `}
             >
                 <FaBell className="text-xl" />
                 {unreadCount > 0 && (
@@ -137,20 +141,17 @@ export default function NotificationCenter() {
                                             key={note.id}
                                             onClick={() => handleMarkRead(note)}
                                             className={`relative flex cursor-pointer gap-4 px-4 py-4 transition-colors hover:bg-blue-50/50 pr-8 
-                        ${!note.read ? 'bg-blue-50/30' : ''}
-                      `}
+                                                ${!note.read ? 'bg-blue-50/30' : ''}
+                                            `}
                                         >
-                                            {/* Unread Indicator */}
                                             {!note.read && (
                                                 <span className="absolute left-2 top-6 h-2 w-2 rounded-full bg-primary ring-4 ring-white" />
                                             )}
 
-                                            {/* Icon */}
                                             <div className="mt-1 flex h-8 w-8 flex-none items-center justify-center rounded-full bg-slate-100 text-slate-500">
                                                 {note.type === 'info' ? <FaSpinner className="animate-spin text-blue-500" /> : <FaRobot />}
                                             </div>
 
-                                            {/* Content */}
                                             <div className="flex-auto">
                                                 <div className="flex items-baseline justify-between gap-2">
                                                     <p className={`text-sm ${!note.read ? 'font-bold text-slate-900' : 'font-medium text-slate-700'}`}>
@@ -163,7 +164,6 @@ export default function NotificationCenter() {
                                                 <p className="text-xs text-slate-500 line-clamp-2 mt-0.5 pr-4">{note.message}</p>
                                             </div>
 
-                                            {/* DELETE BUTTON */}
                                             <button
                                                 onClick={(e) => handleDelete(e, note.id)}
                                                 className="absolute top-2 right-2 p-1.5 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-all"

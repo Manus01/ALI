@@ -12,7 +12,9 @@ import {
     FaCheckCircle,
     FaClipboardList,
     FaUserCog,
-    FaRocket // <--- FIXED: Added missing FaRocket import
+    FaRocket,
+    FaPalette,
+    FaExclamationCircle
 } from 'react-icons/fa';
 import { useAuth } from '../hooks/useAuth';
 
@@ -24,6 +26,7 @@ export default function Sidebar() {
 
     // 🔐 ADMIN CHECK
     const isAdmin = currentUser?.email === "manoliszografos@gmail.com";
+    const isOnboardingComplete = userProfile?.onboarding_completed;
 
     useEffect(() => {
         if (darkMode) {
@@ -40,22 +43,21 @@ export default function Sidebar() {
         navigate('/login');
     };
 
-    // FIXED: navItems must be an array of consistent objects for the .map() loop to work
+    // RESTORED: All original nav items with updated icons for clarity
     const navItems = [
         { to: '/dashboard', label: 'Dashboard', icon: <FaHome /> },
-        { to: '/campaign-center', label: 'Campaign Center', icon: <FaRocket /> }, // <--- FIXED Structure
-        { to: '/onboarding', label: 'Brand DNA', icon: <FaRocket /> },
+        { to: '/campaign-center', label: 'Campaign Center', icon: <FaRocket /> },
+        { to: '/onboarding', label: 'Brand DNA', icon: <FaPalette /> },
         { to: '/tutorials', label: 'Learning', icon: <FaGraduationCap /> },
         { to: '/integrations', label: 'Vault', icon: <FaLock /> },
     ];
 
+    // RESTORED: Your specific assessment links
     const assessmentLinks = [
         { to: '/quiz/hft', label: 'Cognitive (HFT)' },
         { to: '/quiz/marketing', label: 'Marketing Skills' },
         { to: '/quiz/eq', label: 'Emotional IQ' },
     ];
-
-    const isOnboardingComplete = userProfile?.onboarding_completed;
 
     return (
         <>
@@ -77,7 +79,7 @@ export default function Sidebar() {
                     <h1 className="text-2xl font-bold bg-gradient-to-r from-primary to-blue-600 bg-clip-text text-transparent">
                         ALI Platform
                     </h1>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">Enterprise AI Agent</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest">Orchestrator</p>
                 </div>
 
                 {/* Nav Links */}
@@ -99,7 +101,7 @@ export default function Sidebar() {
                         </NavLink>
                     ))}
 
-                    {/* 🔐 HIDDEN ADMIN LINK */}
+                    {/* 🔐 RESTORED ADMIN LINK */}
                     {isAdmin && (
                         <NavLink
                             to="/admin"
@@ -116,6 +118,7 @@ export default function Sidebar() {
                         </NavLink>
                     )}
 
+                    {/* RESTORED: Assessment Section Logic */}
                     <div className="pt-4 mt-4 border-t border-slate-100 dark:border-slate-800">
                         <h4 className="px-4 text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">
                             Assessments
@@ -152,6 +155,21 @@ export default function Sidebar() {
 
                 {/* Footer */}
                 <div className="p-4 border-t border-slate-200 dark:border-slate-800 space-y-2">
+
+                    {/* ADDED: Identity Management Badge (Click to Edit DNA) */}
+                    <div
+                        onClick={() => navigate('/onboarding')}
+                        className={`mb-2 p-3 rounded-xl flex items-center gap-3 cursor-pointer border transition-all ${isOnboardingComplete
+                            ? 'bg-slate-50 text-slate-700 border-slate-100 hover:border-primary/30'
+                            : 'bg-amber-50 text-amber-700 border-amber-100 hover:border-amber-300'}`}
+                    >
+                        {isOnboardingComplete ? <FaPalette className="text-primary" /> : <FaExclamationCircle className="text-amber-500" />}
+                        <div>
+                            <p className="text-[10px] font-black uppercase tracking-wider">{isOnboardingComplete ? 'Identity Active' : 'Setup Identity'}</p>
+                            <p className="text-[9px] font-bold opacity-60">Manage Brand DNA</p>
+                        </div>
+                    </div>
+
                     <button
                         onClick={() => setDarkMode(!darkMode)}
                         className="w-full flex items-center gap-3 px-4 py-2 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg transition-colors"

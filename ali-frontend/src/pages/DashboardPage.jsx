@@ -6,10 +6,9 @@ import {
 import { useAuth } from '../hooks/useAuth';
 import { useNavigate, Link } from 'react-router-dom';
 import {
-    FaTools, FaCheckCircle, FaExclamationTriangle, FaPlug, FaLightbulb, FaVideo, FaArrowRight,
-    FaInstagram, FaLinkedin, FaFacebook, FaTiktok, FaLayerGroup
+    FaTools, FaCheckCircle, FaExclamationTriangle, FaLightbulb, FaVideo, FaArrowRight,
+    FaInstagram, FaLinkedin, FaFacebook, FaTiktok, FaLayerGroup, FaEdit
 } from 'react-icons/fa';
-// SENIOR DEV FIX: Use custom api instance
 import api from '../api/axiosInterceptor';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
@@ -31,11 +30,13 @@ export default function DashboardPage() {
     const [maintenanceLoading, setMaintenanceLoading] = useState(false);
     const [activeFilter, setActiveFilter] = useState('all');
 
-    // 1. Data Fetching
+    // Extract Identity Data
+    const brandDna = userProfile?.brand_dna || {};
+    const isOnboardingComplete = userProfile?.onboarding_completed;
+
     const fetchDashboardData = useCallback(async () => {
         try {
             if (!currentUser) return;
-            // FIXED: Path relative to interceptor, removed /api. Auth is automatic.
             const response = await api.get('/dashboard/overview');
             setData(response.data);
             setLoading(false);
@@ -51,12 +52,10 @@ export default function DashboardPage() {
         fetchDashboardData();
     }, [fetchDashboardData]);
 
-    // 2. Maintenance Handler
     const handleMaintenance = async () => {
         if (!currentUser) return;
         setMaintenanceLoading(true);
         try {
-            // FIXED: Path relative to interceptor, removed /api
             await api.post('/maintenance/run');
             alert("Maintenance triggered successfully.");
         } catch (err) {
@@ -67,7 +66,6 @@ export default function DashboardPage() {
         }
     };
 
-    // 3. Chart Data Preparation (PRESERVED FROM OLD CODE)
     const getChartData = () => {
         if (!data) return null;
 
@@ -92,7 +90,7 @@ export default function DashboardPage() {
             };
         }
 
-        // CASE B: OLD Forecasting Data (Fallback)
+        // CASE B: PRESERVED Forecasting Data (Fallback)
         if (data.metrics && Array.isArray(data.metrics) && !data.metrics[0]?.label) {
             const historyDates = data.metrics.map(m => m.date);
             const forecastDates = data.forecast ? [...new Set(data.forecast.map(f => f.date))] : [];
@@ -121,7 +119,7 @@ export default function DashboardPage() {
         return null;
     };
 
-    if (loading) return <div className="p-10 text-center h-screen flex items-center justify-center text-slate-400"><div className="animate-spin w-6 h-6 border-2 border-primary border-t-transparent rounded-full mr-2"></div> Loading Intelligence...</div>;
+    if (loading) return <div className="p-10 text-center h-screen flex items-center justify-center text-slate-400"><div className="animate-spin w-6 h-6 border-2 border-primary border-t-transparent rounded-full mr-2"></div> Synchronizing Intelligence...</div>;
 
     if (error) return (
         <div className="p-10 flex flex-col items-center justify-center h-screen">
@@ -134,8 +132,6 @@ export default function DashboardPage() {
         </div>
     );
 
-    if (!data) return null;
-
     const chartData = getChartData();
     const chartOptions = {
         responsive: true, maintainAspectRatio: false,
@@ -143,104 +139,115 @@ export default function DashboardPage() {
         scales: { y: { grid: { color: 'rgba(0,0,0,0.05)' }, beginAtZero: true }, x: { grid: { display: false } } }
     };
 
-    const getLevelColor = (level) => {
-        if (level === 'EXPERT') return 'bg-purple-100 text-purple-700 border-purple-200';
-        if (level === 'INTERMEDIATE') return 'bg-blue-100 text-blue-700 border-blue-200';
-        return 'bg-slate-100 text-slate-600 border-slate-200';
-    };
-
-    const summaryMetrics = data.metrics && data.metrics.length > 0 && data.metrics[0].label ? data.metrics : [];
-    const recommendations = data.recommendations || [];
-    const isConnected = data.integration_status === 'active';
-    const hasChartHistory = data.chart_history && Object.keys(data.chart_history.datasets).length > 0;
-
     return (
         <div className="p-8 max-w-7xl mx-auto space-y-8 animate-fade-in pb-20">
-            {/* Header */}
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
-                <div>
-                    <h1 className="text-3xl font-bold text-slate-800 tracking-tight">Command Center</h1>
-                    <p className="text-slate-500">Welcome back, {data.profile?.role || "Strategist"}</p>
+
+            {/* --- CLICKABLE BRAND IDENTITY HEADER --- */}
+            <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
+                <div
+                    onClick={() => navigate('/onboarding')}
+                    className="group flex items-center gap-6 bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-md hover:border-primary/20 transition-all cursor-pointer relative overflow-hidden flex-1"
+                >
+                    <div className="absolute top-4 right-4 text-slate-300 group-hover:text-primary transition-colors">
+                        <FaEdit size={14} />
+                    </div>
+
+                    {brandDna.logo_url ? (
+                        <div className="w-20 h-20 bg-slate-50 rounded-2xl flex items-center justify-center p-3 border border-slate-100 group-hover:bg-white transition-colors">
+                            <img src={brandDna.logo_url} alt="Brand Logo" className="max-h-full max-w-full object-contain" />
+                        </div>
+                    ) : (
+                        <div className="w-20 h-20 bg-blue-50 text-primary rounded-2xl flex items-center justify-center">
+                            <FaLayerGroup className="text-2xl" />
+                        </div>
+                    )}
+
+                    <div>
+                        <div className="flex items-center gap-2 mb-1">
+                            <h1 className="text-2xl font-black text-slate-800 tracking-tight">
+                                {brandDna.brand_name || "Define Brand Identity"}
+                            </h1>
+                            {isOnboardingComplete && <FaCheckCircle className="text-green-500 text-sm" />}
+                        </div>
+                        <p className="text-slate-500 font-medium text-sm">
+                            {isOnboardingComplete ? "Brand DNA is active and ready for campaigns. Click to edit." : "Identity setup pending. Click to initialize."}
+                        </p>
+                    </div>
                 </div>
+
                 <div className="flex flex-wrap gap-3">
-                    <button onClick={handleMaintenance} disabled={maintenanceLoading} className="bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 px-4 py-2 rounded-lg font-medium transition-all flex items-center gap-2 shadow-sm">
+                    <button onClick={handleMaintenance} disabled={maintenanceLoading} className="bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 px-5 py-3 rounded-xl font-bold transition-all flex items-center gap-2 shadow-sm text-sm">
                         <FaTools className={maintenanceLoading ? "animate-spin text-primary" : "text-slate-400"} />
-                        {maintenanceLoading ? "Running..." : "Run Maintenance"}
+                        {maintenanceLoading ? "Optimizing..." : "Maintenance"}
                     </button>
-                    <button onClick={() => navigate('/studio')} className="bg-white text-slate-600 border border-slate-200 hover:bg-slate-50 px-4 py-2 rounded-lg font-medium transition-all shadow-sm">Creative Studio</button>
-                    <button onClick={() => navigate('/strategy')} className="bg-primary hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-medium transition-all shadow-lg shadow-blue-500/30">Generate AI Suggestions</button>
+                    <button onClick={() => navigate('/campaign-center')} className="bg-primary hover:bg-blue-700 text-white px-8 py-3 rounded-xl font-bold transition-all shadow-lg shadow-blue-500/20 text-sm flex items-center gap-2">
+                        Create New Campaign <FaArrowRight size={12} />
+                    </button>
                 </div>
             </div>
 
             {/* Metrics */}
-            {summaryMetrics.length > 0 && (
+            {(data.metrics && data.metrics.length > 0 && data.metrics[0].label) && (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                    {summaryMetrics.map((m, i) => (
-                        <div key={i} className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-                            <div className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-2">{m.label}</div>
-                            <div className={`text-3xl font-bold mb-1 ${m.alert ? 'text-red-500' : 'text-slate-800'}`}>{m.value}</div>
-                            <div className="text-xs text-slate-400">{m.trend}</div>
+                    {data.metrics.map((m, i) => (
+                        <div key={i} className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+                            <div className="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-2">{m.label}</div>
+                            <div className={`text-3xl font-black mb-1 ${m.alert ? 'text-red-500' : 'text-slate-800'}`}>{m.value}</div>
+                            <div className="text-xs text-slate-400 font-bold">{m.trend}</div>
                         </div>
                     ))}
                 </div>
             )}
 
             {/* Recommendations */}
-            {recommendations.length > 0 && (
+            {(data.recommendations && data.recommendations.length > 0) && (
                 <div className="space-y-4">
-                    {recommendations.map((rec, i) => (
-                        <div key={i} className="p-4 bg-white border border-l-4 border-l-amber-500 border-slate-200 rounded-xl shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    {data.recommendations.map((rec, i) => (
+                        <div key={i} className="p-4 bg-white border border-l-4 border-l-amber-500 border-slate-100 rounded-xl shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                             <div className="flex items-center gap-4">
                                 <div className="p-3 bg-amber-50 text-amber-600 rounded-full">{rec.type === 'strategy' ? <FaLightbulb /> : <FaVideo />}</div>
-                                <div><h3 className="font-bold text-slate-800">Optimization Opportunity</h3><p className="text-sm text-slate-600">{rec.text}</p></div>
+                                <div><h3 className="font-bold text-slate-800 text-sm">Opportunity Detected</h3><p className="text-xs text-slate-500">{rec.text}</p></div>
                             </div>
-                            <Link to={rec.link} className="px-4 py-2 text-sm font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg flex items-center gap-2">Take Action <FaArrowRight /></Link>
+                            <Link to={rec.link} className="px-4 py-2 text-xs font-black text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg flex items-center gap-2">Take Action <FaArrowRight /></Link>
                         </div>
                     ))}
                 </div>
             )}
 
             {/* Charts */}
-            {(isConnected && hasChartHistory) && (
-                <div className="glass-panel p-6 rounded-xl border border-slate-200 bg-white shadow-sm">
-                    <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
-                        <h3 className="text-lg font-bold text-slate-700">Channel Performance</h3>
-                        <div className="flex flex-wrap gap-2 bg-slate-50 p-1 rounded-lg">
-                            {Object.keys(CHANNEL_CONFIG).map((key) => {
-                                if (!data.chart_history.datasets[key]) return null;
-                                const isActive = activeFilter === key;
-                                const config = CHANNEL_CONFIG[key];
-                                return (
-                                    <button key={key} onClick={() => setActiveFilter(key)} className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-bold transition-all ${isActive ? 'bg-white text-slate-800 shadow-sm ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'}`}>
-                                        <span style={{ color: isActive ? config.color : undefined }}>{config.icon}</span>
-                                        <span className="hidden sm:inline">{config.label}</span>
-                                    </button>
-                                );
-                            })}
-                        </div>
+            {chartData && (
+                <div className="bg-white p-8 rounded-[2rem] border border-slate-100 shadow-sm">
+                    <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
+                        <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight">Intelligence Feed</h3>
+                        {data.chart_history && (
+                            <div className="flex flex-wrap gap-1 bg-slate-50 p-1.5 rounded-xl">
+                                {Object.keys(CHANNEL_CONFIG).map((key) => {
+                                    if (!data.chart_history.datasets[key]) return null;
+                                    const isActive = activeFilter === key;
+                                    return (
+                                        <button key={key} onClick={() => setActiveFilter(key)}
+                                            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${isActive ? 'bg-white text-slate-800 shadow-sm ring-1 ring-slate-200' : 'text-slate-400 hover:text-slate-600'}`}>
+                                            {CHANNEL_CONFIG[key].icon}
+                                            <span className="hidden sm:inline">{CHANNEL_CONFIG[key].label}</span>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
                     </div>
                     <div className="h-80 w-full"><Line options={chartOptions} data={chartData} /></div>
                 </div>
             )}
 
-            {/* Skill Matrix */}
-            <div className="glass-panel p-6 rounded-xl border border-slate-200 bg-white shadow-sm">
-                <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-4">Your Skill Matrix</h3>
-                <div className="flex flex-wrap gap-2 mb-4">
-                    {userProfile?.profile?.marketing_skills ? Object.entries(userProfile.profile.marketing_skills).map(([skill, level]) => (
-                        <div key={skill} className={`px-3 py-1 rounded-md text-xs font-bold border uppercase ${getLevelColor(level)}`}>{skill.replace('_', ' ')}: {level}</div>
-                    )) : <div className="px-3 py-1 rounded-md text-xs font-bold border bg-slate-100 text-slate-600">Overall: {userProfile?.profile?.marketing_knowledge || 'NOVICE'}</div>}
-                </div>
-                <div className="flex gap-4 text-sm text-slate-600">
-                    <div><span className="font-bold">Cognitive:</span> {userProfile?.profile?.cognitive_style}</div>
-                    <div><span className="font-bold">EQ:</span> {userProfile?.profile?.eq_score}/100</div>
-                </div>
-            </div>
-
             {/* Market Intelligence */}
-            <div className="bg-gradient-to-r from-slate-800 to-slate-900 rounded-xl p-8 text-white relative overflow-hidden shadow-xl">
-                <div className="absolute -top-4 -right-4 p-8 opacity-10 text-9xl rotate-12">💡</div>
-                <div className="relative z-10"><h3 className="text-yellow-400 font-bold mb-2">Market Intelligence</h3><p className="text-lg opacity-90 max-w-2xl leading-relaxed">{data.success_story}</p></div>
+            <div className="bg-slate-900 rounded-[2rem] p-10 text-white relative overflow-hidden shadow-2xl">
+                <div className="absolute -top-10 -right-10 p-12 opacity-10 text-[12rem] rotate-12">💡</div>
+                <div className="relative z-10">
+                    <h3 className="text-blue-400 font-black text-xs uppercase tracking-[0.3em] mb-4">Market Insight</h3>
+                    <p className="text-xl font-medium opacity-90 max-w-3xl leading-relaxed italic">
+                        "{data.success_story || "Our agents are currently analyzing market shifts to provide your next success story."}"
+                    </p>
+                </div>
             </div>
         </div>
     );
