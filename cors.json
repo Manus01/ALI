@@ -1,0 +1,11 @@
+[
+  {
+    "origin": [
+      "http://localhost:5173",
+      "https://ali-frontend-776425171266.us-central1.run.app"
+    ],
+    "method": [ "GET", "POST", "PUT", "DELETE", "HEAD" ],
+    "responseHeader": [ "Content-Type", "Authorization", "x-goog-resumable" ],
+    "maxAgeSeconds": 3600
+  }
+]
