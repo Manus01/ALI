@@ -91,7 +91,7 @@ export default function AdminPage() {
     const handleExportCSV = () => {
         if (!researchUsers.length) return;
         
-        const headers = ["UID", "Name", "Email", "Cognitive Style", "Marketing Level", "Platforms", "Total Spend", "Data Points"];
+        const headers = ["UID", "Name", "Email", "Cognitive Style", "Marketing Level", "Platforms", "Active Channels", "Total Spend", "Data Points"];
         const rows = researchUsers.map(u => [
             u.uid,
             `"${u.name || ''}"`,
@@ -99,6 +99,7 @@ export default function AdminPage() {
             u.learning_style,
             u.marketing_level,
             `"${u.connected_platforms.join(', ')}"`,
+            `"${u.active_channels ? u.active_channels.join(', ') : ''}"`,
             u.stats.total_spend,
             u.stats.data_points
         ]);
@@ -183,9 +184,9 @@ export default function AdminPage() {
                     <table className="w-full text-left text-sm">
                         <thead>
                             <tr className="text-slate-400 uppercase text-[10px] font-black tracking-widest border-b">
-                                <th className="pb-4">User</th>
+                                <th className="pb-4 pl-4">User</th>
                                 <th className="pb-4">Cognitive Style</th>
-                                <th className="pb-4">Platforms</th>
+                                <th className="pb-4">Active Data</th>
                                 <th className="pb-4">Spend (Est.)</th>
                                 <th className="pb-4">Data Points</th>
                             </tr>
@@ -210,14 +211,21 @@ export default function AdminPage() {
                                         </td>
                                         <td className="py-4">
                                             <div className="flex gap-1">
-                                                {u.connected_platforms.length > 0 ? u.connected_platforms.map(p => (
-                                                    <span key={p} className="p-1.5 bg-slate-100 rounded-md text-slate-600" title={p}>
-                                                        {CHANNEL_ICONS[p] || <FaLink size={10} />}
-                                                    </span>
-                                                )) : <span className="text-slate-300 text-xs italic">None</span>}
-                                            </div>
-                                        </td>
-                                        <td className="py-4 font-mono text-xs font-bold text-slate-700">${u.stats.total_spend}</td>
+                                                {/* Show Active Channels from Logs if available, else Connected Platforms */}
+                                                {(u.active_channels && u.active_channels.length > 0) ? u.active_channels.map(p => (
+                                                     <span key={p} className="p-1.5 bg-slate-100 rounded-md text-slate-600" title={p}>
+                                                         {CHANNEL_ICONS[p] || <FaLink size={10} />}
+                                                     </span>
+                                                )) : (
+                                                    u.connected_platforms.length > 0 ? u.connected_platforms.map(p => (
+                                                        <span key={p} className="p-1.5 bg-slate-50 rounded-md text-slate-400 grayscale" title={`Connected: ${p}`}>
+                                                            {CHANNEL_ICONS[p] || <FaLink size={10} />}
+                                                        </span>
+                                                    )) : <span className="text-slate-300 text-xs italic">None</span>
+                                                )}
+                                             </div>
+                                         </td>
+                                         <td className="py-4 font-mono text-xs font-bold text-slate-700">${u.stats.total_spend}</td>
                                         <td className="py-4 text-xs text-slate-400">{u.stats.data_points} logs</td>
                                     </tr>
                                 ))

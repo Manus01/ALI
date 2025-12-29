@@ -145,11 +145,11 @@ export default function DashboardPage() {
             {/* --- CLICKABLE BRAND IDENTITY HEADER --- */}
             <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
                 <div
-                    onClick={() => navigate('/onboarding')}
+                    onClick={() => navigate('/campaign-center')} // Redirect to Campaign Center for editing/viewing
                     className="group flex items-center gap-6 bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-md hover:border-primary/20 transition-all cursor-pointer relative overflow-hidden flex-1"
                 >
                     <div className="absolute top-4 right-4 text-slate-300 group-hover:text-primary transition-colors">
-                        <FaEdit size={14} />
+                        <FaEdit size={14} title="Edit Brand Identity" />
                     </div>
 
                     {brandDna.logo_url ? (
@@ -170,7 +170,7 @@ export default function DashboardPage() {
                             {isOnboardingComplete && <FaCheckCircle className="text-green-500 text-sm" />}
                         </div>
                         <p className="text-slate-500 font-medium text-sm">
-                            {isOnboardingComplete ? "Brand DNA is active and ready for campaigns. Click to edit." : "Identity setup pending. Click to initialize."}
+                            {isOnboardingComplete ? "Brand DNA is active. Click to manage in Campaign Center." : "Identity setup pending. Click to initialize."}
                         </p>
                     </div>
                 </div>

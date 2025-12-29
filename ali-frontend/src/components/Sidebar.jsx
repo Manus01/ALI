@@ -47,7 +47,6 @@ export default function Sidebar() {
     const navItems = [
         { to: '/dashboard', label: 'Dashboard', icon: <FaHome /> },
         { to: '/campaign-center', label: 'Campaign Center', icon: <FaRocket /> },
-        { to: '/onboarding', label: 'Brand DNA', icon: <FaPalette /> },
         { to: '/tutorials', label: 'Learning', icon: <FaGraduationCap /> },
         { to: '/integrations', label: 'Vault', icon: <FaLock /> },
     ];
@@ -158,7 +157,7 @@ export default function Sidebar() {
 
                     {/* ADDED: Identity Management Badge (Click to Edit DNA) */}
                     <div
-                        onClick={() => navigate('/onboarding')}
+                        onClick={() => navigate('/campaign-center', { state: { editDna: true } })}
                         className={`mb-2 p-3 rounded-xl flex items-center gap-3 cursor-pointer border transition-all ${isOnboardingComplete
                             ? 'bg-slate-50 text-slate-700 border-slate-100 hover:border-primary/30'
                             : 'bg-amber-50 text-amber-700 border-amber-100 hover:border-amber-300'}`}
@@ -197,4 +196,4 @@ export default function Sidebar() {
             )}
         </>
     );
-}
+}}

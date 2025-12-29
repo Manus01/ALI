@@ -92,11 +92,21 @@ def get_research_users(admin: dict = Depends(verify_admin)):
         total_spend = 0.0
         total_clicks = 0
         count = 0
+        active_channels = set()
         
         for p in perf_docs:
             p_data = p.to_dict()
             total_spend += float(p_data.get("spend", 0))
             total_clicks += int(p_data.get("clicks", 0))
+            
+            # Extract channel/platform from log
+            # Could be 'platform' (e.g. 'tiktok') or 'source' or inferred from ID
+            if p_data.get("platform"):
+                active_channels.add(p_data.get("platform").lower())
+            elif "tiktok" in p.id.lower(): active_channels.add("tiktok")
+            elif "meta" in p.id.lower() or "facebook" in p.id.lower(): active_channels.add("meta")
+            elif "google" in p.id.lower(): active_channels.add("google")
+            
             count += 1
             
         avg_ctr = 0
@@ -112,6 +122,7 @@ def get_research_users(admin: dict = Depends(verify_admin)):
             "learning_style": profile.get("cognitive_style", "Not Assessed"),
             "marketing_level": profile.get("marketing_knowledge", "N/A"),
             "connected_platforms": integrations,
+            "active_channels": list(active_channels),
             "stats": {
                 "total_spend": round(total_spend, 2),
                 "total_clicks": total_clicks,
