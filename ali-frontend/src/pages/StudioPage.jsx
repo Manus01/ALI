@@ -27,14 +27,22 @@ export default function StudioPage() {
         setError('');
 
         try {
-            const response = await api.post('/generate/video', // Removed the extra /api/
-                { prompt: prompt, style: 'cinematic' },
-                { timeout: 120000 }
+            // SENIOR DEV FIX: URL path relative to interceptor baseURL (/api)
+            // No manual token/params needed as interceptor handles it
+            const response = await api.post('/generate/video',
+                {
+                    prompt: prompt,
+                    style: 'cinematic'
+                },
+                {
+                    timeout: 120000
+                }
             );
 
+            console.log('Video generation response:', response.data);
             setAssetUrl(response.data.video_url);
         } catch (err) {
-            console.error(err);
+            console.error("Video Generation Failed:", err);
             setError('AI is resting, try again in a moment.');
         } finally {
             setLoading(false);
@@ -42,14 +50,13 @@ export default function StudioPage() {
     };
 
     return (
-        <div className="p-8 max-w-7xl mx-auto h-screen flex flex-col">
+        <div className="p-8 max-w-7xl mx-auto h-screen flex flex-col animate-fade-in">
             <header className="mb-8">
                 <h1 className="text-3xl font-bold text-slate-800">Creative Studio</h1>
                 <p className="text-slate-500">Generate high-conversion assets using Google Vertex AI.</p>
             </header>
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 flex-1">
-
                 {/* Left: Controls */}
                 <div className="glass-panel p-6 rounded-xl flex flex-col gap-6 h-fit">
                     <div>
@@ -63,8 +70,8 @@ export default function StudioPage() {
                     </div>
 
                     {error && (
-                        <div className="p-3 bg-red-50 text-red-600 text-sm rounded-lg border border-red-100">
-                            {error}
+                        <div className="p-3 bg-red-50 text-red-600 text-sm rounded-lg border border-red-100 flex items-center gap-2">
+                            <span className="flex-1">{error}</span>
                         </div>
                     )}
 
@@ -72,8 +79,8 @@ export default function StudioPage() {
                         onClick={handleGenerate}
                         disabled={loading || !prompt}
                         className={`w-full py-4 rounded-xl font-bold text-white shadow-lg flex items-center justify-center gap-2 transition-all
-              ${loading ? 'bg-slate-400 cursor-wait' : 'bg-gradient-to-r from-purple-600 to-blue-600 hover:scale-[1.02]'}
-            `}
+                            ${loading ? 'bg-slate-400 cursor-wait' : 'bg-gradient-to-r from-purple-600 to-blue-600 hover:scale-[1.02]'}
+                        `}
                     >
                         {loading ? (
                             <>
@@ -97,11 +104,11 @@ export default function StudioPage() {
 
                     {assetUrl && (
                         <div className="w-full max-w-2xl animate-fade-in flex flex-col items-center">
-                            {/* Note: Vertex often returns images first. If video, use <video>. For this test, we use <img> */}
+                            {/* Handled as an image for preview purposes */}
                             <img
                                 src={assetUrl}
                                 alt="Generated Asset"
-                                className="w-full rounded-lg shadow-2xl border-4 border-white"
+                                className="w-full rounded-lg shadow-2xl border-4 border-white object-cover"
                             />
                             <div className="mt-6 flex justify-end w-full">
                                 <a href={assetUrl} target="_blank" rel="noreferrer" className="flex items-center gap-2 bg-slate-800 text-white px-6 py-2 rounded-lg hover:bg-black transition-colors">
@@ -111,9 +118,9 @@ export default function StudioPage() {
                         </div>
                     )}
                 </div>
-
             </div>
-            {/* --- NEW: Content Recycling Section --- */}
+
+            {/* --- Content Recycling Section --- */}
             <div className="mt-12">
                 <h2 className="text-2xl font-bold text-slate-800 mb-6">Content Recycling Engine</h2>
                 <RepurposeWidget />
@@ -123,7 +130,6 @@ export default function StudioPage() {
 }
 
 function RepurposeWidget() {
-    const { currentUser } = useAuth();
     const [topic, setTopic] = useState('');
     const [result, setResult] = useState(null);
     const [loading, setLoading] = useState(false);
@@ -134,12 +140,17 @@ function RepurposeWidget() {
         setLoading(true);
         setError('');
         try {
-            const res = await api.post('/repurpose/content', // Removed the extra /api/
-                { origin_content: topic, platform_target: "LinkedIn" },
+            // SENIOR DEV FIX: URL path relative to interceptor baseURL (/api)
+            const res = await api.post('/repurpose/content',
+                {
+                    origin_content: topic,
+                    platform_target: "LinkedIn"
+                },
                 { timeout: 120000 }
             );
             setResult(res.data.data);
         } catch (err) {
+            console.error("Repurpose Failed:", err);
             setError('AI is resting, try again in a moment.');
         } finally {
             setLoading(false);
@@ -148,11 +159,8 @@ function RepurposeWidget() {
 
     return (
         <div className="glass-panel p-6 md:p-8 rounded-xl flex flex-col gap-8">
-            {/* Input Side - Full Width */}
             <div className="space-y-4">
                 <label className="block text-sm font-bold text-slate-700">What did you create today?</label>
-
-                {/* Responsive Input Group: Stacks on mobile, Row on tablet+ */}
                 <div className="flex flex-col sm:flex-row gap-3">
                     <input
                         type="text"
@@ -164,7 +172,7 @@ function RepurposeWidget() {
                     <button
                         onClick={handleRepurpose}
                         disabled={loading}
-                        className="bg-green-600 hover:bg-green-700 text-white px-8 py-3 rounded-lg font-bold transition-all disabled:opacity-50 whitespace-nowrap shadow-lg shadow-green-500/20"
+                        className="bg-green-600 hover:bg-green-700 text-white px-8 py-3 rounded-lg font-bold transition-all disabled:opacity-50 whitespace-nowrap shadow-lg"
                     >
                         {loading ? "Remixing..." : "Turn into LinkedIn Post"}
                     </button>
@@ -177,13 +185,10 @@ function RepurposeWidget() {
                 </div>
             )}
 
-            {/* Output Side - Full Width & Centered */}
             {result && (
                 <div className="w-full animate-fade-in border-t border-slate-200 pt-8">
                     <h3 className="text-lg font-bold text-slate-700 mb-4">Generated Content</h3>
-
                     <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row gap-6">
-                        {/* Image Preview */}
                         <div className="flex-shrink-0">
                             <img
                                 src={result.image_url}
@@ -191,8 +196,6 @@ function RepurposeWidget() {
                                 className="w-full md:w-48 h-48 object-cover rounded-lg shadow-md bg-slate-100"
                             />
                         </div>
-
-                        {/* Text Content */}
                         <div className="flex-1 min-w-0">
                             <h4 className="font-bold text-slate-900 text-lg mb-2">{result.headline}</h4>
                             <div className="prose prose-sm max-w-none text-slate-600 mb-4 whitespace-pre-wrap">

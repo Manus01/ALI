@@ -24,15 +24,13 @@ from app.routers import (
     publisher,
     webhook,
     integration,
-    admin
+    admin,
+    strategy,
+    studio,
+    repurpose,
+    execution,
+    maintenance
 )
-
-# Optional Routers with Defensive Imports
-try:
-    from app.routers import strategy, studio, repurpose, execution, maintenance
-except ImportError:
-    strategy = studio = repurpose = execution = maintenance = None
-    logger.warning("⚠️ Some optional routers (strategy, studio, etc.) were not found. Skipping.")
 
 # --- 3. APP INITIALIZATION ---
 app = FastAPI(
@@ -92,11 +90,11 @@ app.include_router(jobs.router, prefix="/api", tags=["Jobs"])
 app.include_router(assessments.router, prefix="/api", tags=["Assessments"])
 
 # Future/Optional Modules
-if strategy: app.include_router(strategy.router, prefix="/api", tags=["Strategy"])
-if studio: app.include_router(studio.router, prefix="/api", tags=["Studio"])
-if repurpose: app.include_router(repurpose.router, prefix="/api", tags=["Repurpose"])
-if execution: app.include_router(execution.router, prefix="/api", tags=["Execution"])
-if maintenance: app.include_router(maintenance.router, prefix="/api", tags=["Maintenance"])
+app.include_router(strategy.router, prefix="/api", tags=["Strategy"])
+app.include_router(studio.router, prefix="/api", tags=["Studio"])
+app.include_router(repurpose.router, prefix="/api", tags=["Repurpose"])
+app.include_router(execution.router, prefix="/api", tags=["Execution"])
+app.include_router(maintenance.router, prefix="/api", tags=["Maintenance"])
 
 # --- 6. HEALTH CHECK ---
 @app.get("/")
