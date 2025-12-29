@@ -2,13 +2,22 @@ import axios from 'axios';
 import { auth } from '../firebase';
 import { API_URL } from '../api_config';
 
+// Clean the Base URL: Remove trailing /api or trailing /
+const cleanBaseURL = API_URL.replace(/\/api$/, '').replace(/\/$/, '');
+
 const api = axios.create({
-    baseURL: API_URL.endsWith('/api') ? API_URL : `${API_URL}/api`
+    baseURL: cleanBaseURL
 });
 
 api.interceptors.request.use(
     async (config) => {
         const user = auth.currentUser;
+
+        // Ensure every request starts with /api exactly once
+        if (config.url && !config.url.startsWith('/api')) {
+            config.url = `/api${config.url.startsWith('/') ? '' : '/'}${config.url}`;
+        }
+
         if (user) {
             const token = await user.getIdToken();
             config.headers = {
@@ -29,20 +38,16 @@ api.interceptors.response.use(
     (response) => response,
     async (error) => {
         const status = error.response?.status;
-        const config = error.config || {};
-        const shouldRetry = status === 502 || status === 503;
-        const maxRetries = 3;
-
-        if (shouldRetry && config) {
-            config.__retryCount = config.__retryCount || 0;
-            if (config.__retryCount < maxRetries) {
-                config.__retryCount += 1;
-                const backoff = Math.pow(2, config.__retryCount) * 200; // 200ms, 400ms, 800ms
-                await new Promise((resolve) => setTimeout(resolve, backoff));
+        const config = error.config;
+        if ((status === 502 || status === 503) && config && !config._retry) {
+            config._retry = true;
+            config._retryCount = (config._retryCount || 0) + 1;
+            if (config._retryCount <= 3) {
+                const backoff = Math.pow(2, config._retryCount) * 500;
+                await new Promise(resolve => setTimeout(resolve, backoff));
                 return api(config);
             }
         }
-
         return Promise.reject(error);
     }
 );
