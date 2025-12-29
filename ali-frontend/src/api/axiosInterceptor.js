@@ -2,7 +2,9 @@ import axios from 'axios';
 import { auth } from '../firebase';
 import { API_URL } from '../api_config';
 
-const api = axios.create({ baseURL: API_URL });
+const api = axios.create({
+    baseURL: API_URL.endsWith('/api') ? API_URL : `${API_URL}/api`
+});
 
 api.interceptors.request.use(
     async (config) => {

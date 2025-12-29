@@ -27,14 +27,9 @@ export default function StudioPage() {
         setError('');
 
         try {
-            const response = await api.post('/api/generate/video',
-                {
-                    prompt: prompt,
-                    style: 'cinematic'
-                },
-                {
-                    timeout: 120000
-                }
+            const response = await api.post('/generate/video', // Removed the extra /api/
+                { prompt: prompt, style: 'cinematic' },
+                { timeout: 120000 }
             );
 
             setAssetUrl(response.data.video_url);
@@ -139,11 +134,9 @@ function RepurposeWidget() {
         setLoading(true);
         setError('');
         try {
-            const res = await api.post('/api/repurpose/content',
+            const res = await api.post('/repurpose/content', // Removed the extra /api/
                 { origin_content: topic, platform_target: "LinkedIn" },
-                {
-                    timeout: 120000
-                }
+                { timeout: 120000 }
             );
             setResult(res.data.data);
         } catch (err) {
