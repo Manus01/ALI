@@ -203,7 +203,8 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
         "is_completed": False
     }
     
-    doc_ref = db.collection("tutorials").add(tutorial_data)
+    # SENIOR DEV FIX: Save to user's subcollection so the frontend listener picks it up immediately
+    doc_ref = db.collection("users").document(user_id).collection("tutorials").add(tutorial_data)
     tutorial_data["id"] = doc_ref[1].id
     return tutorial_data
 

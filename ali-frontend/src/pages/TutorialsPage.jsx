@@ -96,9 +96,12 @@ export default function TutorialsPage() {
                     <div className="relative flex-1">
                         <FaSearch className="absolute left-4 top-3.5 text-slate-400" />
                         <input
-                            type="text"
-                            placeholder="Request a topic (e.g. 'Advanced Retargeting')"
-                            className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-primary outline-none bg-white"
+                            name="tutorialTopic"
+                            id="tutorialTopic"
+                            aria-label="Request a tutorial topic"
+                             type="text"
+                             placeholder="Request a topic (e.g. 'Advanced Retargeting')"
+                             className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-primary outline-none bg-white"
                             value={customTopic}
                             onChange={(e) => setCustomTopic(e.target.value)}
                             onKeyDown={(e) => e.key === 'Enter' && handleGenerate(null)}

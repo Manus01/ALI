@@ -75,23 +75,61 @@ export default function DashboardPage() {
             const currentData = datasets[activeFilter];
             if (!currentData) return null;
 
-            return {
-                labels: dates,
-                datasets: [{
-                    label: CHANNEL_CONFIG[activeFilter]?.label || activeFilter,
-                    data: currentData,
-                    borderColor: CHANNEL_CONFIG[activeFilter]?.color || '#4F46E5',
-                    backgroundColor: CHANNEL_CONFIG[activeFilter]?.color || '#4F46E5',
-                    tension: 0.4,
-                    pointRadius: 3,
-                    borderWidth: 2,
-                    order: 1
-                }]
-            };
-        }
+            // Prepare Forecast Data (Only for 'all' view or if we want it everywhere)
+            // The backend sends 'forecast' as a simple array of numbers for the NEXT 7 days.
+            // We need to append dates and align the datasets.
+            
+            const forecastValues = data.forecast || [];
+            const hasForecast = forecastValues.length > 0 && activeFilter === 'all'; // Only show prediction on Aggregated view for clarity
+            
+            let finalLabels = [...dates];
+            let historicalDataset = [...currentData];
+            let forecastDataset = new Array(currentData.length).fill(null); // Empty for historical period
+            
+            if (hasForecast) {
+                // Generate future dates
+                const lastDate = new Date(dates[dates.length - 1]);
+                for (let i = 1; i <= forecastValues.length; i++) {
+                    const nextDate = new Date(lastDate);
+                    nextDate.setDate(lastDate.getDate() + i);
+                    finalLabels.push(nextDate.toISOString().split('T')[0]);
+                }
+                
+                // Connect the lines: Start forecast from the last historical point
+                forecastDataset[forecastDataset.length - 1] = currentData[currentData.length - 1];
+                forecastDataset = [...forecastDataset, ...forecastValues];
+            }
 
-        // CASE B: PRESERVED Forecasting Data (Fallback)
-        if (data.metrics && Array.isArray(data.metrics) && !data.metrics[0]?.label) {
+            return {
+                labels: finalLabels,
+                datasets: [
+                    {
+                        label: CHANNEL_CONFIG[activeFilter]?.label || activeFilter,
+                        data: historicalDataset,
+                        borderColor: CHANNEL_CONFIG[activeFilter]?.color || '#4F46E5',
+                        backgroundColor: CHANNEL_CONFIG[activeFilter]?.color || '#4F46E5',
+                        tension: 0.4,
+                        pointRadius: 3,
+                        borderWidth: 2,
+                        order: 1
+                    },
+                    hasForecast ? {
+                        label: 'AI Prediction',
+                        data: forecastDataset,
+                        borderColor: '#93C5FD', // Light Blue
+                        backgroundColor: '#93C5FD',
+                        borderDash: [5, 5],
+                        tension: 0.4,
+                        pointRadius: 0,
+                        borderWidth: 2,
+                        order: 2
+                    } : null
+                ].filter(Boolean) // Remove null if no forecast
+             };
+         }
+
+         // CASE B: PRESERVED Forecasting Data (Fallback)
+         if (data.metrics && Array.isArray(data.metrics) && !data.metrics[0]?.label) {
             const historyDates = data.metrics.map(m => m.date);
             const forecastDates = data.forecast ? [...new Set(data.forecast.map(f => f.date))] : [];
             const allDates = [...new Set([...historyDates, ...forecastDates])].sort();

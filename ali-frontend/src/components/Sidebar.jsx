@@ -155,21 +155,6 @@ export default function Sidebar() {
 
                 {/* Footer */}
                 <div className="p-4 border-t border-slate-200 dark:border-slate-800 space-y-2">
-
-                    {/* ADDED: Identity Management Badge (Click to Edit DNA) */}
-                    <div
-                        onClick={() => navigate('/campaign-center', { state: { editDna: true } })}
-                        className={`mb-2 p-3 rounded-xl flex items-center gap-3 cursor-pointer border transition-all ${isOnboardingComplete
-                            ? 'bg-slate-50 text-slate-700 border-slate-100 hover:border-primary/30'
-                            : 'bg-amber-50 text-amber-700 border-amber-100 hover:border-amber-300'}`}
-                    >
-                        {isOnboardingComplete ? <FaPalette className="text-primary" /> : <FaExclamationCircle className="text-amber-500" />}
-                        <div>
-                            <p className="text-[10px] font-black uppercase tracking-wider">{isOnboardingComplete ? 'Identity Active' : 'Setup Identity'}</p>
-                            <p className="text-[9px] font-bold opacity-60">Manage Brand DNA</p>
-                        </div>
-                    </div>
-
                     <button
                         onClick={() => setDarkMode(!darkMode)}
                         className="w-full flex items-center gap-3 px-4 py-2 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg transition-colors"

@@ -93,7 +93,9 @@ def get_tutorials(include_global: bool = True, user: dict = Depends(verify_token
             global_docs = db.collection('tutorials').where('is_public', '==', True).limit(10).stream()
             for doc in global_docs:
                 t = doc.to_dict(); t['id'] = doc.id; t['is_completed'] = doc.id in completed_ids; tutorials_map[doc.id] = t
-        private_docs = db.collection('tutorials').where('owner_id', '==', user['uid']).where('is_public', '==', False).stream()
+        
+        # SENIOR DEV FIX: Fetch private tutorials from user subcollection
+        private_docs = db.collection('users').document(user['uid']).collection('tutorials').stream()
         for doc in private_docs:
             t = doc.to_dict(); t['id'] = doc.id; t['is_completed'] = doc.id in completed_ids; tutorials_map[doc.id] = t
         result = list(tutorials_map.values())
@@ -119,15 +121,22 @@ def mark_complete(tutorial_id: str, payload: CompletionRequest, user: dict = Dep
         
         db = firestore.Client()
         user_ref = db.collection('users').document(user['uid'])
-        tut_ref = db.collection('tutorials').document(tutorial_id)
         
-        # Fetch Tutorial Metadata to know WHICH skill to upgrade
+        # SENIOR DEV FIX: Check User Subcollection FIRST (Private), then Global (Public)
+        tut_ref = user_ref.collection('tutorials').document(tutorial_id)
         tut_doc = tut_ref.get()
-        if not tut_doc.exists: return {"status": "error", "message": "Tutorial not found"}
         
-        tut_data = tut_doc.to_dict()
-        category = tut_data.get("category", "general") # e.g., "paid_ads"
-        difficulty = tut_data.get("difficulty", "NOVICE")
+        if not tut_doc.exists:
+            # Fallback to global
+            tut_ref = db.collection('tutorials').document(tutorial_id)
+            tut_doc = tut_ref.get()
+         
+         # Fetch Tutorial Metadata to know WHICH skill to upgrade
+         if not tut_doc.exists: return {"status": "error", "message": "Tutorial not found"}
+         
+         tut_data = tut_doc.to_dict()
+         category = tut_data.get("category", "general") # e.g., "paid_ads"
+         difficulty = tut_data.get("difficulty", "NOVICE")
 
         # Update Lists
         user_ref.update({

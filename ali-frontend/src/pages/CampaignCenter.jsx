@@ -448,7 +448,7 @@ export default function CampaignCenter() {
                         name="campaignGoal"
                         id="campaignGoal"
                         aria-label="Campaign Goal"
-                        className="w-full p-8 rounded-3xl border-2 border-slate-50 bg-slate-50 text-xl focus:border-primary focus:bg-white outline-none transition-all mb-8 min-h-[200px]"
+                        className="w-full p-8 rounded-3xl border-2 border-slate-50 bg-slate-50 text-xl focus:border-primary focus:bg-white outline-none transition-all mb-8 min-h-[200px] text-slate-800"
                         placeholder="e.g., 'Launch a luxury holiday campaign for our Cyprus resort...'"
                         value={goal} onChange={(e) => setGoal(e.target.value)}
                     />
@@ -477,9 +477,9 @@ export default function CampaignCenter() {
                             <input
                                 id={`question-${i}`}
                                 name={`question-${i}`}
-                                 className="w-full p-5 rounded-xl border border-slate-100 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-primary outline-none transition-all font-medium"
-                                 placeholder="Enter details..."
-                                 onChange={(e) => setAnswers({ ...answers, [i]: e.target.value })}
+                                 className="w-full p-5 rounded-xl border border-slate-100 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-primary outline-none transition-all font-medium text-slate-800"
+                                  placeholder="Enter details..."
+                                  onChange={(e) => setAnswers({ ...answers, [i]: e.target.value })}
                             />
                         </div>
                     ))}

@@ -23,7 +23,7 @@ db = firestore.client()
 # Core routers registered globally for immediate availability
 from app.routers import (
     auth, dashboard, jobs, assessments, notifications,
-    publisher, webhook, integration, admin, tutorials
+    publisher, webhook, integration, admin, tutorials, maintenance
 )
 
 # --- 3. APP INITIALIZATION ---
@@ -45,11 +45,42 @@ class LimitRequestSizeMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(LimitRequestSizeMiddleware)
 
+# --- 3c. SECURITY HEADERS MIDDLEWARE ---
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        
+        # Security Headers
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Content-Security-Policy"] = "frame-ancestors 'none';"
+        
+        # Disable deprecated headers
+        if "X-XSS-Protection" in response.headers:
+            del response.headers["X-XSS-Protection"]
+        if "X-Frame-Options" in response.headers:
+            del response.headers["X-Frame-Options"]
+            
+        # Cache Control (Secure API Defaults)
+        # We use 'no-store' to prevent sensitive data caching, but allow 'no-cache' for revalidation
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        
+        # Content Type Charset
+        if "Content-Type" in response.headers and "charset" not in response.headers["Content-Type"]:
+            if response.headers["Content-Type"].startswith("application/json") or response.headers["Content-Type"].startswith("text/"):
+                response.headers["Content-Type"] += "; charset=utf-8"
+                
+        return response
+
+app.add_middleware(SecurityHeadersMiddleware)
+
 # --- 4. CORS CONFIGURATION ---
 origins = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "https://ali-frontend-776425171266.us-central1.run.app",
+    "https://ali-frontend-776425171266.us-central1.run.app/",  # Added trailing slash version
 ]
 
 app.add_middleware(
@@ -72,6 +103,7 @@ app.include_router(publisher.router, prefix="/api", tags=["Publisher"])
 app.include_router(jobs.router, prefix="/api", tags=["Jobs"])
 app.include_router(assessments.router, prefix="/api", tags=["Assessments"])
 app.include_router(tutorials.router, prefix="/api", tags=["Tutorials"])
+app.include_router(maintenance.router, prefix="/api", tags=["Maintenance"])
 
 # --- 6. HEALTH CHECK (Critical for Cloud Run Deployment) ---
 @app.get("/")
@@ -116,17 +148,24 @@ async def complete_onboarding(payload: dict, token: str = Depends(verify_token))
 
 @app.post("/api/campaign/initiate")
 async def initiate_campaign(payload: dict, token: str = Depends(verify_token)):
-    from app.agents.campaign_agent import CampaignAgent
-    goal = payload.get("goal")
-    uid = token['uid']
-    
-    brand_ref = db.collection('users').document(uid).collection('brand_profile').document('current').get()
-    if not brand_ref.exists:
-        return {"questions": ["Your Brand DNA is missing. Please complete onboarding."]}
+    try:
+        from app.agents.campaign_agent import CampaignAgent
+        goal = payload.get("goal")
+        uid = token['uid']
+        
+        brand_ref = db.collection('users').document(uid).collection('brand_profile').document('current').get()
+        if not brand_ref.exists:
+            return {"questions": ["Your Brand DNA is missing. Please complete onboarding."]}
 
-    agent = CampaignAgent()
-    questions = await agent.generate_clarifying_questions(goal, brand_ref.to_dict())
-    return {"questions": questions}
+        agent = CampaignAgent()
+        questions = await agent.generate_clarifying_questions(goal, brand_ref.to_dict())
+        return {"questions": questions}
+    except ImportError as e:
+        logging.error(f"Failed to import CampaignAgent: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error: Agent module missing")
+    except Exception as e:
+        logging.error(f"Campaign Initiation Failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/campaign/finalize")
 async def finalize_campaign(payload: dict, background_tasks: BackgroundTasks, token: str = Depends(verify_token)):

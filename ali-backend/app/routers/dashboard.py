@@ -89,11 +89,22 @@ def get_dashboard_overview(user: dict = Depends(verify_token)):
 
         # 4. Generate Forecast (Only if we have real data points)
         forecast = []
-        if metrics:
-            try:
+        # NEW: Forecast based on the CHART HISTORY (Time Series), not just summary metrics
+        if chart_history and "datasets" in chart_history and "all" in chart_history["datasets"]:
+             try:
+                 from app.services.forecasting import generate_forecast
+                # Forecast the next 7 days based on the 'all' aggregated history
+                 forecast = generate_forecast(chart_history["datasets"]["all"], days=7)
+             except Exception:
+                 forecast = []
+        elif metrics:
+             # Fallback to old logic if chart history is missing (unlikely now)
+             try:
                 from app.services.forecasting import generate_forecast
-                forecast = generate_forecast(metrics)
-            except Exception:
+                # This old usage was likely wrong (metrics is a list of dicts), but keeping as safe fallback stub
+                # forecast = generate_forecast(metrics) 
+                forecast = [] 
+             except:
                 forecast = []
 
         # 5. Dynamic Success Story / Context Message
