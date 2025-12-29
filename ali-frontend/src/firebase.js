@@ -10,7 +10,7 @@ const firebaseConfig = {
     authDomain: "ali-platform-prod-73019.firebaseapp.com",
     projectId: "ali-platform-prod-73019",
     // FIXED: Changed to match your 'gsutil ls' output
-    storageBucket: "ali-platform-prod-73019-assets",
+    storageBucket: "ali-platform-prod-73019.firebasestorage.app",
     messagingSenderId: "776425171266",
     appId: "1:776425171266:web:9373c53681664fd2c700db",
     measurementId: "G-2RPJRLT2Y3"
