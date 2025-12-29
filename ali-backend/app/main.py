@@ -17,7 +17,6 @@ load_dotenv()
 from app.routers import (
     auth, 
     dashboard, 
-    tutorials, 
     jobs,           
     assessments, 
     notifications,
@@ -25,8 +24,6 @@ from app.routers import (
     webhook,
     integration,
     admin,
-    strategy,
-    studio,
     repurpose,
     execution,
     maintenance
@@ -85,16 +82,30 @@ app.include_router(admin.router, prefix="/api/admin", tags=["Admin Research"])
 app.include_router(publisher.router, prefix="/api", tags=["Publisher"])
 
 # AI Learning & Agent Engine
-app.include_router(tutorials.router, prefix="/api", tags=["Tutorials"])
 app.include_router(jobs.router, prefix="/api", tags=["Jobs"])
 app.include_router(assessments.router, prefix="/api", tags=["Assessments"])
 
-# Future/Optional Modules
-app.include_router(strategy.router, prefix="/api", tags=["Strategy"])
-app.include_router(studio.router, prefix="/api", tags=["Studio"])
+# Future/Optional Modules (lightweight imports)
 app.include_router(repurpose.router, prefix="/api", tags=["Repurpose"])
 app.include_router(execution.router, prefix="/api", tags=["Execution"])
 app.include_router(maintenance.router, prefix="/api", tags=["Maintenance"])
+
+
+# --- Lazy-load heavy AI routers (strategy, studio, tutorials) ---
+def _include_ai_routers_once(app_instance: FastAPI):
+    if getattr(app_instance, "_ai_routers_loaded", False):
+        return
+    from app.routers import strategy, studio, tutorials
+    app_instance.include_router(tutorials.router, prefix="/api", tags=["Tutorials"])
+    app_instance.include_router(strategy.router, prefix="/api", tags=["Strategy"])
+    app_instance.include_router(studio.router, prefix="/api", tags=["Studio"])
+    app_instance._ai_routers_loaded = True
+
+
+@app.on_event("startup")
+async def load_ai_routers_on_startup():
+    _include_ai_routers_once(app)
+
 
 # --- 6. HEALTH CHECK ---
 @app.get("/")
