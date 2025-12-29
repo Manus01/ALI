@@ -32,11 +32,30 @@ def admin_link_metricool(payload: Dict[str, str] = Body(...), admin: dict = Depe
 
 @router.get("/users/{target_uid}/verify-channels")
 def verify_user_channels(target_uid: str, admin: dict = Depends(verify_admin)):
-    doc = db.collection("users").document(target_uid).collection("user_integrations").document("metricool").get()
-    blog_id = doc.to_dict().get("metricool_blog_id") if doc.exists else None
-    if not blog_id: return {"connected_channels": []}
-    client = MetricoolClient(blog_id=blog_id)
-    return {"connected_channels": client.get_account_info().get("connected", [])}
+    try:
+        doc = db.collection("users").document(target_uid).collection("user_integrations").document("metricool").get()
+        blog_id = doc.to_dict().get("metricool_blog_id") if doc.exists else None
+        
+        if not blog_id: 
+            return {"connected_channels": []}
+            
+        # Ensure MetricoolClient doesn't crash if init fails
+        try:
+            client = MetricoolClient(blog_id=blog_id)
+            info = client.get_account_info()
+            # Handle case where get_account_info returns None or error dict
+            if not info or "error" in info:
+                print(f"?? Metricool API Error for {target_uid}: {info}")
+                return {"connected_channels": [], "error": "Metricool API unavailable"}
+                
+            return {"connected_channels": info.get("connected", [])}
+        except Exception as e:
+            print(f"? Metricool Client Error: {e}")
+            return {"connected_channels": [], "error": str(e)}
+            
+    except Exception as e:
+        print(f"? Verify Channels Error: {e}")
+        raise HTTPException(status_code=500, detail=f"Verification failed: {str(e)}")
 
 # PRESERVED: Original PhD Data Access
 @router.get("/research/logs")

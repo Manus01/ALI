@@ -26,20 +26,22 @@ export default function AdminPage() {
     const [actionMsg, setActionMsg] = useState("");
 
     // Notification sound for background alerts
-    const audioRef = useRef(new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3'));
+    // Use a reliable CDN or local asset. Fallback to empty if fails.
+    const audioRef = useRef(new Audio('https://cdn.freesound.org/previews/536/536108_11957970-lq.mp3'));
 
     useEffect(() => {
         if (currentUser?.email === "manoliszografos@gmail.com") {
             setIsAdmin(true);
             fetchLogs();
-            const db = getFirestore();
-            const q = query(collection(db, "admin_tasks"), where("status", "==", "pending"));
-            const unsubscribe = onSnapshot(q, (snapshot) => {
-                const tasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                if (tasks.length > pendingTasks.length) audioRef.current.play().catch(() => { });
-                setPendingTasks(tasks);
-            });
-            return () => unsubscribe();
+            // DISABLED: Global listener causes permission errors with user-scoped rules.
+            // const db = getFirestore();
+            // const q = query(collection(db, "admin_tasks"), where("status", "==", "pending"));
+            // const unsubscribe = onSnapshot(q, (snapshot) => {
+            //     const tasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            //     if (tasks.length > pendingTasks.length) audioRef.current.play().catch(() => { });
+            //     setPendingTasks(tasks);
+            // }, (err) => console.warn("Admin listener restricted:", err));
+            // return () => unsubscribe();
         }
     }, [currentUser, pendingTasks.length]);
 
@@ -64,11 +66,16 @@ export default function AdminPage() {
         if (!targetUid || !blogId) return;
         try {
             await api.post('/api/admin/users/link-metricool', { target_user_id: targetUid, metricool_blog_id: blogId });
+            setActionMsg("✅ User Linked. Verifying channels...");
+            
             const verifyRes = await api.get(`/api/admin/users/${targetUid}/verify-channels`);
             setVerifiedChannels(verifyRes.data.connected_channels);
             setActionMsg("✅ User Linked & Verified.");
             setTargetUid(""); setBlogId("");
-        } catch (err) { alert("Linking failed."); }
+        } catch (err) { 
+            console.error("Link/Verify Error:", err);
+            alert(`Linking failed: ${err.response?.data?.detail || err.message}`); 
+        }
     };
 
     if (!isAdmin) return <div className="p-10 text-center text-slate-400">🚫 Restricted Access</div>;
