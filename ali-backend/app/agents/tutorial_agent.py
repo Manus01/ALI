@@ -189,7 +189,7 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
         "difficulty": profile.get("marketing_knowledge", "NOVICE"),
         "sections": final_sections,
         "owner_id": user_id,
-        "is_public": False,
+        "is_public": True, # Default to public for community sharing
         "tags": [profile.get("learning_style", "VISUAL"), metaphor],
         "timestamp": firestore.SERVER_TIMESTAMP,
         "is_completed": False
@@ -198,6 +198,17 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
     # SENIOR DEV FIX: Save to user's subcollection so the frontend listener picks it up immediately
     doc_ref = db.collection("users").document(user_id).collection("tutorials").add(tutorial_data)
     tutorial_data["id"] = doc_ref[1].id
+    
+    # GLOBAL INDEXING: Also save to global 'tutorials' collection for community discovery
+    # We use the SAME ID as the private doc to maintain a link (conceptually)
+    # or just let Firestore generate a new one. For simplicity, we add a new doc.
+    try:
+        global_ref = db.collection("tutorials").document(tutorial_data["id"])
+        global_ref.set(tutorial_data)
+        print(f"   🌍 Published to Global Library: {tutorial_data['id']}")
+    except Exception as e:
+        print(f"   ⚠️ Failed to publish globally: {e}")
+        
     return tutorial_data
 
 def fabricate_block(block, topic, creative):
