@@ -1,14 +1,23 @@
 ﻿import React, { useEffect, useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import axios from 'axios';
-import { FaHashtag, FaCheckCircle, FaClock, FaEnvelope, FaPaperPlane } from 'react-icons/fa';
+import { FaHashtag, FaCheckCircle, FaClock, FaEnvelope, FaPaperPlane, FaExternalLinkAlt, FaSync, FaInstagram, FaLinkedin, FaFacebook, FaTiktok } from 'react-icons/fa';
 import { getFirestore, collection, onSnapshot } from 'firebase/firestore';
 import { API_URL } from '../api_config';
+
+const PROVIDER_ICONS = {
+    instagram: <FaInstagram className="text-pink-500" />,
+    linkedin: <FaLinkedin className="text-blue-600" />,
+    facebook: <FaFacebook className="text-blue-700" />,
+    tiktok: <FaTiktok className="text-black" />
+};
 
 export default function IntegrationsPage() {
     const { currentUser } = useAuth();
     const [status, setStatus] = useState(null); // null, 'pending', 'active'
+    const [connectedProviders, setConnectedProviders] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
 
     // --- 1. Real-time Status Listener (SECURE PATH) ---
     useEffect(() => {
@@ -36,6 +45,29 @@ export default function IntegrationsPage() {
 
         return () => unsubscribe();
     }, [currentUser]);
+
+    // --- 2. Fetch Detailed Status (Providers) ---
+    const fetchDetails = async () => {
+        if (status !== 'active') return;
+        setRefreshing(true);
+        try {
+            const token = await currentUser.getIdToken();
+            const res = await axios.get(`${API_URL}/api/connect/metricool/status`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            setConnectedProviders(res.data.connected_providers || []);
+        } catch (err) {
+            console.error("Failed to fetch providers", err);
+        } finally {
+            setRefreshing(false);
+        }
+    };
+
+    useEffect(() => {
+        if (status === 'active') {
+            fetchDetails();
+        }
+    }, [status]);
 
     // --- 2. Request Access Handler ---
     const handleRequestAccess = async () => {
@@ -91,10 +123,19 @@ export default function IntegrationsPage() {
                     {status === 'active' && (
                         <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-center gap-3 text-green-800 text-sm font-medium">
                             <FaCheckCircle className="text-lg" />
-                            <div>
-                                <strong>Social Accounts Linked.</strong><br />
-                                You can now publish and view analytics in the Command Center.
+                            <div className="flex-1">
+                                <strong>Social Accounts Linked</strong>
+                                <div className="flex gap-2 mt-2">
+                                    {connectedProviders.length > 0 ? connectedProviders.map(p => (
+                                        <span key={p} className="p-1.5 bg-white rounded-md shadow-sm text-lg" title={p}>
+                                            {PROVIDER_ICONS[p.toLowerCase()] || <FaHashtag />}
+                                        </span>
+                                    )) : <span className="text-xs opacity-70">No channels detected yet.</span>}
+                                </div>
                             </div>
+                            <button onClick={fetchDetails} className="p-2 text-green-600 hover:bg-green-100 rounded-lg transition-colors" title="Refresh Connections">
+                                <FaSync className={refreshing ? "animate-spin" : ""} />
+                            </button>
                         </div>
                     )}
 
@@ -116,6 +157,22 @@ export default function IntegrationsPage() {
                         >
                             <FaPaperPlane /> Request Connection
                         </button>
+                    )}
+
+                    {status === 'active' && (
+                        <div className="mt-4">
+                            <a 
+                                href="https://app.metricool.com/" 
+                                target="_blank" 
+                                rel="noopener noreferrer"
+                                className="w-full py-3 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200 transition-colors flex items-center justify-center gap-2 text-sm"
+                            >
+                                <FaExternalLinkAlt /> Manage Connections on Metricool
+                            </a>
+                            <p className="text-center text-[10px] text-slate-400 mt-2">
+                                To add or remove social accounts, please visit your Metricool Dashboard.
+                            </p>
+                        </div>
                     )}
                 </div>
             </div>

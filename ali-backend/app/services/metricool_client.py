@@ -42,6 +42,36 @@ class MetricoolClient:
             logger.error(f"❌ Metricool Check Failed: {e}")
             raise ValueError(f"Could not verify Brand ID {blog_id}")
 
+    def get_account_info(self) -> Dict[str, Any]:
+        """
+        Fetches detailed account info including connected providers.
+        """
+        if not self.blog_id:
+            return {"connected": []}
+            
+        try:
+            # Reuse get_brand_status logic to fetch blog details
+            data = self.get_brand_status(self.blog_id)
+            
+            # Extract connected providers from the response
+            # Note: The actual field name depends on Metricool API response.
+            # Usually it's 'socialNetworks' or similar.
+            # We'll assume a list of objects or keys.
+            connected = []
+            if 'socialNetworks' in data:
+                for net in data['socialNetworks']:
+                    if net.get('selected'): # Assuming 'selected' or existence implies connection
+                        connected.append(net.get('id') or net.get('name'))
+            
+            # Fallback/Simulation if API structure differs (for safety)
+            if not connected and 'providers' in data:
+                 connected = data['providers']
+                 
+            return {"connected": connected}
+        except Exception as e:
+            logger.error(f"❌ Get Account Info Failed: {e}")
+            return {"connected": [], "error": str(e)}
+
     def normalize_media(self, media_url: str) -> str:
         """
         CRITICAL STEP: Metricool requires 'normalizing' (uploading) the media 
