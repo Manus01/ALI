@@ -7,7 +7,7 @@ from app.agents.visual_agent import VisualAgent
 class RecyclerAgent(BaseAgent):
     def __init__(self):
         super().__init__("RecyclerAgent")
-        self.model = get_gemini_model('gemini-1.5-flash')
+        self.model = get_gemini_model('gemini-1.5-flash-001')
 
     async def recycle_asset(self, uid: str, campaign_id: str, original_asset_url: str, user_instruction: str, brand_dna: dict):
         self.log_task(f"Recycling asset: {original_asset_url} with instruction: {user_instruction}")

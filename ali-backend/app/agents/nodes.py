@@ -120,7 +120,7 @@ def strategist_node(state: AgentState) -> dict:
     """
 
     try:
-        model = get_gemini_model('gemini-1.5-flash')
+        model = get_gemini_model('gemini-1.5-flash-001')
         response = model.generate_content(prompt)
         
         content = response.text.replace("```json", "").replace("```", "").strip()

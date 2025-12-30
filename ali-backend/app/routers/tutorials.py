@@ -55,7 +55,7 @@ def get_tutorial_suggestions(user: dict = Depends(verify_token)):
         weak_areas = [k for k, v in skills.items() if v == "NOVICE"]
         if not weak_areas: weak_areas = ["Advanced Optimization"] # If they are expert everywhere
 
-        model = get_gemini_model('gemini-1.5-flash')
+        model = get_gemini_model('gemini-1.5-flash-001')
          
         prompt = f"""
         Act as an AI Mentor.

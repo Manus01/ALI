@@ -45,7 +45,7 @@ def review_tutorial_relevance(tutorial_data: dict, current_metrics: list, user_p
     """
     
     try:
-        model = get_gemini_model('gemini-1.5-flash')
+        model = get_gemini_model('gemini-1.5-flash-001')
         response = model.generate_content(prompt)
         text = response.text.replace("```json", "").replace("```", "").strip()
         return json.loads(text)

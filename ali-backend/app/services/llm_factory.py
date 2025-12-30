@@ -5,7 +5,7 @@ from vertexai.generative_models import GenerativeModel
 
 logger = logging.getLogger(__name__)
 
-def get_gemini_model(model_name: str = "gemini-1.5-flash"):
+def get_gemini_model(model_name: str = "gemini-1.5-flash-001"):
     """
     Factory to get a Gemini model instance using Vertex AI SDK.
     """

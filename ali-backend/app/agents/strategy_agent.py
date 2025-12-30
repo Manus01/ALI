@@ -55,7 +55,7 @@ def predict_cpc_change(
         project_id = os.getenv("PROJECT_ID")
         vertexai.init(project=project_id, location="us-central1")
         
-        model = GenerativeModel("gemini-1.5-flash") # Vertex doesn't have 2.0-flash yet usually, fallback to 1.5
+        model = GenerativeModel("gemini-1.5-flash-001") # Vertex doesn't have 2.0-flash yet usually, fallback to 1.5
         
         response = model.generate_content(
             prompt,
@@ -86,7 +86,7 @@ class StrategyAgent(BaseAgent):
     """
     def __init__(self, agent_name: str = "StrategyAgent"):
         super().__init__("StrategyAgent")
-        self.model = 'gemini-2.0-pro-exp-02-05' # High reasoning capability
+        self.model = 'gemini-1.5-pro-001' # High reasoning capability
         self.client = None
         self.tools = [predict_cpc_change]
         
@@ -237,10 +237,7 @@ class StrategyAgent(BaseAgent):
         # Vertex AI tools need to be wrapped in Tool object
         # For simplicity in this refactor, we might skip the tool definition if complex
         # But let's try to adapt. Vertex AI tools are defined differently.
-        # We will simplify to text-only for this surgical refactor to avoid breaking complex tool definitions
-        # unless we map them.
-        
-        # REFACTOR: Use standard generation without tools for now to ensure stability
+        # We will simplify to text-only for this surgical refactor to ensure stability
         # or use the model directly.
         
         response = client.generate_content(
