@@ -1,6 +1,6 @@
 ﻿import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FaPlus, FaRobot, FaCheckCircle, FaLightbulb, FaSearch, FaArrowRight, FaGraduationCap } from 'react-icons/fa';
+import { FaPlus, FaRobot, FaCheckCircle, FaLightbulb, FaSearch, FaArrowRight, FaGraduationCap, FaTrash } from 'react-icons/fa';
 import { getFirestore, collection, query, onSnapshot, orderBy } from 'firebase/firestore';
 import api from '../api/axiosInterceptor';
 import { useAuth } from '../hooks/useAuth';
@@ -14,6 +14,7 @@ export default function TutorialsPage() {
     const [customTopic, setCustomTopic] = useState('');
     const [generationState, setGenerationState] = useState('idle');
     const [errorMessage, setErrorMessage] = useState('');
+    const [deleteModal, setDeleteModal] = useState({ show: false, tutorialId: null, title: '' });
 
     // --- 1. REAL-TIME LISTENER (SECURE PATH) ---
     useEffect(() => {
@@ -71,6 +72,22 @@ export default function TutorialsPage() {
             console.error(err);
             setErrorMessage('AI is resting, try again in a moment.');
             setGenerationState('idle');
+        }
+    };
+
+    const handleDelete = async (type) => {
+        if (!deleteModal.tutorialId) return;
+        
+        try {
+            if (type === 'hide') {
+                await api.delete(`/tutorials/${deleteModal.tutorialId}`);
+            } else if (type === 'permanent') {
+                await api.post(`/tutorials/${deleteModal.tutorialId}/request-delete`);
+            }
+            setDeleteModal({ show: false, tutorialId: null, title: '' });
+        } catch (err) {
+            console.error("Delete failed", err);
+            alert("Failed to delete tutorial.");
         }
     };
 
@@ -133,6 +150,37 @@ export default function TutorialsPage() {
             </header>
 
             <div className="flex flex-col lg:grid lg:grid-cols-3 gap-8 flex-1 min-h-0">
+                {/* DELETE MODAL */}
+                {deleteModal.show && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                        <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-2xl animate-fade-in">
+                            <h3 className="text-xl font-bold text-slate-800 mb-2">Delete Tutorial?</h3>
+                            <p className="text-slate-500 mb-6">"{deleteModal.title}"</p>
+                            
+                            <div className="space-y-3">
+                                <button 
+                                    onClick={() => handleDelete('hide')}
+                                    className="w-full py-3 bg-slate-100 text-slate-700 font-bold rounded-xl hover:bg-slate-200 transition-colors"
+                                >
+                                    Remove from my list (Hide)
+                                </button>
+                                <button 
+                                    onClick={() => handleDelete('permanent')}
+                                    className="w-full py-3 bg-red-50 text-red-600 font-bold rounded-xl hover:bg-red-100 transition-colors border border-red-100"
+                                >
+                                    Permanently Delete (Notify Admin)
+                                </button>
+                                <button 
+                                    onClick={() => setDeleteModal({ show: false, tutorialId: null, title: '' })}
+                                    className="w-full py-2 text-slate-400 font-bold text-sm hover:text-slate-600 mt-2"
+                                >
+                                    Cancel
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 <div className="bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm flex flex-col h-full overflow-hidden">
                     <div className="flex p-1 bg-slate-50 rounded-xl mb-4">
                         <button onClick={() => setActiveTab('active')} className={`flex-1 px-4 py-2 text-xs font-black rounded-lg transition-all ${activeTab === 'active' ? 'bg-white shadow-sm text-slate-800' : 'text-slate-400'}`}>ACTIVE</button>
@@ -142,16 +190,29 @@ export default function TutorialsPage() {
                         {displayedTutorials.length === 0 ? (
                             <div className="flex flex-col items-center justify-center p-10 text-slate-400 h-full"><p className="text-xs">No active lessons.</p></div>
                         ) : displayedTutorials.map((tut, idx) => (
-                            <button key={idx} onClick={() => navigate(`/tutorials/${tut.id}`)} className="w-full text-left p-4 rounded-2xl border border-slate-50 bg-white hover:border-primary/20 hover:shadow-sm transition-all flex justify-between items-center group">
-                                <div className="min-w-0">
-                                    <h4 className="font-bold text-sm text-slate-800 truncate">{tut.title}</h4>
-                                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">{tut.category || "General"}</span>
-                                </div>
-                                <FaArrowRight className="text-slate-200 group-hover:text-primary transition-colors" />
-                            </button>
-                        ))}
-                    </div>
-                </div>
+-                            <button key={idx} onClick={() => navigate(`/tutorials/${tut.id}`)} className="w-full text-left p-4 rounded-2xl border border-slate-50 bg-white hover:border-primary/20 hover:shadow-sm transition-all flex justify-between items-center group">
+-                                <div className="min-w-0">
++                            <div key={idx} className="w-full p-4 rounded-2xl border border-slate-50 bg-white hover:border-primary/20 hover:shadow-sm transition-all flex justify-between items-center group relative">
++                                <div className="min-w-0 flex-1 cursor-pointer" onClick={() => navigate(`/tutorials/${tut.id}`)}>
+                                     <h4 className="font-bold text-sm text-slate-800 truncate">{tut.title}</h4>
+                                     <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">{tut.category || "General"}</span>
+                                 </div>
+-                                <FaArrowRight className="text-slate-200 group-hover:text-primary transition-colors" />
+-                            </button>
++                                <div className="flex items-center gap-3 pl-3">
++                                    <button 
++                                        onClick={(e) => { e.stopPropagation(); setDeleteModal({ show: true, tutorialId: tut.id, title: tut.title }); }}
++                                        className="text-slate-300 hover:text-red-500 transition-colors p-2"
++                                        title="Delete"
++                                    >
++                                        <FaTrash size={12} />
++                                    </button>
++                                    <FaArrowRight className="text-slate-200 group-hover:text-primary transition-colors" />
++                                </div>
++                            </div>
+                         ))}
+                     </div>
+                 </div>
                 <div className="hidden lg:flex lg:col-span-2 bg-slate-50/50 border-2 border-dashed border-slate-200 rounded-[2rem] items-center justify-center text-slate-300 p-10 text-center">
                     <div>
                         <FaGraduationCap className="text-6xl mx-auto mb-4 opacity-20" />

@@ -187,3 +187,48 @@ def mark_complete(tutorial_id: str, payload: CompletionRequest, user: dict = Dep
     except Exception as e:
         print(f"❌ Completion Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+@router.delete("/tutorials/{tutorial_id}")
+def delete_user_tutorial(tutorial_id: str, user: dict = Depends(verify_token)):
+    """
+    Deletes the tutorial from the user's private collection.
+    This effectively 'hides' it from their view without affecting the global copy.
+    """
+    try:
+        db = firestore.Client()
+        user_id = user['uid']
+        
+        # Delete from private collection
+        doc_ref = db.collection('users').document(user_id).collection('tutorials').document(tutorial_id)
+        doc_ref.delete()
+        
+        return {"status": "success", "message": "Tutorial removed from your list."}
+    except Exception as e:
+        print(f"❌ Delete Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/tutorials/{tutorial_id}/request-delete")
+def request_permanent_delete(tutorial_id: str, user: dict = Depends(verify_token)):
+    """
+    Requests permanent deletion of a tutorial (Global).
+    Adds a task for the admin and removes it from the user's view.
+    """
+    try:
+        db = firestore.Client()
+        user_id = user['uid']
+        
+        # 1. Create Admin Task
+        db.collection("admin_tasks").add({
+            "type": "delete_tutorial_request",
+            "tutorial_id": tutorial_id,
+            "requester_id": user_id,
+            "status": "pending",
+            "created_at": firestore.SERVER_TIMESTAMP
+        })
+        
+        # 2. Delete from user's view immediately
+        db.collection('users').document(user_id).collection('tutorials').document(tutorial_id).delete()
+        
+        return {"status": "success", "message": "Deletion request sent to admin."}
+    except Exception as e:
+        print(f"❌ Request Delete Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
