@@ -188,28 +188,24 @@ export default function TutorialsPage() {
                     </div>
                     <div className="space-y-3 pt-1 overflow-y-auto flex-1 custom-scrollbar">
                         {displayedTutorials.length === 0 ? (
-                            <div className="flex flex-col items-center justify-center p-10 text-slate-400 h-full"><p className="text-xs">No active lessons.</p></div>
-                        ) : displayedTutorials.map((tut, idx) => (
--                            <button key={idx} onClick={() => navigate(`/tutorials/${tut.id}`)} className="w-full text-left p-4 rounded-2xl border border-slate-50 bg-white hover:border-primary/20 hover:shadow-sm transition-all flex justify-between items-center group">
--                                <div className="min-w-0">
-+                            <div key={idx} className="w-full p-4 rounded-2xl border border-slate-50 bg-white hover:border-primary/20 hover:shadow-sm transition-all flex justify-between items-center group relative">
-+                                <div className="min-w-0 flex-1 cursor-pointer" onClick={() => navigate(`/tutorials/${tut.id}`)}>
+                             <div className="flex flex-col items-center justify-center p-10 text-slate-400 h-full"><p className="text-xs">No active lessons.</p></div>
+                         ) : displayedTutorials.map((tut, idx) => (
+                            <div key={idx} className="w-full p-4 rounded-2xl border border-slate-50 bg-white hover:border-primary/20 hover:shadow-sm transition-all flex justify-between items-center group relative">
+                                <div className="min-w-0 flex-1 cursor-pointer" onClick={() => navigate(`/tutorials/${tut.id}`)}>
                                      <h4 className="font-bold text-sm text-slate-800 truncate">{tut.title}</h4>
                                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">{tut.category || "General"}</span>
                                  </div>
--                                <FaArrowRight className="text-slate-200 group-hover:text-primary transition-colors" />
--                            </button>
-+                                <div className="flex items-center gap-3 pl-3">
-+                                    <button 
-+                                        onClick={(e) => { e.stopPropagation(); setDeleteModal({ show: true, tutorialId: tut.id, title: tut.title }); }}
-+                                        className="text-slate-300 hover:text-red-500 transition-colors p-2"
-+                                        title="Delete"
-+                                    >
-+                                        <FaTrash size={12} />
-+                                    </button>
-+                                    <FaArrowRight className="text-slate-200 group-hover:text-primary transition-colors" />
-+                                </div>
-+                            </div>
+                                <div className="flex items-center gap-3 pl-3">
+                                    <button 
+                                        onClick={(e) => { e.stopPropagation(); setDeleteModal({ show: true, tutorialId: tut.id, title: tut.title }); }}
+                                        className="text-slate-300 hover:text-red-500 transition-colors p-2"
+                                        title="Delete"
+                                    >
+                                        <FaTrash size={12} />
+                                    </button>
+                                    <FaArrowRight className="text-slate-200 group-hover:text-primary transition-colors" />
+                                </div>
+                            </div>
                          ))}
                      </div>
                  </div>

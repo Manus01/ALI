@@ -1,11 +1,10 @@
-﻿import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect } from 'react';
 import api from '../api/axiosInterceptor';
 import { useAuth } from '../hooks/useAuth';
 import {
     FaUserCog, FaDatabase, FaPlay, FaBell, FaLink,
     FaSync, FaInstagram, FaLinkedin, FaFacebook, FaTiktok, FaSpinner, FaFileCsv, FaSearch
 } from 'react-icons/fa';
-import { getFirestore, collection, onSnapshot, query, where } from 'firebase/firestore';
 
 const CHANNEL_ICONS = {
     instagram: <FaInstagram className="text-pink-500" />,
@@ -19,7 +18,7 @@ export default function AdminPage() {
     const [isAdmin, setIsAdmin] = useState(false);
     const [targetUid, setTargetUid] = useState("");
     const [blogId, setBlogId] = useState("");
-    const [pendingTasks, setPendingTasks] = useState([]);
+    const pendingTasks = [];
     const [verifiedChannels, setVerifiedChannels] = useState([]);
     const [logs, setLogs] = useState([]);
     const [researchUsers, setResearchUsers] = useState([]);
@@ -28,27 +27,14 @@ export default function AdminPage() {
     const [loadingJob, setLoadingJob] = useState(false);
     const [actionMsg, setActionMsg] = useState("");
 
-    // Notification sound for background alerts
-    // Use a reliable CDN or local asset. Fallback to empty if fails.
-    const audioRef = useRef(new Audio('https://cdn.freesound.org/previews/536/536108_11957970-lq.mp3'));
-
     useEffect(() => {
         if (currentUser?.email === "manoliszografos@gmail.com") {
             setIsAdmin(true);
             fetchLogs();
             fetchResearchUsers();
             fetchTutorials();
-            // DISABLED: Global listener causes permission errors with user-scoped rules.
-            // const db = getFirestore();
-            // const q = query(collection(db, "admin_tasks"), where("status", "==", "pending"));
-            // const unsubscribe = onSnapshot(q, (snapshot) => {
-            //     const tasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            //     if (tasks.length > pendingTasks.length) audioRef.current.play().catch(() => { });
-            //     setPendingTasks(tasks);
-            // }, (err) => console.warn("Admin listener restricted:", err));
-            // return () => unsubscribe();
         }
-    }, [currentUser, pendingTasks.length]);
+    }, [currentUser]);
 
     const fetchLogs = async () => {
         try {
@@ -77,7 +63,7 @@ export default function AdminPage() {
             await api.delete(`/api/admin/tutorials/${id}`);
             setTutorials(prev => prev.filter(t => t.id !== id));
             setActionMsg("✅ Tutorial Deleted.");
-        } catch (err) {
+        } catch {
             alert("Failed to delete tutorial");
         }
     };
@@ -88,7 +74,7 @@ export default function AdminPage() {
             await api.post('/api/admin/jobs/trigger-nightly-log', {});
             setActionMsg("✅ Nightly Job Complete.");
             fetchLogs();
-        } catch (err) { alert("Job Failed"); }
+        } catch { alert("Job Failed"); }
         finally { setLoadingJob(false); }
     };
 

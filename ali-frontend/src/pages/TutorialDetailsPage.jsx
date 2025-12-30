@@ -171,123 +171,127 @@ export default function TutorialDetailsPage() {
                 }
 
             case 'quiz_single':
-                const hasOptions = block.options && block.options.length > 0;
-                return (
-                    <div key={idx} className="my-8 p-6 bg-blue-50 border border-blue-100 rounded-xl">
-                        <h4 className="font-bold text-blue-900 mb-4 flex gap-2 items-center"><FaCheck /> Quick Check</h4>
-                        <p className="mb-4 font-medium text-slate-800">{block.question}</p>
-                        {!hasOptions && <div className="p-3 bg-white text-red-500 border border-red-200 text-sm rounded"><FaExclamationTriangle /> Error: Missing options.</div>}
-                        <div className="space-y-2">
-                            {(block.options || []).map((opt, oIdx) => (
-                                <button key={oIdx} className="w-full text-left p-3 bg-white border border-blue-200 rounded-lg text-slate-700 hover:bg-blue-100 hover:text-blue-900 transition-all shadow-sm"
-                                    onClick={(e) => {
-                                        const correctIdx = block.correct_answer !== undefined ? block.correct_answer : block.correct_index;
-                                        if (oIdx == correctIdx) { e.target.innerText = "✅ " + opt; e.target.classList.add("!bg-green-100", "!border-green-500", "!text-green-800"); }
-                                        else { e.target.innerText = "❌ " + opt; e.target.classList.add("!bg-red-100", "!border-red-500", "!text-red-800"); }
-                                    }}>
-                                    {opt}
-                                </button>
-                            ))}
+                {
+                    const hasOptions = block.options && block.options.length > 0;
+                    return (
+                        <div key={idx} className="my-8 p-6 bg-blue-50 border border-blue-100 rounded-xl">
+                            <h4 className="font-bold text-blue-900 mb-4 flex gap-2 items-center"><FaCheck /> Quick Check</h4>
+                            <p className="mb-4 font-medium text-slate-800">{block.question}</p>
+                            {!hasOptions && <div className="p-3 bg-white text-red-500 border border-red-200 text-sm rounded"><FaExclamationTriangle /> Error: Missing options.</div>}
+                            <div className="space-y-2">
+                                {(block.options || []).map((opt, oIdx) => (
+                                    <button key={oIdx} className="w-full text-left p-3 bg-white border border-blue-200 rounded-lg text-slate-700 hover:bg-blue-100 hover:text-blue-900 transition-all shadow-sm"
+                                        onClick={(e) => {
+                                            const correctIdx = block.correct_answer !== undefined ? block.correct_answer : block.correct_index;
+                                            if (oIdx == correctIdx) { e.target.innerText = "✅ " + opt; e.target.classList.add("!bg-green-100", "!border-green-500", "!text-green-800"); }
+                                            else { e.target.innerText = "❌ " + opt; e.target.classList.add("!bg-red-100", "!border-red-500", "!text-red-800"); }
+                                        }}>
+                                        {opt}
+                                    </button>
+                                ))}
+                            </div>
                         </div>
-                    </div>
-                );
+                    );
+                }
 
             case 'quiz':
             case 'quiz_final':
-                const questions = block.questions || [];
-                const isReady = Object.keys(quizAnswers).length === questions.length && questions.length > 0;
+                {
+                    const questions = block.questions || [];
+                    const isReady = Object.keys(quizAnswers).length === questions.length && questions.length > 0;
 
-                // ⚠️ CRITICAL LOGIC: Is this the actual end of the course?
-                const isLastSection = activeSectionIndex === sections.length - 1;
+                    // ⚠️ CRITICAL LOGIC: Is this the actual end of the course?
+                    const isLastSection = activeSectionIndex === sections.length - 1;
 
-                return (
-                    <div key={idx} className="mt-8 p-8 bg-slate-50 rounded-2xl border border-slate-200 shadow-inner">
-                        <h3 className="text-2xl font-bold text-slate-900 mb-6 flex gap-2 items-center">
-                            <FaTrophy /> {isLastSection ? "Final Assessment" : "Section Assessment"}
-                        </h3>
-                        {questions.map((q, qIdx) => (
-                            <div key={qIdx} className="mb-6">
-                                <p className="font-semibold text-slate-800 mb-3">{qIdx + 1}. {q.question}</p>
-                                <div className="space-y-2">
-                                    {(q.options || []).map((opt, oIdx) => {
-                                        const optionText = typeof opt === 'object' ? opt.text : opt;
-                                        const isSelected = quizAnswers[qIdx] === oIdx;
-                                        let btnClass = "w-full text-left p-3 rounded-lg border transition-all text-slate-700 ";
-                                        if (isSelected) btnClass += "border-primary bg-blue-50 text-primary font-bold ";
-                                        else btnClass += "border-slate-200 bg-white hover:bg-slate-100 ";
-                                        if (quizSubmitted) {
-                                            const correct = q.correct_answer !== undefined ? q.correct_answer : q.correct_index;
-                                            if (oIdx == correct) btnClass = "w-full text-left p-3 rounded-lg border transition-all bg-green-100 border-green-500 text-green-900 font-bold";
-                                            else if (isSelected) btnClass = "w-full text-left p-3 rounded-lg border transition-all bg-red-100 border-red-500 text-red-900";
-                                            else btnClass += " opacity-50";
-                                        }
-                                        return (
-                                            <button key={oIdx} disabled={quizSubmitted} onClick={() => setQuizAnswers(prev => ({ ...prev, [qIdx]: oIdx }))} className={btnClass}>
-                                                {optionText}
-                                            </button>
-                                        );
-                                    })}
+                    return (
+                        <div key={idx} className="mt-8 p-8 bg-slate-50 rounded-2xl border border-slate-200 shadow-inner">
+                            <h3 className="text-2xl font-bold text-slate-900 mb-6 flex gap-2 items-center">
+                                <FaTrophy /> {isLastSection ? "Final Assessment" : "Section Assessment"}
+                            </h3>
+                            {questions.map((q, qIdx) => (
+                                <div key={qIdx} className="mb-6">
+                                    <p className="font-semibold text-slate-800 mb-3">{qIdx + 1}. {q.question}</p>
+                                    <div className="space-y-2">
+                                        {(q.options || []).map((opt, oIdx) => {
+                                            const optionText = typeof opt === 'object' ? opt.text : opt;
+                                            const isSelected = quizAnswers[qIdx] === oIdx;
+                                            let btnClass = "w-full text-left p-3 rounded-lg border transition-all text-slate-700 ";
+                                            if (isSelected) btnClass += "border-primary bg-blue-50 text-primary font-bold ";
+                                            else btnClass += "border-slate-200 bg-white hover:bg-slate-100 ";
+                                            if (quizSubmitted) {
+                                                const correct = q.correct_answer !== undefined ? q.correct_answer : q.correct_index;
+                                                if (oIdx == correct) btnClass = "w-full text-left p-3 rounded-lg border transition-all bg-green-100 border-green-500 text-green-900 font-bold";
+                                                else if (isSelected) btnClass = "w-full text-left p-3 rounded-lg border transition-all bg-red-100 border-red-500 text-red-900";
+                                                else btnClass += " opacity-50";
+                                            }
+                                            return (
+                                                <button key={oIdx} disabled={quizSubmitted} onClick={() => setQuizAnswers(prev => ({ ...prev, [qIdx]: oIdx }))} className={btnClass}>
+                                                    {optionText}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
                                 </div>
-                            </div>
-                        ))}
+                            ))}
 
-                        {!quizSubmitted ? (
-                            <button onClick={() => {
-                                const correctCount = questions.filter((q, i) => {
-                                    const userIdx = quizAnswers[i];
-                                    if (userIdx === undefined) return false;
-                                    const correct = q.correct_answer !== undefined ? q.correct_answer : q.correct_index;
-                                    if (userIdx == correct) return true;
-                                    const userOpt = q.options[userIdx];
-                                    const userText = typeof userOpt === 'object' ? userOpt.text : userOpt;
-                                    if (String(userText).trim() === String(correct).trim()) return true;
-                                    return false;
-                                }).length;
+                            {!quizSubmitted ? (
+                                <button onClick={() => {
+                                    const correctCount = questions.filter((q, i) => {
+                                        const userIdx = quizAnswers[i];
+                                        if (userIdx === undefined) return false;
+                                        const correct = q.correct_answer !== undefined ? q.correct_answer : q.correct_index;
+                                        if (userIdx == correct) return true;
+                                        const userOpt = q.options[userIdx];
+                                        const userText = typeof userOpt === 'object' ? userOpt.text : userOpt;
+                                        if (String(userText).trim() === String(correct).trim()) return true;
+                                        return false;
+                                    }).length;
 
-                                const finalScore = (correctCount / questions.length) * 100;
-                                setScore(finalScore);
-                                setQuizSubmitted(true);
+                                    const finalScore = (correctCount / questions.length) * 100;
+                                    setScore(finalScore);
+                                    setQuizSubmitted(true);
 
-                                // ✅ LOGIC FIX: Only save to DB if it's the LAST section
-                                if (isLastSection) {
-                                    handleComplete(finalScore);
-                                }
-                            }} disabled={!isReady} className="w-full py-3 bg-primary text-white rounded-xl font-bold shadow-lg disabled:opacity-50">
-                                {isLastSection ? "Submit Final Exam" : "Check Answers"}
-                            </button>
-                        ) : (
-                            <div className="text-center mt-6 p-4 bg-white rounded-xl border border-slate-100">
-                                <p className={`text-xl font-bold ${score >= 75 ? 'text-green-600' : 'text-red-500'}`}>You scored {Math.round(score)}%</p>
+                                    // ✅ LOGIC FIX: Only save to DB if it's the LAST section
+                                    if (isLastSection) {
+                                        handleComplete(finalScore);
+                                    }
+                                }} disabled={!isReady} className="w-full py-3 bg-primary text-white rounded-xl font-bold shadow-lg disabled:opacity-50">
+                                    {isLastSection ? "Submit Final Exam" : "Check Answers"}
+                                </button>
+                            ) : (
+                                <div className="text-center mt-6 p-4 bg-white rounded-xl border border-slate-100">
+                                    <p className={`text-xl font-bold ${score >= 75 ? 'text-green-600' : 'text-red-500'}`}>You scored {Math.round(score)}%</p>
 
-                                {score >= 75 ? (
-                                    isLastSection ? (
-                                        // A) Actual Completion (Last Section)
-                                        <div className="animate-bounce mt-2">
-                                            <p className="text-sm text-green-600 font-bold"><FaTrophy /> Course Completed!</p>
-                                            <p className="text-xs text-slate-400">Redirecting...</p>
-                                        </div>
+                                    {score >= 75 ? (
+                                        isLastSection ? (
+                                            // A) Actual Completion (Last Section)
+                                            <div className="animate-bounce mt-2">
+                                                <p className="text-sm text-green-600 font-bold"><FaTrophy /> Course Completed!</p>
+                                                <p className="text-xs text-slate-400">Redirecting...</p>
+                                            </div>
+                                        ) : (
+                                            // B) Intermediate Success (Section 1 or 2)
+                                            <div className="mt-4">
+                                                <p className="text-sm text-green-600 font-bold mb-3">Section Passed!</p>
+                                                <button
+                                                    onClick={() => {
+                                                        // Auto-advance to next section
+                                                        setActiveSectionIndex(prev => prev + 1);
+                                                    }}
+                                                    className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-bold shadow-md hover:bg-indigo-700 transition-colors flex items-center gap-2 mx-auto"
+                                                >
+                                                    Continue to Next Section <FaChevronRight />
+                                                </button>
+                                            </div>
+                                        )
                                     ) : (
-                                        // B) Intermediate Success (Section 1 or 2)
-                                        <div className="mt-4">
-                                            <p className="text-sm text-green-600 font-bold mb-3">Section Passed!</p>
-                                            <button
-                                                onClick={() => {
-                                                    // Auto-advance to next section
-                                                    setActiveSectionIndex(prev => prev + 1);
-                                                }}
-                                                className="px-6 py-2 bg-indigo-600 text-white rounded-lg font-bold shadow-md hover:bg-indigo-700 transition-colors flex items-center gap-2 mx-auto"
-                                            >
-                                                Continue to Next Section <FaChevronRight />
-                                            </button>
-                                        </div>
-                                    )
-                                ) : (
-                                    <button onClick={() => { setQuizSubmitted(false); setQuizAnswers({}); }} className="mt-2 text-sm text-slate-500 hover:underline"><FaRedo /> Retry</button>
-                                )}
-                            </div>
-                        )}
-                    </div>
-                );
+                                        <button onClick={() => { setQuizSubmitted(false); setQuizAnswers({}); }} className="mt-2 text-sm text-slate-500 hover:underline"><FaRedo /> Retry</button>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    );
+                }
             default: return null;
         }
     };
