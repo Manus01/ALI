@@ -302,4 +302,4 @@ class MetricoolClient:
             
         except Exception as e:
             logger.error(f"❌ Ads Stats Fetch Failed: {e}")
-            return {"clicks": 0, "spend": 0.0, "ctr": 0.0"}
+            return {"clicks": 0, "spend": 0.0, "ctr": 0.0}
