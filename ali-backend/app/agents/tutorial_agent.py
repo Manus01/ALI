@@ -154,9 +154,9 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
         
         if progress_callback:
             progress_callback(f"Crafting Section {index+1}: {sec_meta['title']}...")
-         
-         try:
-             # PASS 1: Narrative (Text)
+        
+        try:
+            # PASS 1: Narrative (Text)
             narrative_text = write_section_narrative(sec_meta, topic, metaphor, profile)
             
             # PASS 2: Assets (JSON)
