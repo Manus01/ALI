@@ -3,6 +3,8 @@ uvicorn
 google-cloud-firestore
 google-cloud-kms
 google-cloud-aiplatform
+google-cloud-texttospeech
+google-cloud-storage
 firebase-admin
 cryptography
 pydantic
