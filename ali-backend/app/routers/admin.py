@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Body
+﻿from fastapi import APIRouter, Depends, HTTPException, Body
 from app.core.security import verify_token
 from app.services.performance_logger import run_nightly_performance_log
 from app.services.metricool_client import MetricoolClient
@@ -19,16 +19,30 @@ def admin_link_metricool(payload: Dict[str, str] = Body(...), admin: dict = Depe
     target_uid = payload.get("target_user_id")
     blog_id = payload.get("metricool_blog_id")
     
-    # SECURE FIX: Save to users/{uid}/user_integrations/metricool
+    # 1. Update the integration record in the private user folder
     doc_ref = db.collection("users").document(target_uid).collection("user_integrations").document("metricool")
     doc_ref.set({
-        "user_id": target_uid, "platform": "metricool", "status": "active",
-        "metricool_blog_id": blog_id, "linked_at": datetime.utcnow().isoformat()
+        "user_id": target_uid,
+        "platform": "metricool",
+        "status": "active",
+        "metricool_blog_id": blog_id,
+        "linked_at": datetime.utcnow().isoformat()
     }, merge=True)
 
-    # Mark the admin task as completed
+    # 2. 🔔 Send "Success" Notification to the User's secure feed
+    notification_ref = db.collection("users").document(target_uid).collection("notifications").document("integration_success")
+    notification_ref.set({
+        "title": "Platform Linked! 🚀",
+        "message": "Your Social Media Suite is now active. You can now create campaigns.",
+        "type": "success",
+        "read": False,
+        "created_at": datetime.utcnow()
+    })
+
+    # 3. Mark the admin task as completed
     db.collection("admin_tasks").document(f"connect_{target_uid}").update({"status": "completed"})
-    return {"status": "success"}
+    
+    return {"status": "success", "message": "User linked and notified."}
 
 @router.get("/users/{target_uid}/verify-channels")
 def verify_user_channels(target_uid: str, admin: dict = Depends(verify_admin)):
