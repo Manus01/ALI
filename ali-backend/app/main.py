@@ -117,7 +117,7 @@ def health_check():
 # --- 7. ONBOARDING & BRAND DNA (LAZY LOADED) ---
 
 @app.post("/api/onboarding/analyze-brand")
-async def analyze_brand(payload: dict, token: str = Depends(verify_token)):
+async def analyze_brand(payload: dict, user: dict = Depends(verify_token)):
     from app.agents.brand_agent import BrandAgent
     url = payload.get("url")
     description = payload.get("description") # "No-Website" Fallback
@@ -129,8 +129,8 @@ async def analyze_brand(payload: dict, token: str = Depends(verify_token)):
     return brand_dna
 
 @app.post("/api/onboarding/complete")
-async def complete_onboarding(payload: dict, token: str = Depends(verify_token)):
-    uid = token['uid']
+async def complete_onboarding(payload: dict, user: dict = Depends(verify_token)):
+    uid = user['uid']
     brand_dna = payload.get("brand_dna")
     
     if not brand_dna:
@@ -147,11 +147,11 @@ async def complete_onboarding(payload: dict, token: str = Depends(verify_token))
 # --- 8. UNIFIED CAMPAIGN ENGINE (LAZY LOADED) ---
 
 @app.post("/api/campaign/initiate")
-async def initiate_campaign(payload: dict, token: str = Depends(verify_token)):
+async def initiate_campaign(payload: dict, user: dict = Depends(verify_token)):
     try:
         from app.agents.campaign_agent import CampaignAgent
         goal = payload.get("goal")
-        uid = token['uid']
+        uid = user['uid']
         
         brand_ref = db.collection('users').document(uid).collection('brand_profile').document('current').get()
         if not brand_ref.exists:
@@ -168,11 +168,11 @@ async def initiate_campaign(payload: dict, token: str = Depends(verify_token)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/campaign/finalize")
-async def finalize_campaign(payload: dict, background_tasks: BackgroundTasks, token: str = Depends(verify_token)):
+async def finalize_campaign(payload: dict, background_tasks: BackgroundTasks, user: dict = Depends(verify_token)):
     from app.agents.orchestrator_agent import OrchestratorAgent
     goal = payload.get("goal")
     answers = payload.get("answers")
-    uid = token['uid']
+    uid = user['uid']
     campaign_id = f"camp_{int(time.time())}"
 
     brand_dna = db.collection('users').document(uid).collection('brand_profile').document('current').get().to_dict()
@@ -185,17 +185,17 @@ async def finalize_campaign(payload: dict, background_tasks: BackgroundTasks, to
     return {"campaign_id": campaign_id}
 
 @app.get("/api/campaign/results/{campaign_id}")
-async def get_results(campaign_id: str, token: str = Depends(verify_token)):
-    uid = token['uid']
+async def get_results(campaign_id: str, user: dict = Depends(verify_token)):
+    uid = user['uid']
     doc = db.collection('users').document(uid).collection('campaigns').document(campaign_id).get()
     if not doc.exists:
         raise HTTPException(status_code=404, detail="Campaign not found")
     return doc.to_dict()
 
 @app.post("/api/campaign/recycle")
-async def recycle_asset(payload: dict, background_tasks: BackgroundTasks, token: str = Depends(verify_token)):
+async def recycle_asset(payload: dict, background_tasks: BackgroundTasks, user: dict = Depends(verify_token)):
     from app.agents.recycler_agent import RecyclerAgent
-    uid = token['uid']
+    uid = user['uid']
     
     brand_dna = db.collection('users').document(uid).collection('brand_profile').document('current').get().to_dict()
 

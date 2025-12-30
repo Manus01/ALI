@@ -252,12 +252,14 @@ def fabricate_block(block, topic, creative):
             print(f"      🎥 Video: {p}")
             url = creative.generate_video(safe_p, style="cinematic")
             if url and url.startswith("http"):
+                print(f"      ✅ Video Created")
                 return { "type": "video", "url": url, "prompt": p }
         
         elif block["type"] == "image_diagram":
             p = block.get("visual_prompt", f"Diagram of {topic}")
             url = creative.generate_image(p)
             if url and url.startswith("http"):
+                print(f"      ✅ Image Created")
                 return { "type": "image", "url": url, "prompt": p }
         
         elif block["type"] == "audio_note":
@@ -266,6 +268,7 @@ def fabricate_block(block, topic, creative):
             if not s: s = f"Let's focus on the key strategy for {topic}."
             url = creative.generate_audio(s)
             if url and url.startswith("http"):
+                print(f"      ✅ Audio Created")
                 return { "type": "audio", "url": url, "transcript": s }
         
         else:

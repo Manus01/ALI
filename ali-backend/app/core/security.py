@@ -1,6 +1,8 @@
 ﻿import os
 import logging
 import firebase_admin
+from fastapi import HTTPException, status, Depends
+from fastapi.security import OAuth2PasswordBearer
 from firebase_admin import credentials, firestore, auth
 
 logger = logging.getLogger(__name__)
@@ -35,13 +37,20 @@ def initialize_firebase():
         logger.error(f"❌ Firebase Init Failed: {e}")
         return None
 
+# Define the OAuth2 scheme (Bearer token in Authorization header)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
 # Ensure verify_token is present below as we restored it earlier
-def verify_token(id_token: str):
+def verify_token(token: str = Depends(oauth2_scheme)):
     try:
-        decoded_token = auth.verify_id_token(id_token)
+        decoded_token = auth.verify_id_token(token)
         return decoded_token
     except Exception as e:
         logger.error(f"🛡️ Token verification failed: {e}")
-        return None
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
 
 db = initialize_firebase()

@@ -58,13 +58,13 @@ class MetricoolClient:
             # Usually it's 'socialNetworks' or similar.
             # We'll assume a list of objects or keys.
             connected = []
-            if 'socialNetworks' in data:
+            if 'socialNetworks' in data and isinstance(data['socialNetworks'], list):
                 for net in data['socialNetworks']:
                     if net.get('selected'): # Assuming 'selected' or existence implies connection
                         connected.append(net.get('id') or net.get('name'))
             
             # Fallback/Simulation if API structure differs (for safety)
-            if not connected and 'providers' in data:
+            if not connected and 'providers' in data and isinstance(data['providers'], list):
                  connected = data['providers']
                  
             return {"connected": connected}

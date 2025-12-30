@@ -78,6 +78,27 @@ def get_tutorial_suggestions(user: dict = Depends(verify_token)):
         print(f"❌ Suggestion Error: {e}")
         return ["Marketing Strategy 101", "Content Creation", "ROI Analysis"]
 
+def _process_tutorial_doc(doc, user_id, db):
+    """Helper to process tutorial document and apply fallbacks."""
+    t = doc.to_dict()
+    t['id'] = doc.id
+    
+    # Check completion status
+    user_doc = db.collection('users').document(user_id).get()
+    completed_ids = user_doc.to_dict().get("completed_tutorials", []) if user_doc.exists else []
+    t['is_completed'] = doc.id in completed_ids
+    
+    # ROBUSTNESS FIX: Ensure sections structure exists
+    if 'sections' not in t or t['sections'] is None:
+        t['sections'] = []
+    
+    # Fallback: If sections empty but blocks exist (Legacy/Flat structure), create default section
+    if not t['sections'] and t.get('blocks'):
+        print(f"⚠️ Tutorial {doc.id} has blocks but no sections. Applying fallback.")
+        t['sections'] = [{ "title": "Lesson Content", "blocks": t['blocks'] }]
+    
+    return t
+ 
 @router.get("/tutorials/{tutorial_id}")
 def get_tutorial_details(tutorial_id: str, user: dict = Depends(verify_token)):
     """
@@ -93,13 +114,7 @@ def get_tutorial_details(tutorial_id: str, user: dict = Depends(verify_token)):
         doc = doc_ref.get()
         
         if doc.exists:
-            t = doc.to_dict()
-            t['id'] = doc.id
-            # Check completion status
-            user_doc = db.collection('users').document(user_id).get()
-            completed_ids = user_doc.to_dict().get("completed_tutorials", []) if user_doc.exists else []
-            t['is_completed'] = doc.id in completed_ids
-            
+            t = _process_tutorial_doc(doc, user_id, db)
             # Debug Log
             sec_count = len(t.get('sections', []))
             print(f"🔍 Fetch Private Tutorial {tutorial_id}: Found {sec_count} sections.")
@@ -111,13 +126,7 @@ def get_tutorial_details(tutorial_id: str, user: dict = Depends(verify_token)):
         doc = doc_ref.get()
         
         if doc.exists:
-            t = doc.to_dict()
-            t['id'] = doc.id
-            # Check completion status
-            user_doc = db.collection('users').document(user_id).get()
-            completed_ids = user_doc.to_dict().get("completed_tutorials", []) if user_doc.exists else []
-            t['is_completed'] = doc.id in completed_ids
-            
+            t = _process_tutorial_doc(doc, user_id, db)
             # Debug Log
             sec_count = len(t.get('sections', []))
             print(f"🔍 Fetch Global Tutorial {tutorial_id}: Found {sec_count} sections.")
