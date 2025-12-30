@@ -64,4 +64,4 @@ class CampaignAgent(BaseAgent):
             raw_text = response.text.strip().replace('```json', '').replace('```', '')
             return json.loads(raw_text)
         except Exception as e:
-            self.handle_error(e)            self.handle_error(e)
+            self.handle_error(e)

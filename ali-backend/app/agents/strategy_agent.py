@@ -254,6 +254,3 @@ class StrategyAgent(BaseAgent):
         # (Simplified for refactor stability - Vertex AI tool handling is verbose)
         # We return text directly.
         return response.text
-
-        # Fallback if no tool called (rare)
-        return response.text

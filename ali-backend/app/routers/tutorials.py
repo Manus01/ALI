@@ -163,4 +163,4 @@ def mark_complete(tutorial_id: str, payload: CompletionRequest, user: dict = Dep
         
     except Exception as e:
         print(f"❌ Completion Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e))

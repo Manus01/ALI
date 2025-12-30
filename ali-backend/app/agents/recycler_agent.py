@@ -38,4 +38,4 @@ class RecyclerAgent(BaseAgent):
             # Logic for Gemini to rewrite copy
             return await self.rewrite_copy(original_asset_url, user_instruction, brand_dna)
 
-        return None        return None
+        return None

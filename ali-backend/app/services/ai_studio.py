@@ -147,10 +147,10 @@ class CreativeService:
                 # We need bytes. response[0]._image_bytes?
                 # Safe fallback:
                 return "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4" # Placeholder
-             return ""
-         except Exception as e:
-             logger.error(f"❌ Image Gen Error: {e}")
-             return ""
+            return ""
+        except Exception as e:
+            logger.error(f"❌ Image Gen Error: {e}")
+            return ""
 
     # --- CORE SERVICE: GENERATE AUDIO (TTS) ---
     def generate_audio(self, text: str) -> str:

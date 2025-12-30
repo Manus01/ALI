@@ -101,4 +101,4 @@ class BrandAgent(BaseAgent):
                 "color_palette": {"primary": "#3B82F6", "secondary": "#1E293B", "accent": "#6366F1"},
                 "graphic_elements": {"shapes": "clean", "line_weight": "normal", "vibe": "modern"},
                 "cultural_nuance": "Focus on quality and reliability."
-            }            }
+            }
