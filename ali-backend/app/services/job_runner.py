@@ -20,7 +20,8 @@ def process_tutorial_job(job_id: str, user_id: str, topic: str):
 
         # 2. Create "Started" Notification (Spinner)
         # We capture the reference (add() returns [timestamp, doc_ref])
-        _, notification_ref = db.collection("notifications").add({
+        # SENIOR DEV FIX: Save to user's subcollection so the frontend listener picks it up
+        _, notification_ref = db.collection("users").document(user_id).collection("notifications").add({
             "user_id": user_id,
             "type": "info", # Usually renders as spinner/info icon
             "title": "Generation Started",

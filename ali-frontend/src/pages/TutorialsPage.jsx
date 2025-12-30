@@ -101,7 +101,7 @@ export default function TutorialsPage() {
                             aria-label="Request a tutorial topic"
                              type="text"
                              placeholder="Request a topic (e.g. 'Advanced Retargeting')"
-                             className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-primary outline-none bg-white"
+                             className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-primary outline-none bg-white text-slate-800"
                             value={customTopic}
                             onChange={(e) => setCustomTopic(e.target.value)}
                             onKeyDown={(e) => e.key === 'Enter' && handleGenerate(null)}
