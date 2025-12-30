@@ -78,35 +78,48 @@ def get_tutorial_suggestions(user: dict = Depends(verify_token)):
         print(f"❌ Suggestion Error: {e}")
         return ["Marketing Strategy 101", "Content Creation", "ROI Analysis"]
 
-@router.get("/tutorials")
-def get_tutorials(include_global: bool = True, user: dict = Depends(verify_token)):
-    # ... (Keep existing fetching logic identical to before) ...
-    # Just copying for brevity, assume standard fetch logic here
+@router.get("/tutorials/{tutorial_id}")
+def get_tutorial_details(tutorial_id: str, user: dict = Depends(verify_token)):
+    """
+    Fetches a single tutorial by ID.
+    Checks User's Private Collection first, then Global Public Collection.
+    """
     try:
         db = firestore.Client()
-        user_doc = db.collection('users').document(user['uid']).get()
-        user_data = user_doc.to_dict() if user_doc.exists else {}
-        completed_ids = user_data.get("completed_tutorials", []) if user_data else []
-        tutorials_map = {}
-        if include_global:
-            global_docs = db.collection('tutorials').where('is_public', '==', True).limit(10).stream()
-            for doc in global_docs:
-                t = doc.to_dict(); t['id'] = doc.id; t['is_completed'] = doc.id in completed_ids; tutorials_map[doc.id] = t
+        user_id = user['uid']
         
-        # SENIOR DEV FIX: Fetch private tutorials from user subcollection
-        private_docs = db.collection('users').document(user['uid']).collection('tutorials').stream()
-        for doc in private_docs:
-            t = doc.to_dict(); t['id'] = doc.id; t['is_completed'] = doc.id in completed_ids; tutorials_map[doc.id] = t
-        result = list(tutorials_map.values())
-        def _parse_ts(item):
-            ts = item.get('timestamp')
-            if hasattr(ts, 'isoformat'): return ts
-            if isinstance(ts, str): return datetime.datetime.fromisoformat(ts.replace('Z', '+00:00'))
-            return datetime.datetime.min
-        result.sort(key=_parse_ts, reverse=True)
-        return result
+        # 1. Try Private (User Subcollection) - Strong Consistency
+        doc_ref = db.collection('users').document(user_id).collection('tutorials').document(tutorial_id)
+        doc = doc_ref.get()
+        
+        if doc.exists:
+            t = doc.to_dict()
+            t['id'] = doc.id
+            # Check completion status
+            user_doc = db.collection('users').document(user_id).get()
+            completed_ids = user_doc.to_dict().get("completed_tutorials", []) if user_doc.exists else []
+            t['is_completed'] = doc.id in completed_ids
+            return t
+            
+        # 2. Try Global (Public)
+        doc_ref = db.collection('tutorials').document(tutorial_id)
+        doc = doc_ref.get()
+        
+        if doc.exists:
+            t = doc.to_dict()
+            t['id'] = doc.id
+            # Check completion status
+            user_doc = db.collection('users').document(user_id).get()
+            completed_ids = user_doc.to_dict().get("completed_tutorials", []) if user_doc.exists else []
+            t['is_completed'] = doc.id in completed_ids
+            return t
+            
+        raise HTTPException(status_code=404, detail="Tutorial not found")
+        
+    except HTTPException as he:
+        raise he
     except Exception as e:
-        print(f"❌ Fetch Error: {e}")
+        print(f"❌ Fetch Details Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # --- 3. GRANULAR AUTO-LEVELING ---

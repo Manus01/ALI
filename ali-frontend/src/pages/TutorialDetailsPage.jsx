@@ -40,12 +40,12 @@ export default function TutorialDetailsPage() {
         const fetchTutorial = async () => {
             try {
                 const token = await currentUser.getIdToken();
-                const res = await axios.get('/api/tutorials', {
+                // SENIOR DEV FIX: Fetch specific ID directly to avoid list consistency issues
+                const res = await axios.get(`/api/tutorials/${id}`, {
                     headers: { Authorization: `Bearer ${token}` },
                     params: { id_token: token }
                 });
-                const found = res.data.find(t => t.id === id);
-                setTutorial(found);
+                setTutorial(res.data);
             } catch (err) { console.error(err); }
             finally { setLoading(false); }
         };
