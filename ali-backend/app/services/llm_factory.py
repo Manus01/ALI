@@ -1,47 +1,39 @@
-import os
-import logging
+﻿import os
 import vertexai
 from vertexai.generative_models import GenerativeModel
+from google.api_core import exceptions
 
-logger = logging.getLogger(__name__)
+# Initialize Vertex AI globally using Identity (No Keys)
+vertexai.init(
+    project=os.environ.get("GOOGLE_CLOUD_PROJECT"),
+    location=os.environ.get("VERTEX_LOCATION", "us-central1")
+)
 
-def get_model(task_type: str = 'fast'):
+# 🏛️ 2025 Stable Aliases (Auto-healing)
+MODELS = {
+    "complex": "gemini-2.5-pro",  # For PhD Blueprints, Strategies
+    "fast": "gemini-2.5-flash",   # For Suggestions, Chat, UI tasks
+    "lite": "gemini-2.5-flash-lite" # For ultra-fast data parsing
+}
+
+def get_model(intent: str = "fast"):
     """
-    Factory to get a Gemini model instance using Vertex AI SDK.
+    Surgically selects the best Gemini model based on task intent.
+    Automatically handles version updates via stable aliases.
+    """
+    model_name = MODELS.get(intent, MODELS["fast"])
     
-    Args:
-        task_type (str): 'fast' for low-latency tasks (Flash), 'complex' for reasoning (Pro).
-    """
     try:
-        project_id = os.getenv("PROJECT_ID") or os.getenv("GENAI_PROJECT_ID")
-        location = os.getenv("AI_STUDIO_LOCATION", "us-central1")
-        
-        if not project_id:
-            # Try to infer from environment or let vertexai auto-detect
-            logger.info("?? LLM Factory: No PROJECT_ID env var, letting Vertex AI auto-detect.")
-            vertexai.init(location=location)
-        else:
-            vertexai.init(project=project_id, location=location)
-            
-        # Determine model name based on task type
-        if task_type == 'complex':
-            model_name = "gemini-1.5-pro-002"
-            fallback_name = "gemini-1.5-pro"
-        else:
-            model_name = "gemini-1.5-flash-002"
-            fallback_name = "gemini-1.5-flash"
-            
-        logger.info(f"?? LLM Factory: Using Vertex AI (Project: {project_id}, Model: {model_name})")
-        
-        try:
-            return GenerativeModel(model_name)
-        except Exception as e:
-            logger.warning(f"?? LLM Factory: Failed to load {model_name}, falling back to {fallback_name}. Error: {e}")
-            return GenerativeModel(fallback_name)
-         
-    except Exception as e:
-        logger.error(f"? LLM Factory: Vertex AI Init Failed: {e}")
-        raise ValueError(f"Could not initialize Vertex AI Model: {e}")
+        # Initial attempt with the stable alias
+        return GenerativeModel(model_name)
+    except exceptions.NotFound:
+        # 🛡️ Emergency Fallback: If for some reason the alias is unavailable,
+        # we try the base 'flash' to ensure the app never crashes.
+        print(f"⚠️ Alias {model_name} not found. Falling back to base Flash.")
+        return GenerativeModel("gemini-2.5-flash")
 
-# Backward compatibility alias if needed, but we are refactoring usages.
-get_gemini_model = get_model
+# Helper to auto-detect complexity based on prompt length or keywords
+def get_model_smart(prompt: str):
+    if len(prompt) > 2000 or "strategy" in prompt.lower() or "blueprint" in prompt.lower():
+        return get_model("complex")
+    return get_model("fast")

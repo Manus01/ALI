@@ -45,7 +45,7 @@ def review_tutorial_relevance(tutorial_data: dict, current_metrics: list, user_p
     """
     
     try:
-        model = get_model('fast')
+        model = get_model(intent='fast')
         response = model.generate_content(prompt)
         text = response.text.replace("```json", "").replace("```", "").strip()
         return json.loads(text)

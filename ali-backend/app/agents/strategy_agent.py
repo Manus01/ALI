@@ -51,7 +51,7 @@ def predict_cpc_change(
     try:
         from vertexai.generative_models import GenerationConfig
         
-        model = get_model('fast')
+        model = get_model(intent='fast')
          
         response = model.generate_content(
             prompt,
@@ -95,7 +95,7 @@ class StrategyAgent(BaseAgent):
         if self.client:
             return self.client
         try:
-            self.client = get_model('complex')
+            self.client = get_model(intent='complex')
         except Exception as e:
             logger.error(f"GenAI client init failed: {e}")
             self.client = None

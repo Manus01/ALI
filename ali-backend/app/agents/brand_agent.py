@@ -10,7 +10,7 @@ class BrandAgent(BaseAgent):
     def __init__(self):
         super().__init__("BrandAgent")
         # Using 1.5 Flash for rapid identity extraction
-        self.model = get_model('fast')
+        self.model = get_model(intent='fast')
 
     async def analyze_business(self, url: str = None, description: str = None, countries: list = []):
         """

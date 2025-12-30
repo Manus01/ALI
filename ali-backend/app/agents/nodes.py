@@ -120,7 +120,7 @@ def strategist_node(state: AgentState) -> dict:
     """
 
     try:
-        model = get_model('fast')
+        model = get_model(intent='fast')
         response = model.generate_content(prompt)
         
         content = response.text.replace("```json", "").replace("```", "").strip()
