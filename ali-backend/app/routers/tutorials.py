@@ -56,7 +56,7 @@ def get_tutorial_suggestions(user: dict = Depends(verify_token)):
         if not weak_areas: weak_areas = ["Advanced Optimization"] # If they are expert everywhere
 
         genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-        model = genai.GenerativeModel('gemini-2.5-flash')
+        model = genai.GenerativeModel('gemini-1.5-flash')
         
         prompt = f"""
         Act as an AI Mentor.

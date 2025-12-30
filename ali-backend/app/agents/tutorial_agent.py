@@ -11,7 +11,7 @@ def generate_curriculum_blueprint(topic, profile, campaign_context):
     api_key = os.getenv("GEMINI_API_KEY")
     if api_key:
         genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-2.5-pro')
+    model = genai.GenerativeModel('gemini-1.5-pro')
     
     prompt = f"""
     Act as a Lead Instructional Designer.
@@ -55,7 +55,7 @@ def write_section_narrative(section_meta, topic, metaphor, profile):
     api_key = os.getenv("GEMINI_API_KEY")
     if api_key:
         genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-2.5-pro')
+    model = genai.GenerativeModel('gemini-1.5-pro')
     
     prompt = f"""
     Act as an Expert Tutor. Write the **Educational Text** for one section of "{topic}".
@@ -85,7 +85,7 @@ def design_section_assets(section_text, section_meta, metaphor):
     api_key = os.getenv("GEMINI_API_KEY")
     if api_key:
         genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-2.5-pro')
+    model = genai.GenerativeModel('gemini-1.5-pro')
     
     # Determine required assets based on section type
     requirements = ""
@@ -130,7 +130,7 @@ def design_section_assets(section_text, section_meta, metaphor):
     except:
         return {"assets": []}
 # --- MAIN CONTROLLER ---
-def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context: str = None):
+def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context: str = None, progress_callback=None):
     db = firestore.Client()
     creative = CreativeService()
     
@@ -152,8 +152,11 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
     for index, sec_meta in enumerate(blueprint.get('sections', [])):
         print(f"   Writing Section {index+1}: {sec_meta['title']} ({metaphor})...")
         
-        try:
-            # PASS 1: Narrative (Text)
+        if progress_callback:
+            progress_callback(f"Crafting Section {index+1}: {sec_meta['title']}...")
+         
+         try:
+             # PASS 1: Narrative (Text)
             narrative_text = write_section_narrative(sec_meta, topic, metaphor, profile)
             
             # PASS 2: Assets (JSON)

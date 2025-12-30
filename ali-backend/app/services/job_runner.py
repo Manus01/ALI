@@ -31,8 +31,13 @@ def process_tutorial_job(job_id: str, user_id: str, topic: str):
             "created_at": firestore.SERVER_TIMESTAMP
         })
 
+        # Define progress callback to update the notification in real-time
+        def update_progress(msg):
+            if notification_ref:
+                notification_ref.update({"message": msg})
+
         # 3. Run the Heavy AI Generation (Takes 60s+)
-        tutorial_data = generate_tutorial(user_id, topic)
+        tutorial_data = generate_tutorial(user_id, topic, progress_callback=update_progress)
 
         # 4. UPDATE the Existing Notification to "Ready"
         # This replaces the "Started" spinner with the "Success" state!
@@ -63,6 +68,6 @@ def process_tutorial_job(job_id: str, user_id: str, topic: str):
             notification_ref.update({
                 "type": "error",
                 "title": "Generation Failed",
-                "message": "Something went wrong. Please try again.",
+                "message": f"Something went wrong: {str(e)}",
                 "read": False
             })

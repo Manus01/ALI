@@ -124,7 +124,7 @@ def strategist_node(state: AgentState) -> dict:
         if api_key:
             genai.configure(api_key=api_key)
 
-        model = genai.GenerativeModel('gemini-2.5-flash')
+        model = genai.GenerativeModel('gemini-1.5-flash')
         response = model.generate_content(prompt)
         
         content = response.text.replace("```json", "").replace("```", "").strip()

@@ -48,8 +48,8 @@ def review_tutorial_relevance(tutorial_data: dict, current_metrics: list, user_p
         api_key = os.getenv("GEMINI_API_KEY")
         if api_key:
             genai.configure(api_key=api_key)
-
-        model = genai.GenerativeModel('gemini-2.5-flash')
+ 
+        model = genai.GenerativeModel('gemini-1.5-flash')
         response = model.generate_content(prompt)
         text = response.text.replace("```json", "").replace("```", "").strip()
         return json.loads(text)
