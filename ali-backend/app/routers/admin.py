@@ -183,3 +183,79 @@ def get_user_analytics(target_uid: str, user: dict = Depends(verify_token)):
         print(f"❌ Analytics Fetch Error: {e}")
         # Return zero state instead of 500 to prevent frontend crash
         return {"clicks": 0, "spend": 0.0, "ctr": 0.0, "error": str(e)}
+
+@router.get("/tutorials")
+def get_all_tutorials(admin: dict = Depends(verify_admin)):
+    """
+    Fetches ALL generated tutorials for the Admin Dashboard.
+    Enriches with User Email for identification.
+    """
+    try:
+        # Fetch all global tutorials
+        tutorials_ref = db.collection("tutorials").order_by("timestamp", direction=firestore.Query.DESCENDING).limit(100)
+        tutorials = tutorials_ref.stream()
+        
+        results = []
+        user_cache = {} # Cache user emails to reduce reads
+
+        for doc in tutorials:
+            data = doc.to_dict()
+            owner_id = data.get("owner_id")
+            
+            # Resolve User Email
+            user_email = "Unknown"
+            if owner_id:
+                if owner_id in user_cache:
+                    user_email = user_cache[owner_id]
+                else:
+                    user_doc = db.collection("users").document(owner_id).get()
+                    if user_doc.exists:
+                        user_email = user_doc.to_dict().get("email", "Unknown")
+                        user_cache[owner_id] = user_email
+            
+            results.append({
+                "id": doc.id,
+                "title": data.get("title", "Untitled"),
+                "owner_id": owner_id,
+                "owner_email": user_email,
+                "category": data.get("category", "General"),
+                "created_at": data.get("timestamp")
+            })
+            
+        return {"tutorials": results}
+    except Exception as e:
+        print(f"❌ Admin Tutorials Fetch Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/tutorials/{tutorial_id}")
+def delete_tutorial(tutorial_id: str, admin: dict = Depends(verify_admin)):
+    """
+    Hard Deletes a tutorial from:
+    1. Global 'tutorials' collection
+    2. User's private 'users/{uid}/tutorials' subcollection
+    """
+    try:
+        # 1. Get Global Doc to find Owner
+        global_ref = db.collection("tutorials").document(tutorial_id)
+        doc = global_ref.get()
+        
+        if not doc.exists:
+            raise HTTPException(status_code=404, detail="Tutorial not found")
+            
+        owner_id = doc.to_dict().get("owner_id")
+        
+        # 2. Delete Global
+        global_ref.delete()
+        
+        # 3. Delete Private (if owner exists)
+        if owner_id:
+            private_ref = db.collection("users").document(owner_id).collection("tutorials").document(tutorial_id)
+            private_ref.delete()
+            
+        return {"status": "success", "message": "Tutorial deleted successfully"}
+        
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        print(f"❌ Admin Tutorial Delete Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
