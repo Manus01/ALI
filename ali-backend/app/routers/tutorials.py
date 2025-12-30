@@ -130,13 +130,13 @@ def mark_complete(tutorial_id: str, payload: CompletionRequest, user: dict = Dep
             # Fallback to global
             tut_ref = db.collection('tutorials').document(tutorial_id)
             tut_doc = tut_ref.get()
-         
-         # Fetch Tutorial Metadata to know WHICH skill to upgrade
-         if not tut_doc.exists: return {"status": "error", "message": "Tutorial not found"}
-         
-         tut_data = tut_doc.to_dict()
-         category = tut_data.get("category", "general") # e.g., "paid_ads"
-         difficulty = tut_data.get("difficulty", "NOVICE")
+        
+        # Fetch Tutorial Metadata to know WHICH skill to upgrade
+        if not tut_doc.exists: return {"status": "error", "message": "Tutorial not found"}
+        
+        tut_data = tut_doc.to_dict()
+        category = tut_data.get("category", "general") # e.g., "paid_ads"
+        difficulty = tut_data.get("difficulty", "NOVICE")
 
         # Update Lists
         user_ref.update({
