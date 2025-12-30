@@ -31,8 +31,10 @@ def initialize_firebase():
             firebase_admin.initialize_app(cred)
             return firestore.client()
         else:
-            logger.error(f"❌ FIREBASE ERROR: No credentials at {cred_path}. Folder exists: {os.path.exists('/app/secrets')}")
-            return None
+            logger.warning(f"⚠️ No credentials at {cred_path}. Attempting ADC (Application Default Credentials)...")
+            # Fallback to ADC (Cloud Run / GKE / Local GCloud Auth)
+            firebase_admin.initialize_app()
+            return firestore.client()
     except Exception as e:
         logger.error(f"❌ Firebase Init Failed: {e}")
         return None
