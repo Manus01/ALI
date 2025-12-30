@@ -9,15 +9,12 @@ from dotenv import load_dotenv
 # Firestore initialization 
 # Standardized for the ALI Unified Architecture
 from firebase_admin import firestore
-from app.core.security import verify_token
+from app.core.security import verify_token, db
 
 # --- 1. GLOBAL LOGGING & ENV ---
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ali_platform")
 load_dotenv()
-
-# Initialize db globally for routes
-db = firestore.client()
 
 # --- 2. ROUTER IMPORTS ---
 # Core routers registered globally for immediate availability
