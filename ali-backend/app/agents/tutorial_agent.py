@@ -4,11 +4,11 @@ import datetime
 import time
 from google.cloud import firestore
 from app.services.ai_studio import CreativeService
-from app.services.llm_factory import get_gemini_model
+from app.services.llm_factory import get_model
 
 # --- 1. THE ARCHITECT (Curriculum + Metaphor) ---
 def generate_curriculum_blueprint(topic, profile, campaign_context):
-    model = get_gemini_model('gemini-1.5-pro-001')
+    model = get_model('complex')
     
     prompt = f"""
     Act as a Lead Instructional Designer.
@@ -48,7 +48,7 @@ def write_section_narrative(section_meta, topic, metaphor, profile):
     Writes the educational text. 
     FIX: Now strictly bans conversational filler ("Of course...").
     """
-    model = get_gemini_model('gemini-1.5-pro-001')
+    model = get_model('complex')
     
     prompt = f"""
     Act as an Expert Tutor. Write the **Educational Text** for one section of "{topic}".
@@ -74,7 +74,7 @@ def design_section_assets(section_text, section_meta, metaphor):
     Generates supporting assets.
     FIX: Enforces 'correct_answer' (Integer) for ALL quizzes to prevent scoring errors.
     """
-    model = get_gemini_model('gemini-1.5-pro-001')
+    model = get_model('complex')
     
     # Determine required assets based on section type
     requirements = ""

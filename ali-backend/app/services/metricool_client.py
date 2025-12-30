@@ -18,7 +18,7 @@ class MetricoolClient:
     Client for Metricool Agency API.
     Treats every SaaS user as a 'Brand' (blogId).
     """
-    def __init__(self):
+    def __init__(self, blog_id: Optional[str] = None):
         if not METRICOOL_USER_TOKEN or not METRICOOL_USER_ID:
             raise ValueError("METRICOOL_USER_TOKEN or METRICOOL_USER_ID is missing.")
             
@@ -27,6 +27,7 @@ class MetricoolClient:
             "Content-Type": "application/json"
         }
         self.user_id = METRICOOL_USER_ID
+        self.blog_id = blog_id
 
     def get_brand_status(self, blog_id: str) -> Dict[str, Any]:
         """Checks if a brand is connected and valid."""
@@ -255,3 +256,50 @@ class MetricoolClient:
             "dates": dates,
             "datasets": datasets
         }
+    
+    def get_ads_stats(self, blog_id: str) -> Dict[str, float]:
+        """
+        Fetches specific ad metrics (clicks, spend, ctr) from Metricool.
+        """
+        url = "https://app.metricool.com/api/stats/ads"
+        params = {
+            "blogId": blog_id,
+            "userId": self.user_id,
+            "userToken": METRICOOL_USER_TOKEN # Explicitly requested by prompt logic
+        }
+        
+        try:
+            # Note: Using the same headers as other requests
+            res = requests.get(url, headers=self.headers, params=params)
+            
+            if res.status_code == 200:
+                data = res.json()
+                # Assuming the API returns these fields directly or in a structure
+                # If data is a list or complex object, we might need to aggregate.
+                # For now, implementing a safe extraction based on common Metricool patterns
+                # or returning 0 if missing.
+                
+                # If the API returns a list of campaigns, we sum them up.
+                if isinstance(data, list):
+                    clicks = sum(item.get('clicks', 0) for item in data)
+                    spend = sum(item.get('spend', 0.0) for item in data)
+                    # Weighted CTR or simple average? Let's do (Total Clicks / Total Impressions) * 100 if available
+                    # Otherwise average CTR.
+                    impressions = sum(item.get('impressions', 0) for item in data)
+                    ctr = (clicks / impressions * 100) if impressions > 0 else 0.0
+                    
+                    return {"clicks": clicks, "spend": spend, "ctr": round(ctr, 2)}
+                
+                # If it returns a summary object
+                return {
+                    "clicks": data.get("clicks", 0),
+                    "spend": data.get("spend", 0.0),
+                    "ctr": data.get("ctr", 0.0)
+                }
+                
+            logger.warning(f"Metricool Ads Stats returned {res.status_code}")
+            return {"clicks": 0, "spend": 0.0, "ctr": 0.0}
+            
+        except Exception as e:
+            logger.error(f"❌ Ads Stats Fetch Failed: {e}")
+            return {"clicks": 0, "spend": 0.0, "ctr": 0.0"}

@@ -2,13 +2,13 @@ import os
 import json
 import logging
 from .base_agent import BaseAgent
-from app.services.llm_factory import get_gemini_model
+from app.services.llm_factory import get_model
 
 class CampaignAgent(BaseAgent):
     def __init__(self):
         super().__init__("CampaignAgent")
         # Using Pro for complex strategic reasoning
-        self.model = get_gemini_model('gemini-1.5-pro-001')
+        self.model = get_model('complex')
 
     async def generate_clarifying_questions(self, goal: str, brand_dna: dict):
         """Analyze goal vs Brand DNA and ask 3-4 strategic questions."""

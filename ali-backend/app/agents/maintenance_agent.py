@@ -1,7 +1,7 @@
 ﻿import os
 import json
 from dotenv import load_dotenv
-from app.services.llm_factory import get_gemini_model
+from app.services.llm_factory import get_model
 
 load_dotenv()
 
@@ -45,7 +45,7 @@ def review_tutorial_relevance(tutorial_data: dict, current_metrics: list, user_p
     """
     
     try:
-        model = get_gemini_model('gemini-1.5-flash-001')
+        model = get_model('fast')
         response = model.generate_content(prompt)
         text = response.text.replace("```json", "").replace("```", "").strip()
         return json.loads(text)

@@ -150,3 +150,36 @@ def get_research_users(admin: dict = Depends(verify_admin)):
 @router.post("/jobs/trigger-nightly-log")
 def trigger_logging_job(admin: dict = Depends(verify_admin)):
     return run_nightly_performance_log()
+
+@router.get("/users/{target_uid}/analytics")
+def get_user_analytics(target_uid: str, user: dict = Depends(verify_token)):
+    """
+    Fetches Metricool Analytics (Clicks, CTR, Spend) for a specific user.
+    Accessible by the user themselves or an admin.
+    """
+    # Security Check: User can only access their own data unless they are admin
+    if user['uid'] != target_uid and user.get("email") not in ["manoliszografos@gmail.com"]:
+        raise HTTPException(status_code=403, detail="Unauthorized access to user analytics")
+
+    try:
+        # 1. Fetch metricool_blog_id
+        doc = db.collection("users").document(target_uid).collection("user_integrations").document("metricool").get()
+        if not doc.exists:
+            return {"clicks": 0, "spend": 0.0, "ctr": 0.0, "status": "not_connected"}
+            
+        data = doc.to_dict()
+        blog_id = data.get("metricool_blog_id")
+        
+        if not blog_id:
+            return {"clicks": 0, "spend": 0.0, "ctr": 0.0, "status": "no_blog_id"}
+
+        # 2. Fetch Stats from Metricool
+        client = MetricoolClient(blog_id=blog_id)
+        stats = client.get_ads_stats(blog_id)
+        
+        return stats
+
+    except Exception as e:
+        print(f"❌ Analytics Fetch Error: {e}")
+        # Return zero state instead of 500 to prevent frontend crash
+        return {"clicks": 0, "spend": 0.0, "ctr": 0.0, "error": str(e)}

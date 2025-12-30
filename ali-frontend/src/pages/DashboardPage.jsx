@@ -29,6 +29,7 @@ export default function DashboardPage() {
     const [error, setError] = useState(null);
     const [maintenanceLoading, setMaintenanceLoading] = useState(false);
     const [activeFilter, setActiveFilter] = useState('all');
+    const [analyticsData, setAnalyticsData] = useState({ clicks: 0, spend: 0, ctr: 0 });
 
     // Extract Identity Data
     const brandDna = userProfile?.brand_dna || {};
@@ -39,6 +40,15 @@ export default function DashboardPage() {
             if (!currentUser) return;
             const response = await api.get('/dashboard/overview');
             setData(response.data);
+            
+            // Fetch Metricool Analytics
+            try {
+                const analyticsRes = await api.get(`/admin/users/${currentUser.uid}/analytics`);
+                setAnalyticsData(analyticsRes.data);
+            } catch (anaErr) {
+                console.warn("Analytics fetch failed, using defaults", anaErr);
+            }
+
             setLoading(false);
         } catch (error) {
             console.error('❌ Dashboard Error:', error);
@@ -221,6 +231,22 @@ export default function DashboardPage() {
                     <button onClick={() => navigate('/campaign-center')} className="bg-primary hover:bg-blue-700 text-white px-8 py-3 rounded-xl font-bold transition-all shadow-lg shadow-blue-500/20 text-sm flex items-center gap-2">
                         Create New Campaign <FaArrowRight size={12} />
                     </button>
+                </div>
+            </div>
+
+            {/* --- PERFORMANCE OVERVIEW (METRICOOL) --- */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                    <h3 className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">Total Spend</h3>
+                    <p className="text-3xl font-black text-slate-800">${analyticsData.spend?.toLocaleString() || '0'}</p>
+                </div>
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                    <h3 className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">Total Clicks</h3>
+                    <p className="text-3xl font-black text-slate-800">{analyticsData.clicks?.toLocaleString() || '0'}</p>
+                </div>
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                    <h3 className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">Average CTR</h3>
+                    <p className="text-3xl font-black text-slate-800">{analyticsData.ctr}%</p>
                 </div>
             </div>
 

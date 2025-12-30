@@ -2,7 +2,7 @@
 import json
 from google.cloud import firestore
 from app.agents.state import AgentState
-from app.services.llm_factory import get_gemini_model
+from app.services.llm_factory import get_model
 
 # --- NODE 1: THE ANALYST ---
 def analyst_node(state: AgentState) -> dict:
@@ -120,7 +120,7 @@ def strategist_node(state: AgentState) -> dict:
     """
 
     try:
-        model = get_gemini_model('gemini-1.5-flash-001')
+        model = get_model('fast')
         response = model.generate_content(prompt)
         
         content = response.text.replace("```json", "").replace("```", "").strip()

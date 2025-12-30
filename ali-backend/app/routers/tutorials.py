@@ -4,7 +4,7 @@ from app.core.security import verify_token
 from app.services.job_runner import process_tutorial_job
 from app.agents.nodes import analyst_node
 from google.cloud import firestore
-from app.services.llm_factory import get_gemini_model
+from app.services.llm_factory import get_model
 import os
 import json
 import datetime
@@ -55,7 +55,7 @@ def get_tutorial_suggestions(user: dict = Depends(verify_token)):
         weak_areas = [k for k, v in skills.items() if v == "NOVICE"]
         if not weak_areas: weak_areas = ["Advanced Optimization"] # If they are expert everywhere
 
-        model = get_gemini_model('gemini-1.5-flash-001')
+        model = get_model('fast')
          
         prompt = f"""
         Act as an AI Mentor.

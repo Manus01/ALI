@@ -1,4 +1,4 @@
-from app.services.llm_factory import get_gemini_model
+from app.services.llm_factory import get_model
 import os
 import json
 from .base_agent import BaseAgent
@@ -7,7 +7,7 @@ from app.agents.visual_agent import VisualAgent
 class RecyclerAgent(BaseAgent):
     def __init__(self):
         super().__init__("RecyclerAgent")
-        self.model = get_gemini_model('gemini-1.5-flash-001')
+        self.model = get_model('fast')
 
     async def recycle_asset(self, uid: str, campaign_id: str, original_asset_url: str, user_instruction: str, brand_dna: dict):
         self.log_task(f"Recycling asset: {original_asset_url} with instruction: {user_instruction}")

@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from app.agents.base_agent import BaseAgent
 from app.services.windsor_client import WindsorClient
 from app.services.crypto_service import CryptoService
+from app.services.llm_factory import get_model
 from google.cloud import firestore
 
 logger = logging.getLogger(__name__)
@@ -48,15 +49,10 @@ def predict_cpc_change(
     """
 
     try:
-        import vertexai
-        from vertexai.generative_models import GenerativeModel, GenerationConfig
+        from vertexai.generative_models import GenerationConfig
         
-        # Ensure Vertex is initialized (idempotent)
-        project_id = os.getenv("PROJECT_ID")
-        vertexai.init(project=project_id, location="us-central1")
-        
-        model = GenerativeModel("gemini-1.5-flash-001") # Vertex doesn't have 2.0-flash yet usually, fallback to 1.5
-        
+        model = get_model('fast')
+         
         response = model.generate_content(
             prompt,
             generation_config=GenerationConfig(
@@ -86,7 +82,8 @@ class StrategyAgent(BaseAgent):
     """
     def __init__(self, agent_name: str = "StrategyAgent"):
         super().__init__("StrategyAgent")
-        self.model = 'gemini-1.5-pro-001' # High reasoning capability
+        # self.model is used to store the model instance now, not the name string
+        self.model_instance = None 
         self.client = None
         self.tools = [predict_cpc_change]
         
@@ -98,18 +95,7 @@ class StrategyAgent(BaseAgent):
         if self.client:
             return self.client
         try:
-            import vertexai
-            from vertexai.generative_models import GenerativeModel
-            
-            project_id = os.getenv("PROJECT_ID")
-            vertexai.init(project=project_id, location="us-central1")
-            
-            # We return the GenerativeModel class or instance? 
-            # The usage below expects a client-like behavior or we adapt usage.
-            # StrategyAgent uses client.models.generate_content. 
-            # Vertex SDK uses model.generate_content.
-            # We will return the MODEL instance here.
-            self.client = GenerativeModel(self.model)
+            self.client = get_model('complex')
         except Exception as e:
             logger.error(f"GenAI client init failed: {e}")
             self.client = None
