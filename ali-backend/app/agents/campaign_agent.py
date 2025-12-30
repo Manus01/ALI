@@ -1,15 +1,14 @@
-import google.generativeai as genai
 import os
 import json
 import logging
 from .base_agent import BaseAgent
+from app.services.llm_factory import get_gemini_model
 
 class CampaignAgent(BaseAgent):
     def __init__(self):
         super().__init__("CampaignAgent")
-        genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-        # Use Pro for complex strategic reasoning
-        self.model = genai.GenerativeModel('gemini-1.5-pro')
+        # Using Pro for complex strategic reasoning
+        self.model = get_gemini_model('gemini-1.5-pro')
 
     async def generate_clarifying_questions(self, goal: str, brand_dna: dict):
         """Analyze goal vs Brand DNA and ask 3-4 strategic questions."""
@@ -65,4 +64,4 @@ class CampaignAgent(BaseAgent):
             raw_text = response.text.strip().replace('```json', '').replace('```', '')
             return json.loads(raw_text)
         except Exception as e:
-            self.handle_error(e)
+            self.handle_error(e)            self.handle_error(e)

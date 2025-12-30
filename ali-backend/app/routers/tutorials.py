@@ -4,7 +4,7 @@ from app.core.security import verify_token
 from app.services.job_runner import process_tutorial_job
 from app.agents.nodes import analyst_node
 from google.cloud import firestore
-import google.generativeai as genai
+from app.services.llm_factory import get_gemini_model
 import os
 import json
 import datetime
@@ -55,9 +55,8 @@ def get_tutorial_suggestions(user: dict = Depends(verify_token)):
         weak_areas = [k for k, v in skills.items() if v == "NOVICE"]
         if not weak_areas: weak_areas = ["Advanced Optimization"] # If they are expert everywhere
 
-        genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-        model = genai.GenerativeModel('gemini-1.5-flash')
-        
+        model = get_gemini_model('gemini-1.5-flash')
+         
         prompt = f"""
         Act as an AI Mentor.
         
@@ -164,4 +163,4 @@ def mark_complete(tutorial_id: str, payload: CompletionRequest, user: dict = Dep
         
     except Exception as e:
         print(f"❌ Completion Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e))        raise HTTPException(status_code=500, detail=str(e))

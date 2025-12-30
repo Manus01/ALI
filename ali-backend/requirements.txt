@@ -3,6 +3,7 @@ uvicorn
 google-generativeai>=0.8.6
 google-cloud-firestore
 google-cloud-kms
+google-cloud-aiplatform
 firebase-admin
 cryptography
 pydantic

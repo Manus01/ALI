@@ -1,6 +1,7 @@
 ﻿import os
 import json
 from dotenv import load_dotenv
+from app.services.llm_factory import get_gemini_model
 
 load_dotenv()
 
@@ -44,12 +45,7 @@ def review_tutorial_relevance(tutorial_data: dict, current_metrics: list, user_p
     """
     
     try:
-        import google.generativeai as genai
-        api_key = os.getenv("GEMINI_API_KEY")
-        if api_key:
-            genai.configure(api_key=api_key)
- 
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = get_gemini_model('gemini-1.5-flash')
         response = model.generate_content(prompt)
         text = response.text.replace("```json", "").replace("```", "").strip()
         return json.loads(text)

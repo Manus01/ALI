@@ -1,17 +1,16 @@
 ﻿import requests
 from bs4 import BeautifulSoup
-import google.generativeai as genai
 import os
 import json
 import logging
 from .base_agent import BaseAgent
+from app.services.llm_factory import get_gemini_model
 
 class BrandAgent(BaseAgent):
     def __init__(self):
         super().__init__("BrandAgent")
-        genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
         # Using 1.5 Flash for rapid identity extraction
-        self.model = genai.GenerativeModel('gemini-1.5-flash')
+        self.model = get_gemini_model('gemini-1.5-flash')
 
     async def analyze_business(self, url: str = None, description: str = None, countries: list = []):
         """
@@ -102,4 +101,4 @@ class BrandAgent(BaseAgent):
                 "color_palette": {"primary": "#3B82F6", "secondary": "#1E293B", "accent": "#6366F1"},
                 "graphic_elements": {"shapes": "clean", "line_weight": "normal", "vibe": "modern"},
                 "cultural_nuance": "Focus on quality and reliability."
-            }
+            }            }
