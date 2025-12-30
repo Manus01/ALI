@@ -83,6 +83,16 @@ def _process_tutorial_doc(doc, user_id, db):
     t = doc.to_dict()
     t['id'] = doc.id
     
+    # Debug Log: Inspect Raw Data from DB
+    print(f"🔍 Processing Doc {doc.id} (User: {user_id})")
+    print(f"   Raw Keys: {list(t.keys())}")
+    if 'sections' in t:
+        print(f"   Sections Type: {type(t['sections'])}")
+        if isinstance(t['sections'], list):
+            print(f"   Sections Count: {len(t['sections'])}")
+    else:
+        print("   ⚠️ 'sections' key MISSING in DB doc")
+    
     # Check completion status
     user_doc = db.collection('users').document(user_id).get()
     completed_ids = user_doc.to_dict().get("completed_tutorials", []) if user_doc.exists else []

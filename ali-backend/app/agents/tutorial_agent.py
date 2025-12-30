@@ -214,17 +214,23 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
     if not final_sections:
         raise RuntimeError("Tutorial generation resulted in 0 sections. Aborting save.")
 
-    # Save
-    tutorial_data = {
-        "title": blueprint.get("title", topic),
-        "category": "Adaptive Course",
-        "difficulty": profile.get("marketing_knowledge", "NOVICE"),
-        "sections": final_sections,
-        "owner_id": user_id,
-        "is_public": True, # Default to public for community sharing
-        "tags": [profile.get("learning_style", "VISUAL"), metaphor],
-        "timestamp": firestore.SERVER_TIMESTAMP,
-        "is_completed": False
+    # Debug Log: Verify Data before Save
+    print(f"💾 Saving Tutorial '{blueprint.get('title', topic)}' for User {user_id}")
+    print(f"   Sections Count: {len(final_sections)}")
+    if len(final_sections) > 0:
+        print(f"   First Section Blocks: {len(final_sections[0].get('blocks', []))}")
+ 
+     # Save
+     tutorial_data = {
+         "title": blueprint.get("title", topic),
+         "category": "Adaptive Course",
+         "difficulty": profile.get("marketing_knowledge", "NOVICE"),
+         "sections": final_sections,
+         "owner_id": user_id,
+         "is_public": True, # Default to public for community sharing
+         "tags": [profile.get("learning_style", "VISUAL"), metaphor],
+         "timestamp": firestore.SERVER_TIMESTAMP,
+         "is_completed": False
     }
     
     # SENIOR DEV FIX: Save to user's subcollection so the frontend listener picks it up immediately
