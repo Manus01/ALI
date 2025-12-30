@@ -99,6 +99,11 @@ def get_tutorial_details(tutorial_id: str, user: dict = Depends(verify_token)):
             user_doc = db.collection('users').document(user_id).get()
             completed_ids = user_doc.to_dict().get("completed_tutorials", []) if user_doc.exists else []
             t['is_completed'] = doc.id in completed_ids
+            
+            # Debug Log
+            sec_count = len(t.get('sections', []))
+            print(f"🔍 Fetch Private Tutorial {tutorial_id}: Found {sec_count} sections.")
+            
             return t
             
         # 2. Try Global (Public)
@@ -112,6 +117,11 @@ def get_tutorial_details(tutorial_id: str, user: dict = Depends(verify_token)):
             user_doc = db.collection('users').document(user_id).get()
             completed_ids = user_doc.to_dict().get("completed_tutorials", []) if user_doc.exists else []
             t['is_completed'] = doc.id in completed_ids
+            
+            # Debug Log
+            sec_count = len(t.get('sections', []))
+            print(f"🔍 Fetch Global Tutorial {tutorial_id}: Found {sec_count} sections.")
+            
             return t
             
         raise HTTPException(status_code=404, detail="Tutorial not found")

@@ -35,13 +35,25 @@ def generate_curriculum_blueprint(topic, profile, campaign_context):
         ]
     }}
     """
-    try:
-        response = model.generate_content(prompt)
-        return json.loads(response.text.replace("```json", "").replace("```", "").strip())
-    except Exception as e:
-        print(f"❌ Blueprint Failed: {e}")
-        raise e
-
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            response = model.generate_content(prompt)
+            data = json.loads(response.text.replace("```json", "").replace("```", "").strip())
+            
+            # Validation: Ensure sections exist
+            if not data.get("sections") or len(data["sections"]) == 0:
+                print(f"⚠️ Blueprint Warning: No sections found in response: {data}")
+                raise ValueError("AI generated a blueprint with no sections.")
+                
+            return data
+        except Exception as e:
+            print(f"⚠️ Blueprint Attempt {attempt+1} Failed: {e}")
+            if attempt == max_retries - 1:
+                print(f"❌ Blueprint Failed after {max_retries} attempts.")
+                raise e
+            time.sleep(2)
+ 
 # --- 2. THE PROFESSOR (Pass 1: Text Only) ---
 def write_section_narrative(section_meta, topic, metaphor, profile):
     """
@@ -144,43 +156,63 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
         if progress_callback:
             progress_callback(f"Crafting Section {index+1}: {sec_meta['title']}...")
         
-        try:
-            # PASS 1: Narrative (Text)
-            narrative_text = write_section_narrative(sec_meta, topic, metaphor, profile)
-            
-            # PASS 2: Assets (JSON)
-            assets_data = design_section_assets(narrative_text, sec_meta, metaphor)
-            
-            # MERGE
-            combined_blocks = []
-            assets = assets_data.get('assets', [])
-            
-            # Order: Visuals -> Text -> Audio/Tips -> Quiz
-            visuals = [b for b in assets if b['type'] in ['video_clip', 'image_diagram']]
-            audios = [b for b in assets if b['type'] in ['audio_note', 'callout_pro_tip']]
-            quizzes = [b for b in assets if b['type'] in ['quiz_single', 'quiz_final']]
-            
-            for block in visuals:
-                processed = fabricate_block(block, topic, creative)
-                if processed: combined_blocks.append(processed)
+        section_success = False
+        max_retries = 3
+        
+        for attempt in range(max_retries):
+            try:
+                # PASS 1: Narrative (Text)
+                narrative_text = write_section_narrative(sec_meta, topic, metaphor, profile)
+                
+                if not narrative_text or len(narrative_text) < 50:
+                    raise ValueError("Narrative text too short or empty")
 
-            combined_blocks.append({ "type": "text", "content": narrative_text })
+                # PASS 2: Assets (JSON)
+                assets_data = design_section_assets(narrative_text, sec_meta, metaphor)
+                
+                # MERGE
+                combined_blocks = []
+                assets = assets_data.get('assets', [])
+                
+                # Order: Visuals -> Text -> Audio/Tips -> Quiz
+                visuals = [b for b in assets if b['type'] in ['video_clip', 'image_diagram']]
+                audios = [b for b in assets if b['type'] in ['audio_note', 'callout_pro_tip']]
+                quizzes = [b for b in assets if b['type'] in ['quiz_single', 'quiz_final']]
+                
+                for block in visuals:
+                    processed = fabricate_block(block, topic, creative)
+                    if processed: combined_blocks.append(processed)
 
-            for block in audios:
-                processed = fabricate_block(block, topic, creative)
-                if processed: combined_blocks.append(processed)
+                combined_blocks.append({ "type": "text", "content": narrative_text })
 
-            for block in quizzes:
-                combined_blocks.append(block)
+                for block in audios:
+                    processed = fabricate_block(block, topic, creative)
+                    if processed: combined_blocks.append(processed)
 
-            final_sections.append({
-                "title": sec_meta['title'],
-                "blocks": combined_blocks
-            })
+                for block in quizzes:
+                    combined_blocks.append(block)
 
-        except Exception as e:
-            print(f"❌ Section Failed: {e}")
-            raise RuntimeError(f"Failed to generate Section {index+1}")
+                final_sections.append({
+                    "title": sec_meta['title'],
+                    "blocks": combined_blocks
+                })
+                section_success = True
+                break # Success, exit retry loop
+
+            except Exception as e:
+                print(f"⚠️ Section {index+1} Attempt {attempt+1} Failed: {e}")
+                if attempt < max_retries - 1:
+                    time.sleep(2)
+                else:
+                    print(f"❌ Section {index+1} Failed after {max_retries} attempts.")
+                    raise RuntimeError(f"Failed to generate Section {index+1}: {sec_meta['title']}")
+        
+        if not section_success:
+             raise RuntimeError(f"Failed to generate Section {index+1}: {sec_meta['title']}")
+
+    # Final Validation before Save
+    if not final_sections:
+        raise RuntimeError("Tutorial generation resulted in 0 sections. Aborting save.")
 
     # Save
     tutorial_data = {
