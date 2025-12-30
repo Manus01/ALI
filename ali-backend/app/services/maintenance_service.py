@@ -43,13 +43,12 @@ def run_weekly_maintenance(user_id: str):
             generate_tutorial(user_id, f"UPDATE: {tut['title']}", is_delta=True, context=review.get('reason'))
             
             # Notify
-            db.collection("notifications").add({
-                "user_id": user_id,
-                "type": "info",
-                "title": "Lesson Updated",
-                "message": f"New insights for '{tut['title']}': {review.get('reason')}",
-                "read": False,
-                "created_at": firestore.SERVER_TIMESTAMP
+            db.collection("users").document(user_id).collection("notifications").add({
+                 "type": "info",
+                 "title": "Lesson Updated",
+                 "message": f"New insights for '{tut['title']}': {review.get('reason')}",
+                 "read": False,
+                 "created_at": firestore.SERVER_TIMESTAMP
             })
             updates_count += 1
             
@@ -72,14 +71,22 @@ def run_weekly_maintenance(user_id: str):
         # Create a full 4C/ID course for this new problem
         generate_tutorial(user_id, f"Fixing: {anomaly}")
         
-        db.collection("notifications").add({
-            "user_id": user_id,
-            "type": "info",
-            "title": "New Course Assigned",
-            "message": f"AI assigned a new lesson to fix: {anomaly}",
-            "read": False,
-            "created_at": firestore.SERVER_TIMESTAMP
+        db.collection("users").document(user_id).collection("notifications").add({
+             "type": "info",
+             "title": "New Course Assigned",
+             "message": f"AI assigned a new lesson to fix: {anomaly}",
+             "read": False,
+             "created_at": firestore.SERVER_TIMESTAMP
         })
         new_count += 1
 
     print(f"✅ Maintenance Complete. Updates: {updates_count}, New: {new_count}")
+    
+    # Final "Complete" Notification
+    db.collection("users").document(user_id).collection("notifications").add({
+        "type": "success",
+        "title": "Maintenance Complete",
+        "message": f"Review finished. {updates_count} updates, {new_count} new lessons.",
+        "read": False,
+        "created_at": firestore.SERVER_TIMESTAMP
+    })

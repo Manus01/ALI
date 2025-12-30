@@ -67,7 +67,7 @@ export default function DashboardPage() {
         setMaintenanceLoading(true);
         try {
             await api.post('/maintenance/run');
-            alert("Maintenance triggered successfully.");
+            // alert("Maintenance triggered successfully."); // Removed in favor of Bell Notification
         } catch (err) {
             console.error(err);
             alert("Failed to trigger maintenance.");
