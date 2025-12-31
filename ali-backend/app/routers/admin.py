@@ -1,13 +1,8 @@
-﻿from fastapi import APIRouter, Depends, HTTPException, Body
-from app.core.security import verify_token
-from app.services.performance_logger import run_nightly_performance_log
+﻿from fastapi import APIRouter, Depends, HTTPException
+from app.core.security import verify_token, db
 from app.services.metricool_client import MetricoolClient
-from google.cloud import firestore
-from datetime import datetime
-from typing import Dict, Optional
 
 router = APIRouter()
-db = firestore.Client()
 
 def verify_admin(user: dict = Depends(verify_token)):
     if user.get("email") not in ["manoliszografos@gmail.com"]:

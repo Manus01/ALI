@@ -1,6 +1,5 @@
 ﻿from fastapi import APIRouter, Depends, HTTPException
-from app.core.security import verify_token
-from google.cloud import firestore
+from app.core.security import verify_token, db
 
 router = APIRouter()
 
@@ -10,7 +9,6 @@ def delete_notification(notification_id: str, user: dict = Depends(verify_token)
     Deletes a notification document from Firestore.
     """
     try:
-        db = firestore.Client()
         # Verify ownership before deleting
         # SENIOR DEV FIX: Delete from user's subcollection
         notif_ref = db.collection("users").document(user['uid']).collection("notifications").document(notification_id)

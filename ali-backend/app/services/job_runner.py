@@ -1,6 +1,7 @@
 ﻿import time
-from google.cloud import firestore
 from app.agents.tutorial_agent import generate_tutorial
+from app.core.security import db
+from google.cloud import firestore
 
 def process_tutorial_job(job_id: str, user_id: str, topic: str):
     """
@@ -8,7 +9,6 @@ def process_tutorial_job(job_id: str, user_id: str, topic: str):
     Updates the SAME notification to prevent 'stale loading' UI.
     """
     print(f"⚙️ Worker: Starting Job {job_id} for {topic}...")
-    db = firestore.Client()
     job_ref = db.collection("jobs").document(job_id)
 
     # Track the Notification ID so we can update it later

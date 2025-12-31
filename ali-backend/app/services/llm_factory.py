@@ -4,10 +4,14 @@ from vertexai.generative_models import GenerativeModel
 from google.api_core import exceptions
 
 # Initialize Vertex AI globally using Identity (No Keys)
-vertexai.init(
-    project=os.environ.get("GOOGLE_CLOUD_PROJECT"),
-    location=os.environ.get("VERTEX_LOCATION", "us-central1")
-)
+project_id = os.environ.get("GOOGLE_CLOUD_PROJECT")
+location = os.environ.get("VERTEX_LOCATION", "us-central1")
+
+if project_id:
+    vertexai.init(project=project_id, location=location)
+else:
+    # Auto-detect project on Cloud Run / GKE
+    vertexai.init(location=location)
 
 # 🏛️ 2025 Stable Aliases (Auto-healing)
 MODELS = {

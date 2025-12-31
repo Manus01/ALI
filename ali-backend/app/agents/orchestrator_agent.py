@@ -2,12 +2,13 @@ import asyncio
 from app.agents.base_agent import BaseAgent
 from app.agents.campaign_agent import CampaignAgent
 from app.agents.visual_agent import VisualAgent
+from app.core.security import db
 from firebase_admin import firestore
 
 class OrchestratorAgent(BaseAgent):
     def __init__(self):
         super().__init__("Orchestrator")
-        self.db = firestore.client()
+        self.db = db
 
     async def run_full_campaign_flow(self, uid, campaign_id, goal, brand_dna, answers):
         try:

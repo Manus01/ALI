@@ -1,4 +1,5 @@
 ﻿from google.cloud import firestore
+from app.core.security import db
 
 def run_weekly_maintenance(user_id: str):
     print(f"🧹 Maintenance: Starting run for {user_id}...")
@@ -8,8 +9,6 @@ def run_weekly_maintenance(user_id: str):
     from app.agents.maintenance_agent import review_tutorial_relevance
     from app.agents.tutorial_agent import generate_tutorial
     from app.agents.nodes import analyst_node
-    
-    db = firestore.Client()
     
     # 1. Get User Data & Real Metrics
     user_ref = db.collection('users').document(user_id)
@@ -89,4 +88,4 @@ def run_weekly_maintenance(user_id: str):
         "message": f"Review finished. {updates_count} updates, {new_count} new lessons.",
         "read": False,
         "created_at": firestore.SERVER_TIMESTAMP
-    })
+    })    })

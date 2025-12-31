@@ -1,16 +1,12 @@
 ﻿from fastapi import APIRouter, Depends, HTTPException, Body
-from app.core.security import verify_token
+from app.core.security import verify_token, db
 from app.services.metricool_client import MetricoolClient
-from app.services.gcs_service import GCSService
-from google.cloud import firestore
-import base64
-from typing import Dict, Any
+import logging
 
 router = APIRouter()
-db = firestore.Client()
-gcs_service = GCSService()
+logger = logging.getLogger(__name__)
 
-@router.post("/publish")
+@router.post("/publish/content")
 async def publish_video(payload: Dict[str, Any] = Body(...), user: dict = Depends(verify_token)):
     """
     Publishing Flow: VEO -> GCS -> Metricool

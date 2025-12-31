@@ -1,7 +1,6 @@
-from fastapi import APIRouter, Depends, BackgroundTasks
-from app.core.security import verify_token
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from app.core.security import verify_token, db
 from app.services.maintenance_service import run_weekly_maintenance
-from google.cloud import firestore
 
 router = APIRouter()
 
@@ -10,7 +9,6 @@ def trigger_maintenance(background_tasks: BackgroundTasks, user: dict = Depends(
     """
     Manually triggers the weekly maintenance loop.
     """
-    db = firestore.Client()
     user_id = user['uid']
     
     # Add "Started" Notification to Bell

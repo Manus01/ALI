@@ -1,9 +1,9 @@
 ﻿from fastapi import APIRouter, HTTPException, Depends, Body
 from pydantic import BaseModel
-from google.cloud import firestore
 import firebase_admin
 from firebase_admin import auth
-from app.core.security import verify_token
+from app.core.security import verify_token, db
+from google.cloud import firestore
 
 router = APIRouter()
 
@@ -23,7 +23,6 @@ def register_user(user_data: UserRegister):
         )
         
         # B. Initialize Database Record (Firestore)
-        db = firestore.Client()
         db.collection('users').document(user.uid).set({
             "email": user_data.email,
             "created_at": firestore.SERVER_TIMESTAMP,
@@ -56,7 +55,6 @@ def get_current_user_profile(user: dict = Depends(verify_token)):
     Fetches the full user profile. 
     """
     try:
-        db = firestore.Client()
         doc_ref = db.collection('users').document(user['uid'])
         doc = doc_ref.get()
         

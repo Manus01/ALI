@@ -1,8 +1,8 @@
 ﻿import os
 import json
-from google.cloud import firestore
 from app.agents.state import AgentState
 from app.services.llm_factory import get_model
+from app.core.security import db
 
 # --- NODE 1: THE ANALYST ---
 def analyst_node(state: AgentState) -> dict:
@@ -14,7 +14,6 @@ def analyst_node(state: AgentState) -> dict:
     user_id = state.get("user_id")
     
     # 1. Fetch from Firestore
-    db = firestore.Client()
     docs = db.collection('users').document(user_id).collection('campaign_performance').stream()
     
     # Convert to list of dicts
@@ -137,4 +136,4 @@ def strategist_node(state: AgentState) -> dict:
         }
 
     print("✅ Strategy Generated.")
-    return {"strategy_plan": plan}
+    return {"strategy_plan": plan}    return {"strategy_plan": plan}

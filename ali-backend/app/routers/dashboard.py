@@ -1,11 +1,13 @@
 ﻿from fastapi import APIRouter, Depends, HTTPException
-from app.core.security import verify_token
-from app.services.metricool_client import MetricoolClient # <--- New Import
-from google.cloud import firestore
+from app.core.security import verify_token, db
+from app.services.metricool_client import MetricoolClient
+import os
+import logging
 
-
+ 
 router = APIRouter()
-db = firestore.Client() # <--- Move Init outside function for efficiency
+
+logger = logging.getLogger(__name__)
 
 @router.get("/overview")
 def get_dashboard_overview(user: dict = Depends(verify_token)):
@@ -26,7 +28,8 @@ def get_dashboard_overview(user: dict = Depends(verify_token)):
         user_data = user_doc.to_dict() if user_doc.exists else {}
         
         profile = user_data.get("profile", {})
-        agent_status = user_data.get("agent_status", "idle")
+
+        # Removed agent_status as it's not used in the response anymore
         
         # --- LIVE DATA VARIABLES ---
         real_metrics = []
@@ -116,7 +119,6 @@ def get_dashboard_overview(user: dict = Depends(verify_token)):
 
         return {
             "profile": profile,
-            "agent_status": agent_status,
             "metrics": metrics,
             "forecast": forecast,
             "success_story": success_story,

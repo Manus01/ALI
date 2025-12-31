@@ -36,7 +36,12 @@ export default function TutorialsPage() {
             }));
             setTutorials(liveData);
         }, (error) => {
-            console.warn("Tutorials listener blocked or empty:", error.message);
+            console.error("Tutorials listener error:", error);
+            if (error.code === 'failed-precondition') {
+                setErrorMessage("Missing Index: Check console for link to create it.");
+            } else {
+                setErrorMessage("Connection issue. Please refresh.");
+            }
         });
 
         const fetchSuggestions = async () => {

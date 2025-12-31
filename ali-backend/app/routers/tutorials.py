@@ -1,6 +1,6 @@
 ﻿from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from pydantic import BaseModel, Field
-from app.core.security import verify_token
+from app.core.security import verify_token, db
 from app.services.job_runner import process_tutorial_job
 from app.agents.nodes import analyst_node
 from google.cloud import firestore
@@ -18,7 +18,6 @@ class CompletionRequest(BaseModel):
 @router.post("/generate/tutorial")
 def start_tutorial_job(topic: str, background_tasks: BackgroundTasks, user: dict = Depends(verify_token)):
     try:
-        db = firestore.Client()
         job_ref = db.collection("jobs").document()
         job_id = job_ref.id
         job_ref.set({
@@ -34,7 +33,6 @@ def start_tutorial_job(topic: str, background_tasks: BackgroundTasks, user: dict
 @router.get("/tutorials/suggestions")
 def get_tutorial_suggestions(user: dict = Depends(verify_token)):
     try:
-        db = firestore.Client()
         user_id = user['uid']
 
         # Fetch Granular Skills
@@ -116,7 +114,6 @@ def get_tutorial_details(tutorial_id: str, user: dict = Depends(verify_token)):
     Checks User's Private Collection first, then Global Public Collection.
     """
     try:
-        db = firestore.Client()
         user_id = user['uid']
         
         # 1. Try Private (User Subcollection) - Strong Consistency
@@ -160,7 +157,6 @@ def mark_complete(tutorial_id: str, payload: CompletionRequest, user: dict = Dep
     try:
         if payload.score < 75: return {"status": "failed", "message": "Score too low."}
         
-        db = firestore.Client()
         user_ref = db.collection('users').document(user['uid'])
         
         # SENIOR DEV FIX: Check User Subcollection FIRST (Private), then Global (Public)
@@ -213,7 +209,6 @@ def delete_user_tutorial(tutorial_id: str, user: dict = Depends(verify_token)):
     This effectively 'hides' it from their view without affecting the global copy.
     """
     try:
-        db = firestore.Client()
         user_id = user['uid']
         
         # Delete from private collection
@@ -232,7 +227,6 @@ def request_permanent_delete(tutorial_id: str, user: dict = Depends(verify_token
     Adds a task for the admin and removes it from the user's view.
     """
     try:
-        db = firestore.Client()
         user_id = user['uid']
         
         # 1. Create Admin Task

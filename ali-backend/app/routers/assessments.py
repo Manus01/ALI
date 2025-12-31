@@ -1,11 +1,9 @@
 ﻿from fastapi import APIRouter, Depends, HTTPException
-from app.core.security import verify_token
-from google.cloud import firestore
-from pydantic import BaseModel
-from typing import List, Any, Dict, Union
-import datetime
+from app.core.security import verify_token, db
+import logging
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 # --- MODELS ---
 class HFTResult(BaseModel):
@@ -22,7 +20,6 @@ class StandardTestResult(BaseModel):
 @router.post("/assessments/hft")
 def save_hft_result(data: HFTResult, user: dict = Depends(verify_token)):
     try:
-        db = firestore.Client()
         user_ref = db.collection("users").document(user['uid'])
 
         # Logic: High Score = Field Independent
@@ -53,7 +50,6 @@ def save_hft_result(data: HFTResult, user: dict = Depends(verify_token)):
 @router.post("/assessments/marketing")
 def save_marketing_result(data: StandardTestResult, user: dict = Depends(verify_token)):
     try:
-        db = firestore.Client()
         user_ref = db.collection("users").document(user['uid'])
         
         # Logic: Determine Knowledge Level
@@ -84,7 +80,6 @@ def save_marketing_result(data: StandardTestResult, user: dict = Depends(verify_
 @router.post("/assessments/eq")
 def save_eq_result(data: StandardTestResult, user: dict = Depends(verify_token)):
     try:
-        db = firestore.Client()
         user_ref = db.collection("users").document(user['uid'])
         
         # Save Log (Secure User Sub-collection)

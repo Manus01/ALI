@@ -1,13 +1,12 @@
-﻿from fastapi import APIRouter, Depends, HTTPException, Body
-from app.core.security import verify_token
-from google.cloud import firestore
+﻿from fastapi import APIRouter, Depends, HTTPException, Request
+from app.core.security import verify_token, db
 from app.services.metricool_client import MetricoolClient
-from datetime import datetime
+import logging
 
 router = APIRouter()
-db = firestore.Client()
+logger = logging.getLogger(__name__)
 
-@router.get("/integrations")
+@router.get("/integrations/status")
 def get_integrations(user: dict = Depends(verify_token)):
     user_id = user['uid']
     # SECURE PATH: Point to user-scoped sub-collection
@@ -87,4 +86,4 @@ def get_metricool_status(user: dict = Depends(verify_token)):
             
     except Exception as e:
         print(f"❌ Metricool Status Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e))        raise HTTPException(status_code=500, detail=str(e))

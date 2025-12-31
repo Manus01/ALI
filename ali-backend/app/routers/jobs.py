@@ -1,5 +1,5 @@
-from fastapi import APIRouter, HTTPException, Depends
-from typing import Dict, Any
+from fastapi import APIRouter, Depends, HTTPException
+from app.core.security import verify_token, db
 
 # Define the FastAPI router
 router = APIRouter()
@@ -9,7 +9,7 @@ router = APIRouter()
 # of long-running tasks (like video or tutorial generation).
 
 @router.get("/jobs/status/{job_id}", response_model=Dict[str, Any])
-def get_job_status(job_id: str):
+def get_job_status(job_id: str, user: dict = Depends(verify_token)):
     """
     Returns the status of a long-running background job.
     

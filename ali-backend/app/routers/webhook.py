@@ -1,6 +1,7 @@
-﻿from fastapi import APIRouter, Request
-from google.cloud import firestore
+﻿from fastapi import APIRouter, Request, HTTPException
+from app.core.security import db
 import logging
+import json
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -25,11 +26,7 @@ async def handle_airbyte_webhook(request: Request):
         payload = await request.json()
         
         # --- DEBUG LOG: SEE EXACTLY WHAT AIRBYTE SENT ---
-        print("\n" + "="*50)
-        print(f"📦 RECEIVED WEBHOOK PAYLOAD:")
-        print(payload)
-        print("="*50 + "\n")
-        # ------------------------------------------------
+
 
         # 2. Extract Key Fields (Safely)
         # We use .get() so it never crashes if a field is missing
