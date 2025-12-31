@@ -30,6 +30,15 @@ app = FastAPI(
     description="Unified Campaign Intelligence Engine"
 )
 
+# --- 3a. STARTUP EVENTS ---
+@app.on_event("startup")
+async def startup_event():
+    logger.info("🚀 Application Startup Initiated")
+    if db is None:
+        logger.warning("⚠️ Firestore DB is NOT initialized. Check credentials.")
+    else:
+        logger.info("✅ Firestore DB Connection Verified")
+
 # --- 3b. REQUEST SIZE LIMIT (5MB Guardrail) ---
 MAX_REQUEST_SIZE = int(os.getenv("MAX_REQUEST_SIZE_BYTES", 5 * 1024 * 1024))
 

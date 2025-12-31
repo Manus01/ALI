@@ -7,11 +7,14 @@ from google.api_core import exceptions
 project_id = os.environ.get("GOOGLE_CLOUD_PROJECT")
 location = os.environ.get("VERTEX_LOCATION", "us-central1")
 
-if project_id:
-    vertexai.init(project=project_id, location=location)
-else:
-    # Auto-detect project on Cloud Run / GKE
-    vertexai.init(location=location)
+try:
+    if project_id:
+        vertexai.init(project=project_id, location=location)
+    else:
+        # Auto-detect project on Cloud Run / GKE
+        vertexai.init(location=location)
+except Exception as e:
+    print(f"⚠️ Vertex AI Init Failed: {e}. AI features may be unavailable.")
 
 # 🏛️ 2025 Stable Aliases (Auto-healing)
 MODELS = {
