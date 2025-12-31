@@ -18,10 +18,19 @@ load_dotenv()
 
 # --- 2. ROUTER IMPORTS ---
 # Core routers registered globally for immediate availability
-from app.routers import (
-    auth, dashboard, jobs, assessments, notifications,
-    publisher, webhook, integration, admin, tutorials, maintenance
-)
+try:
+    from app.routers import (
+        auth, dashboard, jobs, assessments, notifications,
+        publisher, webhook, integration, admin, tutorials, maintenance
+    )
+    logger.info("✅ All routers imported successfully.")
+except Exception as e:
+    logger.critical(f"❌ Router Import Failed: {e}")
+    # We don't raise here to allow the app to start and log the error
+    # But in production, this means the app is broken.
+    # However, for debugging the startup crash, this is vital.
+    auth = dashboard = jobs = assessments = notifications = None
+    publisher = webhook = integration = admin = tutorials = maintenance = None
 
 # --- 3. APP INITIALIZATION ---
 app = FastAPI(
@@ -99,17 +108,20 @@ app.add_middleware(
 )
 
 # --- 5. REGISTER CORE ROUTERS ---
-app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
-app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"])
-app.include_router(notifications.router, prefix="/api/notifications", tags=["Notifications"])
-app.include_router(webhook.router, prefix="/api", tags=["Webhooks"])
-app.include_router(integration.router, prefix="/api", tags=["Integrations"])
-app.include_router(admin.router, prefix="/api/admin", tags=["Admin"])
-app.include_router(publisher.router, prefix="/api", tags=["Publisher"])
-app.include_router(jobs.router, prefix="/api", tags=["Jobs"])
-app.include_router(assessments.router, prefix="/api", tags=["Assessments"])
-app.include_router(tutorials.router, prefix="/api", tags=["Tutorials"])
-app.include_router(maintenance.router, prefix="/api", tags=["Maintenance"])
+if auth:
+    app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
+    app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"])
+    app.include_router(notifications.router, prefix="/api/notifications", tags=["Notifications"])
+    app.include_router(webhook.router, prefix="/api", tags=["Webhooks"])
+    app.include_router(integration.router, prefix="/api", tags=["Integrations"])
+    app.include_router(admin.router, prefix="/api/admin", tags=["Admin"])
+    app.include_router(publisher.router, prefix="/api", tags=["Publisher"])
+    app.include_router(jobs.router, prefix="/api", tags=["Jobs"])
+    app.include_router(assessments.router, prefix="/api", tags=["Assessments"])
+    app.include_router(tutorials.router, prefix="/api", tags=["Tutorials"])
+    app.include_router(maintenance.router, prefix="/api", tags=["Maintenance"])
+else:
+    logger.error("⚠️ Routers NOT registered due to import failure.")
 
 # --- 6. HEALTH CHECK (Critical for Cloud Run Deployment) ---
 @app.get("/")

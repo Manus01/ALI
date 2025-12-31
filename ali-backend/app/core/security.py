@@ -55,4 +55,6 @@ def verify_token(token: str = Depends(oauth2_scheme)):
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+logger.info("⏳ Starting Firebase Initialization...")
 db = initialize_firebase()
+logger.info(f"✅ Firebase Initialization Complete. DB Status: {'Connected' if db else 'Failed'}")
