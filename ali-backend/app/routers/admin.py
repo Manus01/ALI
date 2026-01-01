@@ -1,6 +1,9 @@
-﻿from fastapi import APIRouter, Depends, HTTPException
+﻿from fastapi import APIRouter, Depends, HTTPException, Body
 from app.core.security import verify_token, db
 from app.services.metricool_client import MetricoolClient
+from typing import Dict, Optional
+from datetime import datetime
+from google.cloud import firestore
 
 router = APIRouter()
 

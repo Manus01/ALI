@@ -2,6 +2,7 @@
 from app.core.security import verify_token, db
 from app.services.metricool_client import MetricoolClient
 import logging
+from datetime import datetime
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -86,4 +87,4 @@ def get_metricool_status(user: dict = Depends(verify_token)):
             
     except Exception as e:
         print(f"❌ Metricool Status Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e))

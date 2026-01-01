@@ -136,4 +136,4 @@ def strategist_node(state: AgentState) -> dict:
         }
 
     print("✅ Strategy Generated.")
-    return {"strategy_plan": plan}    return {"strategy_plan": plan}
+    return {"strategy_plan": plan}
