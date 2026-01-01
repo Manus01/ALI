@@ -29,7 +29,7 @@ class CompletionRequest(BaseModel):
     score: float = Field(..., ge=0, le=100)
 
 # --- 1. ASYNC GENERATION (Standard) ---
-@router.post("/generate")
+@router.post("/generate/tutorial")
 def start_tutorial_job(topic: str, background_tasks: BackgroundTasks, user: dict = Depends(verify_token)):
     try:
         if not db:
@@ -49,7 +49,7 @@ def start_tutorial_job(topic: str, background_tasks: BackgroundTasks, user: dict
         raise HTTPException(status_code=500, detail=str(e))
 
 # --- 2. GRANULAR SKILL SUGGESTIONS ---
-@router.get("/suggestions")
+@router.get("/tutorials/suggestions")
 def get_tutorial_suggestions(user: dict = Depends(verify_token)):
     try:
         user_id = user['uid']
@@ -122,7 +122,7 @@ def _process_tutorial_doc(doc, user_id, db):
     
     return t
  
-@router.get("/{tutorial_id}")
+@router.get("/tutorials/{tutorial_id}")
 def get_tutorial_details(tutorial_id: str, user: dict = Depends(verify_token)):
     """
     Fetches a single tutorial by ID.
@@ -162,7 +162,7 @@ def get_tutorial_details(tutorial_id: str, user: dict = Depends(verify_token)):
         raise HTTPException(status_code=500, detail=str(e))
 
 # --- 3. GRANULAR AUTO-LEVELING ---
-@router.post("/{tutorial_id}/complete")
+@router.post("/tutorials/{tutorial_id}/complete")
 def mark_complete(tutorial_id: str, payload: CompletionRequest, user: dict = Depends(verify_token)):
     """
     Marks complete AND updates specific skill bucket based on tutorial category.
@@ -216,7 +216,7 @@ def mark_complete(tutorial_id: str, payload: CompletionRequest, user: dict = Dep
         logger.error(f"❌ Completion Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.delete("/{tutorial_id}")
+@router.delete("/tutorials/{tutorial_id}")
 def delete_user_tutorial(tutorial_id: str, user: dict = Depends(verify_token)):
     """
     Deletes the tutorial from the user's private collection.
@@ -234,7 +234,7 @@ def delete_user_tutorial(tutorial_id: str, user: dict = Depends(verify_token)):
         logger.error(f"❌ Delete Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/{tutorial_id}/request-delete")
+@router.post("/tutorials/{tutorial_id}/request-delete")
 def request_permanent_delete(tutorial_id: str, user: dict = Depends(verify_token)):
     """
     Requests permanent deletion of a tutorial (Global).

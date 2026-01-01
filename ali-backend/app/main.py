@@ -132,7 +132,7 @@ routers_map = {
     "/api": (publisher, ["Publisher"]), # Publisher shares prefix
     "/api": (jobs, ["Jobs"]), # Jobs shares prefix
     "/api": (assessments, ["Assessments"]), # Assessments shares prefix
-    "/api/tutorials": (tutorials, ["Tutorials"]), # Tutorials gets dedicated prefix
+    "/api": (tutorials, ["Tutorials"]), # Tutorials shares prefix
     "/api": (maintenance, ["Maintenance"]) # Maintenance shares prefix
 }
 
