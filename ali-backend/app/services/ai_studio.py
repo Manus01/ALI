@@ -24,7 +24,7 @@ class CreativeService:
         try:
             # 2. LOCAL IMPORTS (Solves namespace conflicts)
             import vertexai
-            from vertexai.preview.vision_models import ImageGenerationModel
+            from vertexai.preview.vision_models import ImageGenerationModel, VideoGenerationModel
             from google.cloud import storage
             
             # 3. DUAL ID HANDLING (Strict requirement for numeric ID in your project)
@@ -116,24 +116,33 @@ class CreativeService:
         logger.info(f"🎬 Veo Engine: Generating video for '{prompt}'...")
 
         try:
-            from vertexai.generative_models import GenerativeModel
+            from vertexai.preview.vision_models import VideoGenerationModel
             
-            # Initialize Veo Model (2025 Stable ID)
-            # Fallback to Gemini 1.5 Pro if Veo is unavailable
-            model = GenerativeModel("gemini-1.5-pro")
+            # Initialize Veo Model
+            model = VideoGenerationModel.from_pretrained("veo-001-preview")
             
-            # Generate Content (Multimodal)
-            response = model.generate_content(prompt)
+            # Generate Video (LRO)
+            operation = model.generate_video(
+                prompt=prompt,
+                aspect_ratio="16:9",
+                add_audio=False
+            )
             
-            # Extract Raw Bytes (Inline Data)
-            try:
-                video_bytes = response.candidates[0].content.parts[0].inline_data.data
-            except (AttributeError, IndexError) as e:
-                logger.error(f"❌ Veo Response Invalid (No inline bytes): {e}")
-                return None
+            # Manual Polling Loop (User Requirement)
+            logger.info("⏳ Polling Veo operation...")
+            while not operation.done():
+                time.sleep(5)
                 
-            # Upload to GCS
-            return self._upload_bytes_to_gcs(video_bytes, "video/mp4", "mp4")
+            if operation.error:
+                logger.error(f"❌ Veo Operation Failed: {operation.error}")
+                return None
+            
+            # Get Result (Safe after polling)
+            result = operation.result()
+            video_bytes = result.video_bytes
+            
+             # Upload to GCS
+             return self._upload_bytes_to_gcs(video_bytes, "video/mp4", "mp4")
 
         except Exception as e:
             logger.error(f"❌ Video Gen Error: {e}")
@@ -159,8 +168,7 @@ class CreativeService:
                 # response[0].save() saves to local.
                 # We need bytes. response[0]._image_bytes?
                 # Safe fallback:
-                return "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4" # Placeholder
-            return ""
+                return "" # No fallback as requested
         except Exception as e:
             logger.error(f"❌ Image Gen Error: {e}")
             return ""
