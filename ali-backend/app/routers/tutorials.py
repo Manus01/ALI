@@ -1,7 +1,6 @@
 ﻿from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from pydantic import BaseModel, Field
 from app.core.security import verify_token, db
-from google.cloud import firestore
 import os
 import json
 import datetime
@@ -14,13 +13,19 @@ try:
     from app.services.job_runner import process_tutorial_job
     from app.agents.nodes import analyst_node
     from app.services.llm_factory import get_model
+    from google.cloud import firestore
 except ImportError as e:
     logger.critical(f"❌ Tutorials Router Import Error: {e}")
     # Define dummies to prevent crash, allowing router to load (but endpoints will fail 500)
     def process_tutorial_job(*args, **kwargs): raise ImportError("Job Runner failed to load")
     def analyst_node(*args, **kwargs): raise ImportError("Analyst Node failed to load")
     def get_model(*args, **kwargs): raise ImportError("LLM Factory failed to load")
-
+    
+    # Mock firestore for import safety
+    class MockFirestore:
+        SERVER_TIMESTAMP = "SERVER_TIMESTAMP_MOCK"
+    firestore = MockFirestore()
+ 
 router = APIRouter()
 
 class CompletionRequest(BaseModel):

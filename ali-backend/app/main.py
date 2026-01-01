@@ -1,6 +1,7 @@
 ﻿import os
 import logging
 import time
+import traceback
 from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -25,6 +26,7 @@ def safe_import_router(module_name):
         return module
     except Exception as e:
         logger.error(f"❌ Failed to import router '{module_name}': {e}")
+        traceback.print_exc()
         return None
 
 auth = safe_import_router("auth")
