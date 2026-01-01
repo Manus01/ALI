@@ -2,6 +2,8 @@
 from app.core.security import verify_token, db
 from app.services.metricool_client import MetricoolClient
 import logging
+from typing import Dict, Any
+import base64
 
 router = APIRouter()
 logger = logging.getLogger(__name__)

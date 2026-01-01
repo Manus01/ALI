@@ -1,6 +1,9 @@
 ﻿from fastapi import APIRouter, Depends, HTTPException
 from app.core.security import verify_token, db
 import logging
+from pydantic import BaseModel
+from typing import Any
+from google.cloud import firestore
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
