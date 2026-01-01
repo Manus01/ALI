@@ -170,8 +170,10 @@ def run_ingestion_pipeline(source_name: str, access_token: str, ad_account_id: s
     logger.info(f"🚀 Starting Ingestion for User: {user_id}...")
     
     # Lazy init of Firestore to prevent global client overhead at boot
-    from google.cloud import firestore
-    db = firestore.Client()
+    # Lazy init of Firestore to prevent global client overhead at boot
+    from app.core.security import db as firestore_db
+    # Remap to 'db' for local compatibility
+    db = firestore_db
     
     if source_name == 'tiktok':
         data_generator = tiktok_ads_source(access_token, ad_account_id)

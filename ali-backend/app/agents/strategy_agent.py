@@ -9,7 +9,7 @@ from app.agents.base_agent import BaseAgent
 from app.services.windsor_client import WindsorClient
 from app.services.crypto_service import CryptoService
 from app.services.llm_factory import get_model
-from google.cloud import firestore
+from app.core.security import db
 
 logger = logging.getLogger(__name__)
 
@@ -88,7 +88,7 @@ class StrategyAgent(BaseAgent):
         self.tools = [predict_cpc_change]
         
         # Services for data fetching
-        self.db = firestore.Client()
+        self.db = db
         self.crypto_service = CryptoService()
 
     def _ensure_client(self):

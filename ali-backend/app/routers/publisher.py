@@ -1,6 +1,7 @@
 ﻿from fastapi import APIRouter, Depends, HTTPException, Body
 from app.core.security import verify_token, db
 from app.services.metricool_client import MetricoolClient
+from app.services.gcs_service import GCSService
 import logging
 from typing import Dict, Any
 import base64
@@ -31,6 +32,7 @@ async def publish_video(payload: Dict[str, Any] = Body(...), user: dict = Depend
     
     # 2. Upload to GCS (VEO Handoff)
     public_video_url = ""
+    gcs_service = GCSService()
     try:
         video_bytes = base64.b64decode(payload['video_bytes'])
         filename = payload.get('filename', f"veo_gen_{user_id}.mp4")
