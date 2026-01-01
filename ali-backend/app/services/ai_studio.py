@@ -179,7 +179,7 @@ class CreativeService:
             # 2025 Vertex AI TTS Implementation
             from vertexai.generative_models import GenerativeModel
             
-            model = GenerativeModel("gemini-1.5-flash")
+            model = GenerativeModel("gemini-2.5-pro")
             
             # Prompting for specific voice and format
             prompt = f"Generate spoken audio for the following text using the 'Aoede' voice (High Definition). Return raw MP3 bytes.\n\nTEXT: {clean_text}"
