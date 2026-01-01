@@ -3,6 +3,7 @@ import json
 import datetime
 import time
 import logging
+import re
 from typing import Dict, List, Any, Optional
 from app.services.ai_studio import CreativeService
 from app.services.llm_factory import get_model
@@ -11,6 +12,51 @@ from firebase_admin import firestore
 
 # Configure Logger
 logger = logging.getLogger("ali_platform.agents.tutorial_agent")
+
+def extract_json_safe(text: str) -> Dict[str, Any]:
+    """
+    Robustly extracts JSON from an LLM response string.
+    Handles markdown code blocks (```json ... ```) or raw JSON.
+    """
+    try:
+        # 1. Try cleaning markdown syntax first
+        clean_text = text.replace("```json", "").replace("```", "").strip()
+        return json.loads(clean_text)
+    except json.JSONDecodeError:
+        # 2. Fallback: Use Regex to find the first JSON object '{...}'
+        try:
+            match = re.search(r'(\{.*\})', text, re.DOTALL)
+            if match:
+                return json.loads(match.group(1))
+        except:
+            pass
+        # 3. Final Fallback: Raise error to be caught by caller
+        raise ValueError(f"Failed to parse JSON from response: {text[:100]}...")
+
+def validate_quiz_data(assets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Validates and corrects Quiz Data to prevent Frontend crashes.
+    Ensures 'correct_answer' is a valid integer index.
+    """
+    for block in assets:
+        if block['type'] in ['quiz_single', 'quiz_final']:
+            to_process = [block] if block['type'] == 'quiz_single' else block.get('questions', [])
+            
+            for q in to_process:
+                options = q.get('options', [])
+                ans = q.get('correct_answer')
+                
+                # Correction 1: Convert string number to int
+                if isinstance(ans, str) and ans.isdigit():
+                    q['correct_answer'] = int(ans)
+                    
+                # Correction 2: Bounds Check
+                final_ans = q.get('correct_answer')
+                if not isinstance(final_ans, int) or final_ans < 0 or final_ans >= len(options):
+                    logger.warning(f"⚠️ Invalid Quiz Answer detected: {final_ans} for options {len(options)}. Defaulting to 0.")
+                    q['correct_answer'] = 0 # Safety Fallback
+                    
+    return assets
 
 # --- 1. THE ARCHITECT (Curriculum + Metaphor) ---
 def generate_curriculum_blueprint(topic, profile, campaign_context):
@@ -45,7 +91,7 @@ def generate_curriculum_blueprint(topic, profile, campaign_context):
     for attempt in range(max_retries):
         try:
             response = model.generate_content(prompt)
-            data = json.loads(response.text.replace("```json", "").replace("```", "").strip())
+            data = extract_json_safe(response.text)
             
             # Validation: Ensure sections exist
             if not data.get("sections") or len(data["sections"]) == 0:
@@ -133,8 +179,13 @@ def design_section_assets(section_text, section_meta, metaphor):
     """
     try:
         response = model.generate_content(prompt)
-        return json.loads(response.text.replace("```json", "").replace("```", "").strip())
-    except:
+        # Parse
+        data = extract_json_safe(response.text)
+        # Validate Logic (Quizzes)
+        data['assets'] = validate_quiz_data(data.get('assets', []))
+        return data
+    except Exception as e:
+        logger.warning(f"⚠️ Asset Generation Parsing Failed: {e}. Returning empty assets.")
         return {"assets": []}
 # --- MAIN CONTROLLER ---
 def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context: str = None, progress_callback=None):
