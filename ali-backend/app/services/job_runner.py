@@ -1,7 +1,17 @@
 ﻿import time
-from app.agents.tutorial_agent import generate_tutorial
 from app.core.security import db
 from google.cloud import firestore
+import logging
+
+logger = logging.getLogger(__name__)
+
+try:
+    from app.agents.tutorial_agent import generate_tutorial
+except ImportError as e:
+    logger.critical(f"❌ Failed to import generate_tutorial: {e}")
+    # Define a dummy function to prevent crash, but log error
+    def generate_tutorial(*args, **kwargs):
+        raise ImportError(f"Tutorial Agent failed to load: {e}")
 
 def process_tutorial_job(job_id: str, user_id: str, topic: str):
     """
