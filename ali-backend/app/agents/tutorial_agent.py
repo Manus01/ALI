@@ -2,6 +2,7 @@
 import json
 import datetime
 import time
+from typing import Dict, List, Any
 from app.services.ai_studio import CreativeService
 from app.services.llm_factory import get_model
 from app.core.security import db
@@ -219,7 +220,7 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
     print(f"   Sections Count: {len(final_sections)}")
     if len(final_sections) > 0:
         print(f"   First Section Blocks: {len(final_sections[0].get('blocks', []))}")
- 
+
     # Save
     tutorial_data = {
         "title": blueprint.get("title", topic),
