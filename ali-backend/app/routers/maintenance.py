@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from app.core.security import verify_token, db
 from app.services.maintenance_service import run_weekly_maintenance
+from google.cloud import firestore
 
 router = APIRouter()
 
