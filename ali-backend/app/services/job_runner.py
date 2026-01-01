@@ -2,6 +2,7 @@
 from app.core.security import db
 from firebase_admin import firestore
 import logging
+from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
 

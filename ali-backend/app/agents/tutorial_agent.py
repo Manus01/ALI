@@ -7,6 +7,7 @@ from app.services.ai_studio import CreativeService
 from app.services.llm_factory import get_model
 from app.core.security import db
 from firebase_admin import firestore
+# Ensure no firestore.Client() usage here. We use db (Client instance) or firestore (module).
 
 # --- 1. THE ARCHITECT (Curriculum + Metaphor) ---
 def generate_curriculum_blueprint(topic, profile, campaign_context):

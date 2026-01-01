@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 
 def initialize_firebase():
     if firebase_admin._apps:
-        return firestore.client()
+        return firestore.client() # Correct: uses lowercase 'c' factory
 
     # 1. Get path from Env Var
     cred_path = os.getenv('FIREBASE_CREDENTIALS_PATH', '/app/secrets/service-account.json')

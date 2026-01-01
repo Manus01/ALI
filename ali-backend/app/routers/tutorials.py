@@ -24,6 +24,8 @@ except ImportError as e:
     # Mock firestore for import safety
     class MockFirestore:
         SERVER_TIMESTAMP = "SERVER_TIMESTAMP_MOCK"
+        def ArrayUnion(self, *args): return "ARRAY_UNION_MOCK"
+        def Increment(self, *args): return "INCREMENT_MOCK"
     firestore = MockFirestore()
  
 router = APIRouter()

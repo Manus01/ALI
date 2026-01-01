@@ -39,6 +39,9 @@ webhook = safe_import_router("webhook")
 integration = safe_import_router("integration")
 admin = safe_import_router("admin")
 tutorials = safe_import_router("tutorials")
+if not tutorials:
+    logger.critical("🚨 Tutorials Router FAILED to load. This will cause 404s on /api/generate/tutorial.")
+
 maintenance = safe_import_router("maintenance")
 
 logger.info("✅ Router imports processed.")
