@@ -6,7 +6,7 @@ from typing import Dict, List, Any
 from app.services.ai_studio import CreativeService
 from app.services.llm_factory import get_model
 from app.core.security import db
-from google.cloud import firestore
+from firebase_admin import firestore
 
 # --- 1. THE ARCHITECT (Curriculum + Metaphor) ---
 def generate_curriculum_blueprint(topic, profile, campaign_context):

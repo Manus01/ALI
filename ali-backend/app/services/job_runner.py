@@ -1,6 +1,6 @@
 ﻿import time
 from app.core.security import db
-from google.cloud import firestore
+from firebase_admin import firestore
 import logging
 
 logger = logging.getLogger(__name__)

@@ -13,7 +13,7 @@ try:
     from app.services.job_runner import process_tutorial_job
     from app.agents.nodes import analyst_node
     from app.services.llm_factory import get_model
-    from google.cloud import firestore
+    from firebase_admin import firestore
 except ImportError as e:
     logger.critical(f"❌ Tutorials Router Import Error: {e}")
     # Define dummies to prevent crash, allowing router to load (but endpoints will fail 500)
