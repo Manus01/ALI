@@ -141,8 +141,8 @@ class CreativeService:
             result = operation.result()
             video_bytes = result.video_bytes
             
-             # Upload to GCS
-             return self._upload_bytes_to_gcs(video_bytes, "video/mp4", "mp4")
+            # Upload to GCS
+            return self._upload_bytes_to_gcs(video_bytes, "video/mp4", "mp4")
 
         except Exception as e:
             logger.error(f"❌ Video Gen Error: {e}")
