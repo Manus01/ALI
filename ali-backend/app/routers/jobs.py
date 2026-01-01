@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from app.core.security import verify_token, db
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 # Define the FastAPI router
 router = APIRouter()

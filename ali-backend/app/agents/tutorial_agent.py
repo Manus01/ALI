@@ -209,7 +209,7 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
                     raise RuntimeError(f"Failed to generate Section {index+1}: {sec_meta['title']}")
         
         if not section_success:
-             raise RuntimeError(f"Failed to generate Section {index+1}: {sec_meta['title']}")
+            raise RuntimeError(f"Failed to generate Section {index+1}: {sec_meta['title']}")
 
     # Final Validation before Save
     if not final_sections:
