@@ -18,19 +18,28 @@ load_dotenv()
 
 # --- 2. ROUTER IMPORTS ---
 # Core routers registered globally for immediate availability
-try:
-    from app.routers import (
-        auth, dashboard, jobs, assessments, notifications,
-        publisher, webhook, integration, admin, tutorials, maintenance
-    )
-    logger.info("✅ All routers imported successfully.")
-except Exception as e:
-    logger.critical(f"❌ Router Import Failed: {e}")
-    # We don't raise here to allow the app to start and log the error
-    # But in production, this means the app is broken.
-    # However, for debugging the startup crash, this is vital.
-    auth = dashboard = jobs = assessments = notifications = None
-    publisher = webhook = integration = admin = tutorials = maintenance = None
+
+def safe_import_router(module_name):
+    try:
+        module = __import__(f"app.routers.{module_name}", fromlist=["router"])
+        return module
+    except Exception as e:
+        logger.error(f"❌ Failed to import router '{module_name}': {e}")
+        return None
+
+auth = safe_import_router("auth")
+dashboard = safe_import_router("dashboard")
+jobs = safe_import_router("jobs")
+assessments = safe_import_router("assessments")
+notifications = safe_import_router("notifications")
+publisher = safe_import_router("publisher")
+webhook = safe_import_router("webhook")
+integration = safe_import_router("integration")
+admin = safe_import_router("admin")
+tutorials = safe_import_router("tutorials")
+maintenance = safe_import_router("maintenance")
+
+logger.info("✅ Router imports processed.")
 
 # --- 3. APP INITIALIZATION ---
 app = FastAPI(
@@ -108,20 +117,28 @@ app.add_middleware(
 )
 
 # --- 5. REGISTER CORE ROUTERS ---
-if auth:
-    app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
-    app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"])
-    app.include_router(notifications.router, prefix="/api/notifications", tags=["Notifications"])
-    app.include_router(webhook.router, prefix="/api", tags=["Webhooks"])
-    app.include_router(integration.router, prefix="/api", tags=["Integrations"])
-    app.include_router(admin.router, prefix="/api/admin", tags=["Admin"])
-    app.include_router(publisher.router, prefix="/api", tags=["Publisher"])
-    app.include_router(jobs.router, prefix="/api", tags=["Jobs"])
-    app.include_router(assessments.router, prefix="/api", tags=["Assessments"])
-    app.include_router(tutorials.router, prefix="/api", tags=["Tutorials"])
-    app.include_router(maintenance.router, prefix="/api", tags=["Maintenance"])
-else:
-    logger.error("⚠️ Routers NOT registered due to import failure.")
+routers_map = {
+    "/api/auth": (auth, ["Auth"]),
+    "/api/dashboard": (dashboard, ["Dashboard"]),
+    "/api/notifications": (notifications, ["Notifications"]),
+    "/api": (webhook, ["Webhooks"]), # Webhook shares prefix
+    "/api": (integration, ["Integrations"]), # Integration shares prefix
+    "/api/admin": (admin, ["Admin"]),
+    "/api": (publisher, ["Publisher"]), # Publisher shares prefix
+    "/api": (jobs, ["Jobs"]), # Jobs shares prefix
+    "/api": (assessments, ["Assessments"]), # Assessments shares prefix
+    "/api": (tutorials, ["Tutorials"]), # Tutorials shares prefix
+    "/api": (maintenance, ["Maintenance"]) # Maintenance shares prefix
+}
+
+for prefix, (module, tags) in routers_map.items():
+    if module:
+        # Handle shared prefixes by checking if router is already included? 
+        # FastAPI handles multiple include_router with same prefix fine.
+        app.include_router(module.router, prefix=prefix, tags=tags)
+        logger.info(f"✅ Registered router: {tags[0]}")
+    else:
+        logger.warning(f"⚠️ Skipping router registration for: {tags[0]}")
 
 # --- 6. HEALTH CHECK (Critical for Cloud Run Deployment) ---
 @app.get("/")
