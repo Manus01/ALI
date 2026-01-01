@@ -18,9 +18,9 @@ except Exception as e:
 
 # 🏛️ 2025 Stable Aliases (Auto-healing)
 MODELS = {
-    "complex": "gemini-2.5-pro",  # For PhD Blueprints, Strategies
-    "fast": "gemini-2.5-flash",   # For Suggestions, Chat, UI tasks
-    "lite": "gemini-2.5-flash-lite" # For ultra-fast data parsing
+    "complex": "gemini-1.5-pro",  # For PhD Blueprints, Strategies
+    "fast": "gemini-1.5-flash",   # For Suggestions, Chat, UI tasks
+    "lite": "gemini-1.5-flash"    # Fallback to flash for now
 }
 
 def get_model(intent: str = "fast"):
@@ -37,7 +37,7 @@ def get_model(intent: str = "fast"):
         # 🛡️ Emergency Fallback: If for some reason the alias is unavailable,
         # we try the base 'flash' to ensure the app never crashes.
         print(f"⚠️ Alias {model_name} not found. Falling back to base Flash.")
-        return GenerativeModel("gemini-2.5-flash")
+        return GenerativeModel("gemini-1.5-flash")
 
 # Helper to auto-detect complexity based on prompt length or keywords
 def get_model_smart(prompt: str):

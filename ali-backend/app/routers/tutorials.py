@@ -71,9 +71,12 @@ def get_tutorial_suggestions(user: dict = Depends(verify_token)):
         
         response = model.generate_content(prompt)
         return json.loads(response.text.replace("```json", "").replace("```", "").strip())
-
+ 
     except Exception as e:
+        # Detailed logging for debugging Cloud Run issues
+        import traceback
         print(f"❌ Suggestion Error: {e}")
+        traceback.print_exc()
         return ["Marketing Strategy 101", "Content Creation", "ROI Analysis"]
 
 def _process_tutorial_doc(doc, user_id, db):
