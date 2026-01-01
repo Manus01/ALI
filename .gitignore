@@ -17,3 +17,6 @@ key.json
 firebase_credentials.json
 .env
 ali-backend/service-account.json
+
+# Local Documentation
+DEVELOPMENT_GUIDE.md

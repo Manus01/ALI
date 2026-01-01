@@ -88,4 +88,4 @@ def run_weekly_maintenance(user_id: str):
         "message": f"Review finished. {updates_count} updates, {new_count} new lessons.",
         "read": False,
         "created_at": firestore.SERVER_TIMESTAMP
-    })    })
+    })
