@@ -3,31 +3,26 @@ from pydantic import BaseModel, Field
 from app.core.security import verify_token, db
 import os
 import json
-import datetime
 import logging
+import traceback
+from firebase_admin import firestore
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("ali_platform.routers.tutorials")
 
 # Safe Import for Dependencies
+# We use this pattern to ensure the router module itself loads even if services fail,
+# returning 500s on specific endpoints rather than crashing the whole app booting.
 try:
     from app.services.job_runner import process_tutorial_job
-    from app.agents.nodes import analyst_node
     from app.services.llm_factory import get_model
-    from firebase_admin import firestore
 except ImportError as e:
-    logger.critical(f"❌ Tutorials Router Import Error: {e}")
-    # Define dummies to prevent crash, allowing router to load (but endpoints will fail 500)
-    def process_tutorial_job(*args, **kwargs): raise ImportError("Job Runner failed to load")
-    def analyst_node(*args, **kwargs): raise ImportError("Analyst Node failed to load")
-    def get_model(*args, **kwargs): raise ImportError("LLM Factory failed to load")
-    
-    # Mock firestore for import safety
-    class MockFirestore:
-        SERVER_TIMESTAMP = "SERVER_TIMESTAMP_MOCK"
-        def ArrayUnion(self, *args): return "ARRAY_UNION_MOCK"
-        def Increment(self, *args): return "INCREMENT_MOCK"
-    firestore = MockFirestore()
- 
+    logger.critical(f"❌ Tutorials Router Dependency Error: {e}")
+    # Define dummies ensuring router isn't broken
+    def process_tutorial_job(*args, **kwargs): 
+        raise ImportError(f"Job Runner unavailable: {e}")
+    def get_model(*args, **kwargs): 
+        raise ImportError(f"LLM Factory unavailable: {e}")
+
 router = APIRouter()
 
 class CompletionRequest(BaseModel):
@@ -49,8 +44,7 @@ def start_tutorial_job(topic: str, background_tasks: BackgroundTasks, user: dict
         background_tasks.add_task(process_tutorial_job, job_id, user['uid'], topic)
         return {"status": "queued", "job_id": job_id}
     except Exception as e:
-        import traceback
-        print(f"❌ Start Tutorial Job Error: {e}")
+        logger.error(f"❌ Start Tutorial Job Error: {e}")
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -69,7 +63,7 @@ def get_tutorial_suggestions(user: dict = Depends(verify_token)):
         skills = profile.get("marketing_skills", {
             "paid_ads": "NOVICE", "content": "NOVICE", "analytics": "NOVICE", "seo": "NOVICE"
         })
-
+        
         # Fetch Completed Titles
         existing_docs = db.collection('tutorials').where('owner_id', '==', user_id).stream()
         existing_titles = [doc.to_dict().get('title', '') for doc in existing_docs]
@@ -99,25 +93,18 @@ def get_tutorial_suggestions(user: dict = Depends(verify_token)):
  
     except Exception as e:
         # Detailed logging for debugging Cloud Run issues
-        import traceback
-        print(f"❌ Suggestion Error: {e}")
+        logger.error(f"❌ Suggestion Error: {e}")
         traceback.print_exc()
         return ["Marketing Strategy 101", "Content Creation", "ROI Analysis"]
 
 def _process_tutorial_doc(doc, user_id, db):
     """Helper to process tutorial document and apply fallbacks."""
     t = doc.to_dict()
+    # Explicitly set ID if not in dict
     t['id'] = doc.id
     
     # Debug Log: Inspect Raw Data from DB
-    print(f"🔍 Processing Doc {doc.id} (User: {user_id})")
-    print(f"   Raw Keys: {list(t.keys())}")
-    if 'sections' in t:
-        print(f"   Sections Type: {type(t['sections'])}")
-        if isinstance(t['sections'], list):
-            print(f"   Sections Count: {len(t['sections'])}")
-    else:
-        print("   ⚠️ 'sections' key MISSING in DB doc")
+    logger.debug(f"🔍 Processing Doc {doc.id} (User: {user_id})")
     
     # Check completion status
     user_doc = db.collection('users').document(user_id).get()
@@ -130,7 +117,7 @@ def _process_tutorial_doc(doc, user_id, db):
     
     # Fallback: If sections empty but blocks exist (Legacy/Flat structure), create default section
     if not t['sections'] and t.get('blocks'):
-        print(f"⚠️ Tutorial {doc.id} has blocks but no sections. Applying fallback.")
+        logger.warning(f"⚠️ Tutorial {doc.id} has blocks but no sections. Applying fallback.")
         t['sections'] = [{ "title": "Lesson Content", "blocks": t['blocks'] }]
     
     return t
@@ -152,8 +139,7 @@ def get_tutorial_details(tutorial_id: str, user: dict = Depends(verify_token)):
             t = _process_tutorial_doc(doc, user_id, db)
             # Debug Log
             sec_count = len(t.get('sections', []))
-            print(f"🔍 Fetch Private Tutorial {tutorial_id}: Found {sec_count} sections.")
-            
+            logger.debug(f"🔍 Fetch Private Tutorial {tutorial_id}: Found {sec_count} sections.")
             return t
             
         # 2. Try Global (Public)
@@ -164,8 +150,7 @@ def get_tutorial_details(tutorial_id: str, user: dict = Depends(verify_token)):
             t = _process_tutorial_doc(doc, user_id, db)
             # Debug Log
             sec_count = len(t.get('sections', []))
-            print(f"🔍 Fetch Global Tutorial {tutorial_id}: Found {sec_count} sections.")
-            
+            logger.debug(f"🔍 Fetch Global Tutorial {tutorial_id}: Found {sec_count} sections.")
             return t
             
         raise HTTPException(status_code=404, detail="Tutorial not found")
@@ -173,7 +158,7 @@ def get_tutorial_details(tutorial_id: str, user: dict = Depends(verify_token)):
     except HTTPException as he:
         raise he
     except Exception as e:
-        print(f"❌ Fetch Details Error: {e}")
+        logger.error(f"❌ Fetch Details Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # --- 3. GRANULAR AUTO-LEVELING ---
@@ -212,7 +197,7 @@ def mark_complete(tutorial_id: str, payload: CompletionRequest, user: dict = Dep
 
         # --- AUTO-LEVELING LOGIC ---
         if payload.score >= 95: # High bar for promotion
-            print(f"🚀 Promoting User in skill: {category} (Current: {difficulty})")
+            logger.info(f"🚀 Promoting User in skill: {category} (Current: {difficulty})")
             
             # Map next levels
             next_level = None
@@ -228,8 +213,9 @@ def mark_complete(tutorial_id: str, payload: CompletionRequest, user: dict = Dep
         return {"status": "success", "message": "Tutorial complete. Profile updated."}
         
     except Exception as e:
-        print(f"❌ Completion Error: {e}")
+        logger.error(f"❌ Completion Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
 @router.delete("/tutorials/{tutorial_id}")
 def delete_user_tutorial(tutorial_id: str, user: dict = Depends(verify_token)):
     """
@@ -245,7 +231,7 @@ def delete_user_tutorial(tutorial_id: str, user: dict = Depends(verify_token)):
         
         return {"status": "success", "message": "Tutorial removed from your list."}
     except Exception as e:
-        print(f"❌ Delete Error: {e}")
+        logger.error(f"❌ Delete Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/tutorials/{tutorial_id}/request-delete")
@@ -271,5 +257,5 @@ def request_permanent_delete(tutorial_id: str, user: dict = Depends(verify_token
         
         return {"status": "success", "message": "Deletion request sent to admin."}
     except Exception as e:
-        print(f"❌ Request Delete Error: {e}")
+        logger.error(f"❌ Request Delete Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))

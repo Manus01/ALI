@@ -2,12 +2,15 @@
 import json
 import datetime
 import time
-from typing import Dict, List, Any
+import logging
+from typing import Dict, List, Any, Optional
 from app.services.ai_studio import CreativeService
 from app.services.llm_factory import get_model
 from app.core.security import db
 from firebase_admin import firestore
-# Ensure no firestore.Client() usage here. We use db (Client instance) or firestore (module).
+
+# Configure Logger
+logger = logging.getLogger("ali_platform.agents.tutorial_agent")
 
 # --- 1. THE ARCHITECT (Curriculum + Metaphor) ---
 def generate_curriculum_blueprint(topic, profile, campaign_context):
@@ -46,17 +49,17 @@ def generate_curriculum_blueprint(topic, profile, campaign_context):
             
             # Validation: Ensure sections exist
             if not data.get("sections") or len(data["sections"]) == 0:
-                print(f"⚠️ Blueprint Warning: No sections found in response: {data}")
+                logger.warning(f"⚠️ Blueprint Warning: No sections found in response: {data}")
                 raise ValueError("AI generated a blueprint with no sections.")
                 
             return data
         except Exception as e:
-            print(f"⚠️ Blueprint Attempt {attempt+1} Failed: {e}")
+            logger.warning(f"⚠️ Blueprint Attempt {attempt+1} Failed: {e}")
             if attempt == max_retries - 1:
-                print(f"❌ Blueprint Failed after {max_retries} attempts.")
+                logger.error(f"❌ Blueprint Failed after {max_retries} attempts.")
                 raise e
             time.sleep(2)
- 
+
 # --- 2. THE PROFESSOR (Pass 1: Text Only) ---
 def write_section_narrative(section_meta, topic, metaphor, profile):
     """
@@ -143,7 +146,7 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
     campaigns_ref = db.collection('users').document(user_id).collection('campaign_performance').limit(3).stream()
     campaign_context = json.dumps([c.to_dict() for c in campaigns_ref], default=str)
 
-    print(f"🎓 Agent: Blueprinting '{topic}'...")
+    logger.info(f"🎓 Agent: Blueprinting '{topic}'...")
 
     # PHASE 1: BLUEPRINT
     blueprint = generate_curriculum_blueprint(topic, profile, campaign_context)
@@ -153,7 +156,7 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
 
     # PHASE 2: SECTION LOOP
     for index, sec_meta in enumerate(blueprint.get('sections', [])):
-        print(f"   Writing Section {index+1}: {sec_meta['title']} ({metaphor})...")
+        logger.info(f"   Writing Section {index+1}: {sec_meta['title']} ({metaphor})...")
         
         if progress_callback:
             progress_callback(f"Crafting Section {index+1}: {sec_meta['title']}...")
@@ -202,11 +205,11 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
                 break # Success, exit retry loop
 
             except Exception as e:
-                print(f"⚠️ Section {index+1} Attempt {attempt+1} Failed: {e}")
+                logger.warning(f"⚠️ Section {index+1} Attempt {attempt+1} Failed: {e}")
                 if attempt < max_retries - 1:
                     time.sleep(2)
                 else:
-                    print(f"❌ Section {index+1} Failed after {max_retries} attempts.")
+                    logger.error(f"❌ Section {index+1} Failed after {max_retries} attempts.")
                     raise RuntimeError(f"Failed to generate Section {index+1}: {sec_meta['title']}")
         
         if not section_success:
@@ -217,10 +220,10 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
         raise RuntimeError("Tutorial generation resulted in 0 sections. Aborting save.")
 
     # Debug Log: Verify Data before Save
-    print(f"💾 Saving Tutorial '{blueprint.get('title', topic)}' for User {user_id}")
-    print(f"   Sections Count: {len(final_sections)}")
+    logger.info(f"💾 Saving Tutorial '{blueprint.get('title', topic)}' for User {user_id}")
+    logger.debug(f"   Sections Count: {len(final_sections)}")
     if len(final_sections) > 0:
-        print(f"   First Section Blocks: {len(final_sections[0].get('blocks', []))}")
+        logger.debug(f"   First Section Blocks: {len(final_sections[0].get('blocks', []))}")
 
     # Save
     tutorial_data = {
@@ -245,9 +248,9 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
     try:
         global_ref = db.collection("tutorials").document(tutorial_data["id"])
         global_ref.set(tutorial_data)
-        print(f"   🌍 Published to Global Library: {tutorial_data['id']}")
+        logger.info(f"   🌍 Published to Global Library: {tutorial_data['id']}")
     except Exception as e:
-        print(f"   ⚠️ Failed to publish globally: {e}")
+        logger.error(f"   ⚠️ Failed to publish globally: {e}")
         
     return tutorial_data
 
@@ -257,17 +260,17 @@ def fabricate_block(block, topic, creative):
         if block["type"] == "video_clip":
             p = block.get("visual_prompt", f"Cinematic {topic}")
             safe_p = f"Cinematic, abstract, photorealistic, 4k shot of {p}. High quality. No text, no screens."
-            print(f"      🎥 Video: {p}")
+            logger.info(f"      🎥 Video: {p}")
             url = creative.generate_video(safe_p, style="cinematic")
             if url and url.startswith("http"):
-                print(f"      ✅ Video Created")
+                logger.info(f"      ✅ Video Created")
                 return { "type": "video", "url": url, "prompt": p }
         
         elif block["type"] == "image_diagram":
             p = block.get("visual_prompt", f"Diagram of {topic}")
             url = creative.generate_image(p)
             if url and url.startswith("http"):
-                print(f"      ✅ Image Created")
+                logger.info(f"      ✅ Image Created")
                 return { "type": "image", "url": url, "prompt": p }
         
         elif block["type"] == "audio_note":
@@ -276,11 +279,11 @@ def fabricate_block(block, topic, creative):
             if not s: s = f"Let's focus on the key strategy for {topic}."
             url = creative.generate_audio(s)
             if url and url.startswith("http"):
-                print(f"      ✅ Audio Created")
+                logger.info(f"      ✅ Audio Created")
                 return { "type": "audio", "url": url, "transcript": s }
         
         else:
             return block 
     except Exception as e:
-        print(f"      ⚠️ Asset Error: {e}")
+        logger.error(f"      ⚠️ Asset Error: {e}")
         return None

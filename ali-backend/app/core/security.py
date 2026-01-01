@@ -5,9 +5,16 @@ from fastapi import HTTPException, status, Depends
 from fastapi.security import OAuth2PasswordBearer
 from firebase_admin import credentials, firestore, auth
 
-logger = logging.getLogger(__name__)
+# Configure logger
+logger = logging.getLogger("ali_platform.core.security")
 
 def initialize_firebase():
+    """
+    Initializes the Firebase Admin SDK and returns a Firestore client.
+    Uses Singleton pattern via firebase_admin._apps check.
+    Attempts to find credentials in env vars, default path, or /app/secrets.
+    Falls back to Application Default Credentials (ADC).
+    """
     if firebase_admin._apps:
         return firestore.client() # Correct: uses lowercase 'c' factory
 
@@ -44,6 +51,10 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 # Ensure verify_token is present below as we restored it earlier
 def verify_token(token: str = Depends(oauth2_scheme)):
+    """
+    Verifies the Firebase ID token in the Authorization header.
+    Returns the decoded token or raises HTTP 401.
+    """
     try:
         decoded_token = auth.verify_id_token(token)
         return decoded_token
@@ -57,4 +68,7 @@ def verify_token(token: str = Depends(oauth2_scheme)):
 
 logger.info("⏳ Starting Firebase Initialization...")
 db = initialize_firebase()
-logger.info(f"✅ Firebase Initialization Complete. DB Status: {'Connected' if db else 'Failed'}")
+if db:
+    logger.info("✅ Firebase Initialization Complete. DB Connected.")
+else:
+    logger.error("❌ Firebase Initialization Failed. DB is None.")

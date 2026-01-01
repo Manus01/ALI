@@ -1,7 +1,12 @@
 ﻿import os
+import logging
 import vertexai
 from vertexai.generative_models import GenerativeModel
 from google.api_core import exceptions
+from typing import Optional
+
+# Configure Logger
+logger = logging.getLogger("ali_platform.services.llm_factory")
 
 # Initialize Vertex AI globally using Identity (No Keys)
 project_id = os.environ.get("GOOGLE_CLOUD_PROJECT")
@@ -14,7 +19,7 @@ try:
         # Auto-detect project on Cloud Run / GKE
         vertexai.init(location=location)
 except Exception as e:
-    print(f"⚠️ Vertex AI Init Failed: {e}. AI features may be unavailable.")
+    logger.error(f"⚠️ Vertex AI Init Failed: {e}. AI features may be unavailable.")
 
 # 🏛️ 2025 Stable Aliases (Auto-healing)
 MODELS = {
@@ -23,7 +28,7 @@ MODELS = {
     "lite": "gemini-1.5-flash"    # Fallback to flash for now
 }
 
-def get_model(intent: str = "fast"):
+def get_model(intent: str = "fast") -> GenerativeModel:
     """
     Surgically selects the best Gemini model based on task intent.
     Automatically handles version updates via stable aliases.
@@ -36,11 +41,11 @@ def get_model(intent: str = "fast"):
     except exceptions.NotFound:
         # 🛡️ Emergency Fallback: If for some reason the alias is unavailable,
         # we try the base 'flash' to ensure the app never crashes.
-        print(f"⚠️ Alias {model_name} not found. Falling back to base Flash.")
+        logger.warning(f"⚠️ Alias {model_name} not found. Falling back to base Flash.")
         return GenerativeModel("gemini-1.5-flash")
 
 # Helper to auto-detect complexity based on prompt length or keywords
-def get_model_smart(prompt: str):
+def get_model_smart(prompt: str) -> GenerativeModel:
     if len(prompt) > 2000 or "strategy" in prompt.lower() or "blueprint" in prompt.lower():
         return get_model("complex")
     return get_model("fast")

@@ -4,22 +4,28 @@ from firebase_admin import firestore
 import logging
 from typing import Any, Dict, List
 
-logger = logging.getLogger(__name__)
-
-try:
-    from app.agents.tutorial_agent import generate_tutorial
-except ImportError as e:
-    logger.critical(f"❌ Failed to import generate_tutorial: {e}")
-    # Define a dummy function to prevent crash, but log error
-    def generate_tutorial(*args, **kwargs):
-        raise ImportError(f"Tutorial Agent failed to load: {e}")
+# Configure logger
+logger = logging.getLogger("ali_platform.services.job_runner")
 
 def process_tutorial_job(job_id: str, user_id: str, topic: str):
     """
     Background task that generates the tutorial and updates status.
     Updates the SAME notification to prevent 'stale loading' UI.
     """
-    print(f"⚙️ Worker: Starting Job {job_id} for {topic}...")
+    logger.info(f"⚙️ Worker: Starting Job {job_id} for {topic}...")
+    
+    # ⚡ Circular Import Fix: Import Agent INSIDE the worker function ⚡
+    try:
+        from app.agents.tutorial_agent import generate_tutorial
+    except ImportError as e:
+        logger.critical(f"❌ Failed to import generate_tutorial: {e}")
+        # Update job to failed state immediately
+        db.collection("jobs").document(job_id).update({
+             "status": "failed", 
+             "error": "Internal Import Error: Agent failed to load"
+        })
+        return
+
     job_ref = db.collection("jobs").document(job_id)
 
     # Track the Notification ID so we can update it later
@@ -48,6 +54,7 @@ def process_tutorial_job(job_id: str, user_id: str, topic: str):
                 notification_ref.update({"message": msg})
 
         # 3. Run the Heavy AI Generation (Takes 60s+)
+        # Now uses the locally imported function
         tutorial_data = generate_tutorial(user_id, topic, progress_callback=update_progress)
 
         # 4. UPDATE the Existing Notification to "Ready"
@@ -68,10 +75,10 @@ def process_tutorial_job(job_id: str, user_id: str, topic: str):
             "result_id": tutorial_data["id"],
             "completed_at": firestore.SERVER_TIMESTAMP
         })
-        print(f"✅ Worker: Job {job_id} Finished.")
+        logger.info(f"✅ Worker: Job {job_id} Finished.")
 
     except Exception as e:
-        print(f"❌ Worker Error: {e}")
+        logger.error(f"❌ Worker Error: {e}")
         job_ref.update({"status": "failed", "error": str(e)})
         
         # Also update notification to Failure state if possible

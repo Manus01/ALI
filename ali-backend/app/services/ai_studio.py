@@ -3,9 +3,10 @@ import time
 import json
 import logging
 import re
+from typing import Optional, Any
 
 # --- CONFIGURATION & LOGGING ---
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("ali_platform.services.ai_studio")
 
 class CreativeService:
     def __init__(self):
@@ -24,7 +25,6 @@ class CreativeService:
         try:
             # 2. LOCAL IMPORTS (Solves namespace conflicts)
             import vertexai
-            from vertexai.preview.vision_models import ImageGenerationModel, VideoGenerationModel
             from google.cloud import storage
             
             # 3. DUAL ID HANDLING (Strict requirement for numeric ID in your project)
@@ -104,7 +104,7 @@ class CreativeService:
             return ""
 
     # --- CORE SERVICE: GENERATE VIDEO (VEO 2.0) ---
-    def generate_video(self, prompt: str, style: str = "cinematic") -> str:
+    def generate_video(self, prompt: str, style: str = "cinematic") -> Optional[str]:
         """
         Generates video using VEO. Includes manual polling loop and 
         raw byte handling for project-specific stability.
@@ -163,12 +163,9 @@ class CreativeService:
              )
             if response:
                 # Vertex AI ImageGenerationResponse object
-                # We assume we can get bytes or it handles it. 
-                # For this refactor, we return a placeholder or handle if possible.
-                # response[0].save() saves to local.
-                # We need bytes. response[0]._image_bytes?
-                # Safe fallback:
-                return "" # No fallback as requested
+                # Future: Extract bytes if available. For now return empty as noted in legacy code.
+                return "" 
+            return ""
         except Exception as e:
             logger.error(f"❌ Image Gen Error: {e}")
             return ""
@@ -192,7 +189,6 @@ class CreativeService:
             # In the 2025 unified structure, we assume the model returns the audio bytes 
             # in the response text (base64) or directly as a blob. 
             # For this refactor, we'll assume we can extract bytes from the response.
-            # Fallback to text encoding if specific byte field is missing in this simulation.
             
             try:
                 # Hypothetical access to inline data for audio
