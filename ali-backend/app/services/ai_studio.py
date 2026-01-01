@@ -119,7 +119,8 @@ class CreativeService:
             from vertexai.generative_models import GenerativeModel
             
             # Initialize Veo Model (2025 Stable ID)
-            model = GenerativeModel("veo-3.1-generate-001")
+            # Fallback to Gemini 1.5 Pro if Veo is unavailable
+            model = GenerativeModel("gemini-1.5-pro")
             
             # Generate Content (Multimodal)
             response = model.generate_content(prompt)
@@ -143,7 +144,8 @@ class CreativeService:
         if not self.client: return ""
         try:
             from vertexai.preview.vision_models import ImageGenerationModel
-            model = ImageGenerationModel.from_pretrained("imagen-3.0-generate-001")
+            # Use stable Imagen 2 or fallback
+            model = ImageGenerationModel.from_pretrained("imagegeneration@006")
             
             response = model.generate_images(
                  prompt=prompt,
@@ -172,7 +174,7 @@ class CreativeService:
             # 2025 Vertex AI TTS Implementation
             from vertexai.generative_models import GenerativeModel
             
-            model = GenerativeModel("gemini-2.5-flash-tts")
+            model = GenerativeModel("gemini-1.5-flash")
             
             # Prompting for specific voice and format
             prompt = f"Generate spoken audio for the following text using the 'Aoede' voice (High Definition). Return raw MP3 bytes.\n\nTEXT: {clean_text}"

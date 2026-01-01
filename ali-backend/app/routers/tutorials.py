@@ -18,6 +18,9 @@ class CompletionRequest(BaseModel):
 @router.post("/generate/tutorial")
 def start_tutorial_job(topic: str, background_tasks: BackgroundTasks, user: dict = Depends(verify_token)):
     try:
+        if not db:
+            raise HTTPException(status_code=503, detail="Database not initialized")
+            
         job_ref = db.collection("jobs").document()
         job_id = job_ref.id
         job_ref.set({
@@ -27,6 +30,9 @@ def start_tutorial_job(topic: str, background_tasks: BackgroundTasks, user: dict
         background_tasks.add_task(process_tutorial_job, job_id, user['uid'], topic)
         return {"status": "queued", "job_id": job_id}
     except Exception as e:
+        import traceback
+        print(f"❌ Start Tutorial Job Error: {e}")
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
 # --- 2. GRANULAR SKILL SUGGESTIONS ---
