@@ -5,6 +5,7 @@ import os
 import json
 import logging
 import traceback
+from typing import Callable
 from firebase_admin import firestore
 
 logger = logging.getLogger("ali_platform.routers.tutorials")
@@ -17,6 +18,17 @@ process_tutorial_job = None
 get_model = None
 
 router = APIRouter()
+
+
+def _require_db(action: str) -> Callable[[], None]:
+    """Ensure Firestore is available before performing a DB-bound action."""
+
+    def _guard():
+        if not db:
+            logger.error(f"❌ Database not initialized during {action}")
+            raise HTTPException(status_code=503, detail="Database not initialized")
+
+    return _guard
 
 class CompletionRequest(BaseModel):
     score: float = Field(..., ge=0, le=100)
@@ -41,9 +53,9 @@ def start_tutorial_job(topic: str, background_tasks: BackgroundTasks, user: dict
         job_id = job_ref.id
         job_ref.set({
             "id": job_id, "user_id": user['uid'], "type": "tutorial_generation",
-            "topic": topic, "status": "queued", "created_at": firestore.SERVER_TIMESTAMP
+            "topic": topic.strip(), "status": "queued", "created_at": firestore.SERVER_TIMESTAMP
         })
-        background_tasks.add_task(process_tutorial_job, job_id, user['uid'], topic)
+        background_tasks.add_task(process_tutorial_job, job_id, user['uid'], topic.strip())
         return {"status": "queued", "job_id": job_id}
     except HTTPException:
         # Re-raise intentional HTTP responses without wrapping
@@ -59,9 +71,11 @@ def get_tutorial_suggestions(user: dict = Depends(verify_token)):
     try:
         user_id = user['uid']
 
+        _require_db("get_tutorial_suggestions")()
+
         # Fetch Granular Skills
         user_doc = db.collection('users').document(user_id).get()
-        user_data = user_doc.to_dict() or {}
+        user_data = user_doc.to_dict() or {} if user_doc.exists else {}
         profile = user_data.get("profile", {})
         
         # Get Matrix (defaulting to Novice)
@@ -146,7 +160,9 @@ def get_tutorial_details(tutorial_id: str, user: dict = Depends(verify_token)):
     """
     try:
         user_id = user['uid']
-        
+
+        _require_db("get_tutorial_details")()
+
         # 1. Try Private (User Subcollection) - Strong Consistency
         doc_ref = db.collection('users').document(user_id).collection('tutorials').document(tutorial_id)
         doc = doc_ref.get()
@@ -185,7 +201,9 @@ def mark_complete(tutorial_id: str, payload: CompletionRequest, user: dict = Dep
     """
     try:
         if payload.score < 75: return {"status": "failed", "message": "Score too low."}
-        
+
+        _require_db("mark_complete")()
+
         user_ref = db.collection('users').document(user['uid'])
         
         # SENIOR DEV FIX: Check User Subcollection FIRST (Private), then Global (Public)
@@ -240,7 +258,9 @@ def delete_user_tutorial(tutorial_id: str, user: dict = Depends(verify_token)):
     """
     try:
         user_id = user['uid']
-        
+
+        _require_db("delete_user_tutorial")()
+
         # Delete from private collection
         doc_ref = db.collection('users').document(user_id).collection('tutorials').document(tutorial_id)
         doc_ref.delete()
@@ -258,7 +278,9 @@ def request_permanent_delete(tutorial_id: str, user: dict = Depends(verify_token
     """
     try:
         user_id = user['uid']
-        
+
+        _require_db("request_permanent_delete")()
+
         # 1. Create Admin Task
         db.collection("admin_tasks").add({
             "type": "delete_tutorial_request",
