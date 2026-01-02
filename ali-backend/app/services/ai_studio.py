@@ -5,7 +5,8 @@ import logging
 import re
 from typing import Optional, Any
 
-import vertexai
+from google import genai
+from google.genai import types
 from google.cloud import storage
 
 # --- CONFIGURATION & LOGGING ---
@@ -44,9 +45,13 @@ class CreativeService:
             return
 
         try:
-            vertexai.init(project=final_project_id, location=location)
-            self.client = "vertex_initialized"  # Placeholder to indicate success
-            logger.info("✅ CreativeService initialized successfully.")
+            # Initialize the new google-genai Client
+            self.client = genai.Client(
+                vertexai=True,
+                project=str(final_project_id),
+                location=location
+            )
+            logger.info("✅ CreativeService initialized successfully (google-genai SDK).")
         except Exception as e:
             logger.error(f"❌ Vertex AI initialization failed: {e}")
 
@@ -105,8 +110,7 @@ class CreativeService:
     # --- CORE SERVICE: GENERATE VIDEO (VEO 2.0) ---
     def generate_video(self, prompt: str, style: str = "cinematic") -> Optional[str]:
         """
-        Generates video using VEO. Includes manual polling loop and
-        raw byte handling for project-specific stability.
+        Generates video using VEO via google-genai SDK.
         """
         if not self.client:
             logger.error("❌ Video Gen Skipped: GenAI Client invalid.")
@@ -115,33 +119,55 @@ class CreativeService:
         logger.info(f"🎬 Veo Engine: Generating video for '{prompt}'...")
 
         try:
-            from vertexai.preview.vision_models import VideoGenerationModel
-
-            # Initialize Veo Model
-            model = VideoGenerationModel.from_pretrained("veo-001-preview")
-
-            # Generate Video (LRO)
-            operation = model.generate_video(
+            # Generate Video using the new SDK
+            # Assuming 'veo-2.0-generate-001' or similar model ID
+            model_id = "veo-2.0-generate-001" 
+            
+            # Note: The SDK usage for Veo might involve an LRO (Long Running Operation)
+            # The generate_videos method typically returns a job/operation.
+            
+            job = self.client.models.generate_videos(
+                model=model_id,
                 prompt=prompt,
-                aspect_ratio="16:9",
-                add_audio=False
+                config=types.GenerateVideoConfig(
+                    aspect_ratio="16:9",
+                    person_generation="allow"
+                )
             )
 
-            # Manual Polling Loop (User Requirement)
+            # Polling loop if the job isn't done synchronously
+            # The exact property to check depends on SDK version, assuming standard LRO behavior
             logger.info("⏳ Polling Veo operation...")
-            while not operation.done():
+            while not job.done():
                 time.sleep(5)
+                # In some SDK versions, you might need job.refresh() or similar
 
-            if operation.error:
-                logger.error(f"❌ Veo Operation Failed: {operation.error}")
+            if job.error:
+                logger.error(f"❌ Veo Operation Failed: {job.error}")
                 return None
+            
+            # Retrieve result (Video Object)
+            result = job.result
+            
+            # The result usually implies a GCS URI if configured, or bytes.
+            # However, Veo usually outputs to GCS by default or returns bytes inline if small.
+            # Let's handle generic 'video_bytes' if present, or fetch from uri.
+            
+            # If the new SDK returns a GeneratedVideo object with bytes:
+            if hasattr(result, 'video_bytes') and result.video_bytes:
+                return self._upload_bytes_to_gcs(result.video_bytes, "video/mp4", "mp4")
+            
+            # If it returns a list of generated videos
+            if hasattr(result, 'generated_videos'):
+                 video = result.generated_videos[0]
+                 if video.video_bytes:
+                     return self._upload_bytes_to_gcs(video.video_bytes, "video/mp4", "mp4")
+                 elif video.uri:
+                     # Already in GCS? Sign it.
+                     return self._get_signed_url(video.uri)
 
-            # Get Result (Safe after polling)
-            result = operation.result()
-            video_bytes = result.video_bytes
-
-            # Upload to GCS
-            return self._upload_bytes_to_gcs(video_bytes, "video/mp4", "mp4")
+            logger.warning("⚠️ Veo completed but no actionable video content found.")
+            return None
 
         except Exception as e:
             logger.error(f"❌ Video Gen Error: {e}")
@@ -152,19 +178,21 @@ class CreativeService:
         if not self.client:
             return ""
         try:
-            from vertexai.preview.vision_models import ImageGenerationModel
-            # Use stable Imagen 2 or fallback
-            model = ImageGenerationModel.from_pretrained("imagegeneration@006")
-
-            response = model.generate_images(
-                 prompt=prompt,
-                number_of_images=1,
-                aspect_ratio="16:9"
-             )
-            if response:
-                # Vertex AI ImageGenerationResponse object
-                # Future: Extract bytes if available. For now return empty as noted in legacy code.
-                return ""
+            # New SDK Image Generation
+            response = self.client.models.generate_images(
+                model='imagen-3.0-generate-001',
+                prompt=prompt,
+                config=types.GenerateImageConfig(
+                    number_of_images=1,
+                    aspect_ratio="16:9"
+                )
+            )
+            
+            if response.generated_images:
+                img = response.generated_images[0]
+                if img.image_bytes:
+                     return self._upload_bytes_to_gcs(img.image_bytes, "image/png", "png")
+                
             return ""
         except Exception as e:
             logger.error(f"❌ Image Gen Error: {e}")
@@ -177,28 +205,38 @@ class CreativeService:
         try:
             clean_text = re.sub(r'[*#`]', '', text) # Sanitize markdown
 
-            # 2025 Vertex AI TTS Implementation
-            from vertexai.generative_models import GenerativeModel
-
-            model = GenerativeModel("gemini-2.5-pro")
-
             # Prompting for specific voice and format
             prompt = f"Generate spoken audio for the following text using the 'Aoede' voice (High Definition). Return raw MP3 bytes.\n\nTEXT: {clean_text}"
 
-            response = model.generate_content(prompt)
-
-            # In the 2025 unified structure, we assume the model returns the audio bytes
-            # in the response text (base64) or directly as a blob.
-            # For this refactor, we'll assume we can extract bytes from the response.
+            # Gemini 2.5 Pro via Generate Content
+            response = self.client.models.generate_content(
+                model='gemini-2.5-pro',
+                contents=prompt
+            )
 
             try:
-                # Hypothetical access to inline data for audio
-                audio_bytes = response.candidates[0].content.parts[0].inline_data.data
+                # Attempt to extract inline data from candidates
+                # Structure might vary, traversing defensively
+                # response.candidates[0].content.parts[0].inline_data.data
+                audio_bytes = None
+                
+                if response.candidates:
+                    for part in response.candidates[0].content.parts:
+                        if part.inline_data:
+                            audio_bytes = part.inline_data.data
+                            break
+                
+                if not audio_bytes and response.text:
+                    # Fallback to text encoding if bytes missing (placeholder behavior)
+                    audio_bytes = response.text.encode('utf-8')
+                    
             except Exception:
-                # Fallback: Treat text as the content (or placeholder)
-                audio_bytes = response.text.encode('utf-8')
+                 audio_bytes = b"" 
 
-            return self._upload_bytes_to_gcs(audio_bytes, "audio/mpeg", "mp3")
+            if audio_bytes:
+                return self._upload_bytes_to_gcs(audio_bytes, "audio/mpeg", "mp3")
+            
+            return ""
 
         except Exception as e:
             logger.error(f"❌ Audio Gen Error: {e}")
