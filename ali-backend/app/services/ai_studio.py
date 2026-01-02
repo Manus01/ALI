@@ -89,19 +89,30 @@ class CreativeService:
             return ""
 
         # Use project name to construct the bucket
-        bucket_prefix = os.getenv("PROJECT_ID", "ali-platform-prod-73019")
+        project_id = os.getenv("PROJECT_ID", "ali-platform-prod-73019")
+        bucket_prefix = project_id
         bucket_name = f"{bucket_prefix}-assets"
         location = os.getenv("AI_STUDIO_LOCATION", "us-central1")
+        
+        logger.debug(f"📤 Uploading {len(data)} bytes to bucket: {bucket_name}")
 
         try:
             bucket = self.storage_client.bucket(bucket_name)
             if not bucket.exists():
-                bucket = self.storage_client.create_bucket(bucket_name, location=location)
+                logger.info(f"   Bucket {bucket_name} not found. Attempting creation in {location}...")
+                try:
+                    bucket = self.storage_client.create_bucket(bucket_name, location=location)
+                except Exception as create_err:
+                    logger.warning(f"   ⚠️ Failed to create custom bucket: {create_err}. Trying default project bucket.")
+                    # Fallback to a simpler bucket name or default behavior
+                    bucket_name = f"{project_id}.appspot.com" # Firebase default
+                    bucket = self.storage_client.bucket(bucket_name)
 
             filename = f"asset_{int(time.time())}_{os.urandom(4).hex()}.{extension}"
             blob = bucket.blob(filename)
             blob.upload_from_string(data, content_type=content_type)
 
+            logger.info(f"   ✅ Asset uploaded: {filename}")
             return blob.generate_signed_url(version="v4", expiration=3600, method="GET")
         except Exception as e:
             logger.error(f"❌ Upload Failed: {e}")
@@ -111,7 +122,7 @@ class CreativeService:
     def generate_video(self, prompt: str, style: str = "cinematic") -> Optional[str]:
         """
         Generates video using VEO via google-genai SDK.
-        Robustly handles Raw Bytes extraction and Manual Polling.
+        Robustly handles Raw Bytes extraction (Result & Metadata) and Manual Polling.
         """
         if not self.client:
             logger.error("❌ Video Gen Skipped: GenAI Client invalid.")
@@ -120,7 +131,6 @@ class CreativeService:
         logger.info(f"🎬 Veo Engine: Generating video for '{prompt}'...")
 
         try:
-            # Generate Video using the new SDK
             model_id = "veo-2.0-generate-001" 
             
             # Start the LRO
@@ -139,44 +149,50 @@ class CreativeService:
                 time.sleep(5)
 
             # 2. Check for Errors
-            # Note: Depending on SDK, 'error' might be a property or part of result
             if hasattr(job, 'error') and job.error:
                 logger.error(f"❌ Veo Operation Failed: {job.error}")
                 return None
             
-            # 3. Safe Result Extraction
-            # User warned against .result() if it acts as a blocking call checking for URI.
-            # However, since we polled until done, it shouldn't block.
-            # We access the property if available, or the method.
+            # 3. Aggressive Result Extraction
+            result = None
+            metadata = None
+            
+            # A. Try Property .result
             try:
-                # Prefer property if it exists (newer SDKs)
                 result = job.result 
             except Exception:
-                # Fallback to variable inspection or method
-                logger.warning("⚠️ job.result Access Issue, attempting alternative extraction...")
-                if hasattr(job, '_result'):
-                    result = job._result
-                else: 
-                    # If strictly failed, return None to trigger 'Mixed-Media' failure in agent
-                    logger.error("❌ Could not access job result.")
-                    return None
+                pass
             
+            # B. Try Internal ._result
+            if not result and hasattr(job, '_result'):
+                result = job._result
+            
+            # C. Try Metadata (Some versions put bytes here on partial success/streams)
+            if hasattr(job, 'metadata'):
+                metadata = job.metadata
+
             # 4. Byte Extraction Strategy (Priority: Bytes -> Upload)
-            # Inspect structure slightly recursively or check known paths
             video_bytes = None
             
-            # Path A: Root has video_bytes
-            if hasattr(result, 'video_bytes') and result.video_bytes:
-                video_bytes = result.video_bytes
+            # Strategy A: Check Result Object
+            if result:
+                if hasattr(result, 'video_bytes') and result.video_bytes:
+                    video_bytes = result.video_bytes
+                elif hasattr(result, 'generated_videos') and result.generated_videos:
+                    vid = result.generated_videos[0]
+                    if hasattr(vid, 'video_bytes') and vid.video_bytes:
+                        video_bytes = vid.video_bytes
+                    elif hasattr(vid, 'uri') and vid.uri:
+                         return self._get_signed_url(vid.uri)
             
-            # Path B: List of generated_videos
-            elif hasattr(result, 'generated_videos') and result.generated_videos:
-                vid = result.generated_videos[0]
-                if hasattr(vid, 'video_bytes') and vid.video_bytes:
-                    video_bytes = vid.video_bytes
-                elif hasattr(vid, 'uri') and vid.uri:
-                     # Fallback to URI if bytes are missing (standard behavior)
-                     return self._get_signed_url(vid.uri)
+            # Strategy B: Check Metadata (Fallback)
+            if not video_bytes and metadata:
+                logger.debug("🔍 Checking Metadata for video bytes...")
+                if hasattr(metadata, 'video_bytes') and metadata.video_bytes:
+                    video_bytes = metadata.video_bytes
+                # Sometimes metadata is a dict
+                elif isinstance(metadata, dict) and 'video_bytes' in metadata:
+                    video_bytes = metadata['video_bytes']
 
             if video_bytes:
                 logger.info(f"✅ VEO returned {len(video_bytes)} bytes. Uploading to GCS...")
