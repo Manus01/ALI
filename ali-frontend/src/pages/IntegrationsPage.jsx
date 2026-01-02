@@ -12,7 +12,9 @@ import {
     FaInstagram,
     FaLinkedin,
     FaFacebook,
-    FaTiktok
+    FaFacebook,
+    FaTiktok,
+    FaUnlink
 } from 'react-icons/fa';
 import { getFirestore, collection, onSnapshot } from 'firebase/firestore';
 import { API_URL } from '../api_config';
@@ -115,6 +117,23 @@ export default function IntegrationsPage() {
         }
     };
 
+    // --- 3. Disconnect Handler ---
+    const handleDisconnect = async () => {
+        if (!window.confirm("Are you sure you want to disconnect Metricool? You will lose access to analytics until re-connected.")) return;
+
+        try {
+            const token = await currentUser.getIdToken();
+            await axios.delete(`${API_URL}/api/connect/metricool`, {
+                headers: { Authorization: `Bearer ${token}` }
+            });
+            setStatus(null);
+            setConnectedProviders([]);
+        } catch (err) {
+            console.error("Failed to disconnect", err);
+            alert("Failed to disconnect.");
+        }
+    };
+
     if (loading) return <div className="p-8 text-slate-400">Loading Integration Status...</div>;
 
     return (
@@ -192,18 +211,37 @@ export default function IntegrationsPage() {
                     )}
 
                     {status === 'active' && (
-                        <div className="mt-4">
-                            <a 
-                                href="https://app.metricool.com/" 
-                                target="_blank" 
+                        <div className="mt-4 space-y-3">
+                            <a
+                                href="https://app.metricool.com/"
+                                target="_blank"
                                 rel="noopener noreferrer"
                                 className="w-full py-3 bg-slate-100 text-slate-600 font-bold rounded-xl hover:bg-slate-200 transition-colors flex items-center justify-center gap-2 text-sm"
                             >
                                 <FaExternalLinkAlt /> Manage Connections on Metricool
                             </a>
+
+                            <button
+                                onClick={handleDisconnect}
+                                className="w-full py-3 border border-red-100 text-red-500 font-bold rounded-xl hover:bg-red-50 transition-colors flex items-center justify-center gap-2 text-sm"
+                            >
+                                <FaUnlink /> Disconnect Integration
+                            </button>
+
                             <p className="text-center text-[10px] text-slate-400 mt-2">
                                 To add or remove social accounts, please visit your Metricool Dashboard.
                             </p>
+                        </div>
+                    )}
+
+                    {status === 'pending' && (
+                        <div className="mt-4">
+                            <button
+                                onClick={handleDisconnect}
+                                className="w-full py-3 border border-slate-100 text-slate-400 font-bold rounded-xl hover:bg-slate-50 transition-colors flex items-center justify-center gap-2 text-sm"
+                            >
+                                <FaUnlink /> Cancel Request
+                            </button>
                         </div>
                     )}
                 </div>
