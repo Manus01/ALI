@@ -149,7 +149,13 @@ export default function NotificationCenter() {
                                             )}
 
                                             <div className="mt-1 flex h-8 w-8 flex-none items-center justify-center rounded-full bg-slate-100 text-slate-500">
-                                                {note.type === 'info' ? <FaSpinner className="animate-spin text-blue-500" /> : <FaRobot />}
+                                                {note.status === 'processing' || (note.type === 'info' && note.status !== 'completed') ? (
+                                                    <FaSpinner className="animate-spin text-blue-500" />
+                                                ) : note.status === 'completed' ? (
+                                                    <FaCheck className="text-green-500" />
+                                                ) : (
+                                                    <FaRobot />
+                                                )}
                                             </div>
 
                                             <div className="flex-auto">
