@@ -59,6 +59,14 @@ class CreativeService:
     def _get_signed_url(self, gcs_uri: str) -> str:
         """Generates a V4 signed URL for secure asset access."""
         if not self.storage_client:
+            # Fallback: convert gs://bucket/path to a direct HTTPS URL so downstream
+            # validators receive a web-accessible link instead of failing on scheme.
+            if gcs_uri and str(gcs_uri).startswith("gs://"):
+                parts = gcs_uri.split("/")
+                if len(parts) >= 4:
+                    bucket_name = parts[2]
+                    blob_name = "/".join(parts[3:])
+                    return f"https://storage.googleapis.com/{bucket_name}/{blob_name}"
             return gcs_uri
         try:
             expiration = int(os.getenv("GCS_SIGNED_URL_EXPIRATION", "3600"))
