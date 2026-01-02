@@ -5,25 +5,30 @@ import os
 import json
 import logging
 import traceback
+from typing import Callable
 from firebase_admin import firestore
 
 logger = logging.getLogger("ali_platform.routers.tutorials")
 
-# Safe Import for Dependencies
-# We use this pattern to ensure the router module itself loads even if services fail,
-# returning 500s on specific endpoints rather than crashing the whole app booting.
-try:
-    from app.services.job_runner import process_tutorial_job
-    from app.services.llm_factory import get_model
-except ImportError as e:
-    logger.critical(f"❌ Tutorials Router Dependency Error: {e}")
-    # Define dummies ensuring router isn't broken
-    def process_tutorial_job(*args, **kwargs): 
-        raise ImportError(f"Job Runner unavailable: {e}")
-    def get_model(*args, **kwargs): 
-        raise ImportError(f"LLM Factory unavailable: {e}")
+# NOTE: We intentionally delay heavy imports (Job Runner, LLM Factory) to runtime
+# inside each endpoint. This prevents startup crashes that would stop the tutorials
+# router from registering, which in turn produced 404s for /api/generate/tutorial
+# whenever Vertex AI or other dependencies weren't ready.
+process_tutorial_job = None
+get_model = None
 
 router = APIRouter()
+
+
+def _require_db(action: str) -> Callable[[], None]:
+    """Ensure Firestore is available before performing a DB-bound action."""
+
+    def _guard():
+        if not db:
+            logger.error(f"❌ Database not initialized during {action}")
+            raise HTTPException(status_code=503, detail="Database not initialized")
+
+    return _guard
 
 class CompletionRequest(BaseModel):
     score: float = Field(..., ge=0, le=100)
@@ -32,21 +37,35 @@ class CompletionRequest(BaseModel):
 @router.post("/generate/tutorial")
 def start_tutorial_job(topic: str, background_tasks: BackgroundTasks, user: dict = Depends(verify_token)):
     try:
-        if not db:
-            raise HTTPException(status_code=503, detail="Database not initialized")
-            
+        if not topic or not topic.strip():
+            raise HTTPException(status_code=400, detail="Topic is required")
+
+        _require_db("start_tutorial_job")()
+
+        global process_tutorial_job
+        if process_tutorial_job is None:
+            try:
+                from app.services.job_runner import process_tutorial_job as _process
+                process_tutorial_job = _process
+            except Exception as imp_err:
+                logger.critical(f"❌ Tutorial Job Runner failed to import: {imp_err}")
+                raise HTTPException(status_code=503, detail="Tutorial worker unavailable. Please try again shortly.")
+
         job_ref = db.collection("jobs").document()
         job_id = job_ref.id
         job_ref.set({
             "id": job_id, "user_id": user['uid'], "type": "tutorial_generation",
-            "topic": topic, "status": "queued", "created_at": firestore.SERVER_TIMESTAMP
+            "topic": topic.strip(), "status": "queued", "created_at": firestore.SERVER_TIMESTAMP
         })
-        background_tasks.add_task(process_tutorial_job, job_id, user['uid'], topic)
+        background_tasks.add_task(process_tutorial_job, job_id, user['uid'], topic.strip())
         return {"status": "queued", "job_id": job_id}
+    except HTTPException:
+        # Re-raise intentional HTTP responses without wrapping
+        raise
     except Exception as e:
         logger.error(f"❌ Start Tutorial Job Error: {e}")
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to queue tutorial generation. Please try again.")
 
 # --- 2. GRANULAR SKILL SUGGESTIONS ---
 @router.get("/tutorials/suggestions")
@@ -54,9 +73,11 @@ def get_tutorial_suggestions(user: dict = Depends(verify_token)):
     try:
         user_id = user['uid']
 
+        _require_db("get_tutorial_suggestions")()
+
         # Fetch Granular Skills
         user_doc = db.collection('users').document(user_id).get()
-        user_data = user_doc.to_dict() or {}
+        user_data = user_doc.to_dict() or {} if user_doc.exists else {}
         profile = user_data.get("profile", {})
         
         # Get Matrix (defaulting to Novice)
@@ -71,6 +92,15 @@ def get_tutorial_suggestions(user: dict = Depends(verify_token)):
         # Identify Weaknesses
         weak_areas = [k for k, v in skills.items() if v == "NOVICE"]
         if not weak_areas: weak_areas = ["Advanced Optimization"] # If they are expert everywhere
+
+        global get_model
+        if get_model is None:
+            try:
+                from app.services.llm_factory import get_model as _get_model
+                get_model = _get_model
+            except Exception as imp_err:
+                logger.error(f"❌ LLM Factory import failed: {imp_err}")
+                raise HTTPException(status_code=503, detail="Suggestions temporarily unavailable.")
 
         model = get_model(intent='fast')
          
@@ -91,6 +121,8 @@ def get_tutorial_suggestions(user: dict = Depends(verify_token)):
         response = model.generate_content(prompt)
         return json.loads(response.text.replace("```json", "").replace("```", "").strip())
  
+    except HTTPException as he:
+        raise he
     except Exception as e:
         # Detailed logging for debugging Cloud Run issues
         logger.error(f"❌ Suggestion Error: {e}")
@@ -130,7 +162,9 @@ def get_tutorial_details(tutorial_id: str, user: dict = Depends(verify_token)):
     """
     try:
         user_id = user['uid']
-        
+
+        _require_db("get_tutorial_details")()
+
         # 1. Try Private (User Subcollection) - Strong Consistency
         doc_ref = db.collection('users').document(user_id).collection('tutorials').document(tutorial_id)
         doc = doc_ref.get()
@@ -169,7 +203,9 @@ def mark_complete(tutorial_id: str, payload: CompletionRequest, user: dict = Dep
     """
     try:
         if payload.score < 75: return {"status": "failed", "message": "Score too low."}
-        
+
+        _require_db("mark_complete")()
+
         user_ref = db.collection('users').document(user['uid'])
         
         # SENIOR DEV FIX: Check User Subcollection FIRST (Private), then Global (Public)
@@ -224,7 +260,9 @@ def delete_user_tutorial(tutorial_id: str, user: dict = Depends(verify_token)):
     """
     try:
         user_id = user['uid']
-        
+
+        _require_db("delete_user_tutorial")()
+
         # Delete from private collection
         doc_ref = db.collection('users').document(user_id).collection('tutorials').document(tutorial_id)
         doc_ref.delete()
@@ -242,7 +280,9 @@ def request_permanent_delete(tutorial_id: str, user: dict = Depends(verify_token
     """
     try:
         user_id = user['uid']
-        
+
+        _require_db("request_permanent_delete")()
+
         # 1. Create Admin Task
         db.collection("admin_tasks").add({
             "type": "delete_tutorial_request",
