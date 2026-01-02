@@ -1,9 +1,17 @@
-﻿import os
+import os
 import time
 import csv
 import logging
 from typing import Any, Dict, Iterable, List, Optional
 import requests
+
+from app.core.security import db as firestore_db
+
+try:
+    import dlt
+except Exception as e:
+    dlt = None
+    logging.getLogger(__name__).error(f"❌ dlt library unavailable: {e}")
 
 # --- CONFIGURATION ---
 logger = logging.getLogger(__name__)
@@ -13,13 +21,9 @@ TIKTOK_REPORT_URL = "https://business-api.tiktok.com/open_api/v1.3/report/integr
 def tiktok_ads_source(access_token: str, advertiser_id: str):
     """
     DLT source factory for TikTok Ads reporting.
-    Lazily imports dlt to avoid heavy startup cost.
     """
-    try:
-        import dlt
-    except Exception as e:
-        logger.error(f"❌ dlt library unavailable: {e}")
-        raise RuntimeError(f"dlt library unavailable: {e}")
+    if dlt is None:
+        raise RuntimeError("dlt library unavailable: ensure dependency is installed.")
 
     @dlt.resource(write_disposition="append")
     def campaign_performance() -> Iterable[List[Dict[str, Any]]]:
@@ -168,11 +172,7 @@ def run_ingestion_pipeline(source_name: str, access_token: str, ad_account_id: s
     Ensures Firestore client is initialized only when called.
     """
     logger.info(f"🚀 Starting Ingestion for User: {user_id}...")
-    
-    # Lazy init of Firestore to prevent global client overhead at boot
-    # Lazy init of Firestore to prevent global client overhead at boot
-    from app.core.security import db as firestore_db
-    # Remap to 'db' for local compatibility
+
     db = firestore_db
     
     if source_name == 'tiktok':

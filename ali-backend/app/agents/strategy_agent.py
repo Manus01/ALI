@@ -91,6 +91,9 @@ class StrategyAgent(BaseAgent):
         self.db = db
         self.crypto_service = CryptoService()
 
+        # Eagerly initialize the GenAI client so downstream calls are ready.
+        self._ensure_client()
+
     def _ensure_client(self):
         if self.client:
             return self.client

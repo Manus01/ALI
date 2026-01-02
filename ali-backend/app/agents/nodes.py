@@ -1,8 +1,16 @@
-﻿import os
+import logging
+import os
 import json
 from app.agents.state import AgentState
 from app.services.llm_factory import get_model
 from app.core.security import db
+
+try:
+    import pandas as pd
+except Exception:
+    pd = None
+
+logger = logging.getLogger(__name__)
 
 # --- NODE 1: THE ANALYST ---
 def analyst_node(state: AgentState) -> dict:
@@ -12,10 +20,10 @@ def analyst_node(state: AgentState) -> dict:
     """
     print("🕵️ Analyst Agent: Reading REAL data from Firestore...")
     user_id = state.get("user_id")
-    
+
     # 1. Fetch from Firestore
     docs = db.collection('users').document(user_id).collection('campaign_performance').stream()
-    
+
     # Convert to list of dicts
     data = [doc.to_dict() for doc in docs]
     anomalies = []
@@ -23,12 +31,10 @@ def analyst_node(state: AgentState) -> dict:
     if not data:
         return {"anomalies": ["No data found. Please connect an integration first."]}
 
-    # 2. Convert to DataFrame (lazy import to avoid heavy startup cost)
-    try:
-        import pandas as pd
-    except Exception:
+    if pd is None:
+        logger.error("pandas missing; analytics unavailable.")
         return {"anomalies": ["Analytics temporarily unavailable (pandas missing)."]}
-    
+
     df = pd.DataFrame(data)
 
     # Normalize columns (handle different APIs)
@@ -43,7 +49,7 @@ def analyst_node(state: AgentState) -> dict:
     # Rule 1: High CPC Check (> $3.00)
     if "cpc" in df.columns:
         df["cpc"] = pd.to_numeric(df["cpc"], errors='coerce')
-        high_cpc = df[df["cpc"] > 3.0] 
+        high_cpc = df[df["cpc"] > 3.0]
         for _, row in high_cpc.iterrows():
             cid = row.get('campaign_id') or row.get('CampaignName') or 'Unknown'
             val = row['cpc']
@@ -52,7 +58,7 @@ def analyst_node(state: AgentState) -> dict:
     # Rule 2: Low CTR Check (< 0.5%)
     if "ctr" in df.columns:
         df["ctr"] = pd.to_numeric(df["ctr"], errors='coerce')
-        low_ctr = df[df["ctr"] < 0.5] 
+        low_ctr = df[df["ctr"] < 0.5]
         for _, row in low_ctr.iterrows():
             cid = row.get('campaign_id') or row.get('CampaignName') or 'Unknown'
             val = row['ctr']
@@ -84,10 +90,10 @@ def strategist_node(state: AgentState) -> dict:
     Generates EXECUTABLE strategies with tool parameters.
     """
     print("🧠 Strategist Agent: Generating executable plan...")
-    
+
     anomalies = state.get("anomalies", [])
     issues_text = "\n".join(f"- {issue}" for issue in anomalies)
-    
+
     # 1. Prompt for Structured Output
     prompt = f"""
     You are a Senior Marketing Strategist.
@@ -98,7 +104,7 @@ def strategist_node(state: AgentState) -> dict:
     CRITICAL: For each action, determine if it can be automated using these tools:
     - 'pause_campaign' (Requires 'campaign_id')
     - 'increase_budget' (Requires 'campaign_id', 'amount_percent')
-    
+
     RETURN JSON ONLY:
     {{
       "title": "Strategy Name",
@@ -107,12 +113,12 @@ def strategist_node(state: AgentState) -> dict:
         {{
             "description": "Pause the high CPA campaign",
             "tool": "pause_campaign",
-            "params": {{ "campaign_id": "12345", "platform": "tiktok" }} 
+            "params": {{ "campaign_id": "12345", "platform": "tiktok" }}
         }},
         {{
             "description": "Review creative assets manually",
             "tool": "manual",
-            "params": {{}} 
+            "params": {{}}
         }}
       ]
     }}
@@ -121,7 +127,7 @@ def strategist_node(state: AgentState) -> dict:
     try:
         model = get_model(intent='fast')
         response = model.generate_content(prompt)
-        
+
         content = response.text.replace("```json", "").replace("```", "").strip()
         plan = json.loads(content)
 
