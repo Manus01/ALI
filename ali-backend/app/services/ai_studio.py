@@ -137,7 +137,7 @@ class CreativeService:
             job = self.client.models.generate_videos(
                 model=model_id,
                 prompt=prompt,
-                config=types.GenerateVideoConfig(
+                config=types.GenerateVideosConfig(
                     aspect_ratio="16:9",
                     person_generation="allow"
                 )
