@@ -12,7 +12,6 @@ import {
     FaInstagram,
     FaLinkedin,
     FaFacebook,
-    FaFacebook,
     FaTiktok,
     FaUnlink
 } from 'react-icons/fa';
