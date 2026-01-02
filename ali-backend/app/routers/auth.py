@@ -85,3 +85,34 @@ def get_current_user_profile(user: dict = Depends(verify_token)):
         print(f"❌ Error fetching profile: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+# --- 4. UPDATE BRAND ENDPOINT ---
+class UpdateBrandRequest(BaseModel):
+    brand_name: str
+    website_url: str = None
+    logo_url: str = None
+    description: str = None
+
+@router.put("/me/brand")
+def update_brand_profile(data: UpdateBrandRequest, user: dict = Depends(verify_token)):
+    """
+    Updates the user's current brand profile.
+    """
+    try:
+        # Reference to the User Document
+        user_ref = db.collection('users').document(user['uid'])
+        brand_ref = user_ref.collection('brand_profile').document('current')
+
+        # Prepare update data (clean None values)
+        update_data = {k: v for k, v in data.dict().items() if v is not None}
+        
+        # Merge into existing brand profile or create if new
+        brand_ref.set(update_data, merge=True)
+        
+        # Also ensure 'onboarding_completed' is true if we are saving a brand
+        user_ref.update({"onboarding_completed": True})
+
+        return {"message": "Brand profile updated successfully", "brand_dna": update_data}
+
+    except Exception as e:
+        print(f"❌ Error updating brand: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
