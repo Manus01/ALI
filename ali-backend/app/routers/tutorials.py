@@ -32,6 +32,7 @@ def _require_db(action: str) -> Callable[[], None]:
 
 class CompletionRequest(BaseModel):
     score: float = Field(..., ge=0, le=100)
+    quiz_results: list[dict] = Field(default_factory=list, description="Detailed results per quiz/section")
 
 # --- 1. ASYNC GENERATION (Standard) ---
 @router.post("/generate/tutorial")
@@ -83,13 +84,31 @@ def get_tutorial_suggestions(user: dict = Depends(verify_token)):
             "paid_ads": "NOVICE", "content": "NOVICE", "analytics": "NOVICE", "seo": "NOVICE"
         })
         
-        # Fetch Completed Titles
-        existing_docs = db.collection('tutorials').where('owner_id', '==', user_id).stream()
-        existing_titles = [doc.to_dict().get('title', '') for doc in existing_docs]
-        
-        # Identify Weaknesses
+        # Identify Weak Areas (General)
         weak_areas = [k for k, v in skills.items() if v == "NOVICE"]
-        if not weak_areas: weak_areas = ["Advanced Optimization"] # If they are expert everywhere
+        if not weak_areas: weak_areas = ["Advanced Optimization"] 
+
+        # --- PERSONALIZATION LOOP FIX ---
+        # Fetch from Private Collection to access 'quiz_results'
+        existing_docs = db.collection('users').document(user_id).collection('tutorials').stream()
+        
+        existing_titles = []
+        recent_struggles = []
+        
+        for doc in existing_docs:
+            data = doc.to_dict()
+            existing_titles.append(data.get('title', ''))
+            
+            # Analyze Struggles (Score < 70% or Low Quiz Section Scores)
+            if data.get('is_completed'):
+                # Check Global Score
+                if data.get('completion_score', 100) < 75:
+                    recent_struggles.append(f"Low score in '{data.get('title')}'")
+                
+                # Check Sectional Quiz Results
+                for qr in data.get('quiz_results', []):
+                    if qr.get('score', 100) < 60:
+                        recent_struggles.append(f"Struggled with '{qr.get('section_title', 'Unknown Section')}' in '{data.get('title')}'")
 
         global get_model
         if get_model is None:
@@ -107,11 +126,14 @@ def get_tutorial_suggestions(user: dict = Depends(verify_token)):
         
         USER SKILL MATRIX: {json.dumps(skills)}
         WEAKEST AREAS: {weak_areas}
-        COMPLETED COURSES: {existing_titles}
+        Please prioritize fixing these RECENT STRUGGLES: {json.dumps(recent_struggles)}
+        ALREADY COMPLETED: {existing_titles}
         
         TASK:
-        Suggest 3 highly specific tutorial titles to improve the user's WEAKEST areas.
-        Do not suggest topics they have already done.
+        Suggest 3 highly specific tutorial titles.
+        1. Prioritize addressing the 'Recent Struggles' if any.
+        2. Then focus on 'Weakest Areas'.
+        3. Do not suggest topics they have already done.
         
         Return STRICT JSON list: ["Title 1", "Title 2", "Title 3"]
         """
@@ -227,6 +249,7 @@ def get_tutorial_details(tutorial_id: str, user: dict = Depends(verify_token)):
 def mark_complete(tutorial_id: str, payload: CompletionRequest, user: dict = Depends(verify_token)):
     """
     Marks complete AND updates specific skill bucket based on tutorial category.
+    Saves detailed quiz results for future personalization.
     """
     try:
         if payload.score < 75: return {"status": "failed", "message": "Score too low."}
@@ -251,12 +274,23 @@ def mark_complete(tutorial_id: str, payload: CompletionRequest, user: dict = Dep
         category = tut_data.get("category", "general") # e.g., "paid_ads"
         difficulty = tut_data.get("difficulty", "NOVICE")
 
-        # Update Lists
+        # Update Lists & Save Quiz Results
+        update_data = {
+            "is_completed": True,
+            "completion_score": payload.score,
+            "completed_at": firestore.SERVER_TIMESTAMP
+        }
+        
+        # Only save granular results if provided
+        if payload.quiz_results:
+             update_data["quiz_results"] = payload.quiz_results
+
+        tut_ref.update(update_data)
+
         user_ref.update({
             "completed_tutorials": firestore.ArrayUnion([tutorial_id]),
             "rank_score": firestore.Increment(100) 
         })
-        tut_ref.update({"is_completed": True})
 
         # --- AUTO-LEVELING LOGIC ---
         if payload.score >= 95: # High bar for promotion

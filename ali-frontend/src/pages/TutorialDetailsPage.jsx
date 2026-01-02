@@ -1,8 +1,9 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import axios from 'axios';
 import api from '../api/axiosInterceptor';
 import { useAuth } from '../hooks/useAuth';
-import { FaArrowLeft, FaHeadphones, FaCheck, FaTrophy, FaChevronRight, FaChevronLeft, FaTimes, FaSearchPlus, FaExclamationTriangle, FaRedo } from 'react-icons/fa';
+import { FaArrowLeft, FaHeadphones, FaCheck, FaTrophy, FaChevronRight, FaChevronLeft, FaTimes, FaSearchPlus, FaExclamationTriangle, FaRedo, FaInfoCircle } from 'react-icons/fa';
 
 // Improved Parser
 const parseMarkdown = (text) => {
@@ -29,10 +30,21 @@ export default function TutorialDetailsPage() {
     const [activeSectionIndex, setActiveSectionIndex] = useState(0);
     const [selectedImage, setSelectedImage] = useState(null);
 
+    // Toast State
+    const [toast, setToast] = useState(null); // { message, type: 'success' | 'error' }
+
     // Quiz State
     const [quizAnswers, setQuizAnswers] = useState({});
     const [quizSubmitted, setQuizSubmitted] = useState(false);
     const [score, setScore] = useState(0);
+
+    // Clear toast after 3 seconds
+    useEffect(() => {
+        if (toast) {
+            const timer = setTimeout(() => setToast(null), 3000);
+            return () => clearTimeout(timer);
+        }
+    }, [toast]);
 
     // 1. Fetch Tutorial
     useEffect(() => {
@@ -62,15 +74,21 @@ export default function TutorialDetailsPage() {
         if (finalScore >= 75) {
             try {
                 const token = await currentUser.getIdToken();
+                // WAITING for backend response
                 await axios.post(`/api/tutorials/${id}/complete`, { score: finalScore }, {
                     headers: { Authorization: `Bearer ${token}` },
                     params: { id_token: token }
                 });
+
                 setTutorial(prev => ({ ...prev, is_completed: true }));
+                setToast({ message: "Assessment submitted successfully!", type: "success" });
 
                 // Only redirect if this was the FINAL step
                 setTimeout(() => { navigate('/tutorials'); }, 2500);
-            } catch (e) { console.error("API Error:", e); }
+            } catch (e) {
+                console.error("API Error:", e);
+                setToast({ message: "Failed to submit results. Please try again.", type: "error" });
+            }
         }
     };
 
@@ -315,6 +333,21 @@ export default function TutorialDetailsPage() {
                 <div className="fixed inset-0 z-[60] bg-black/90 backdrop-blur-sm flex items-center justify-center p-4 cursor-pointer" onClick={() => setSelectedImage(null)}>
                     <img src={selectedImage} alt="Zoomed" className="max-w-full max-h-full rounded-lg shadow-2xl" />
                     <button className="absolute top-4 right-4 text-white text-3xl opacity-70 hover:opacity-100"><FaTimes /></button>
+                </div>
+            )}
+
+            {/* Custom Toast */}
+            {toast && (
+                <div className={`fixed bottom-8 right-8 z-[70] px-6 py-4 rounded-xl shadow-2xl border flex items-center gap-4 animate-fade-in ${toast.type === 'success' ? 'bg-white border-green-500 text-green-800' : 'bg-white border-red-500 text-red-800'
+                    }`}>
+                    <div className={`p-2 rounded-full ${toast.type === 'success' ? 'bg-green-100' : 'bg-red-100'}`}>
+                        {toast.type === 'success' ? <FaCheck /> : <FaExclamationTriangle />}
+                    </div>
+                    <div>
+                        <p className="font-bold text-sm">{toast.type === 'success' ? 'Success' : 'Error'}</p>
+                        <p className="text-xs opacity-90">{toast.message}</p>
+                    </div>
+                    <button onClick={() => setToast(null)} className="ml-4 opacity-50 hover:opacity-100"><FaTimes /></button>
                 </div>
             )}
 

@@ -59,31 +59,36 @@ def validate_quiz_data(assets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return assets
 
 # --- 1. THE ARCHITECT (Curriculum + Metaphor) ---
-def generate_curriculum_blueprint(topic, profile, campaign_context):
-    model = get_model(intent='complex')
+def generate_curriculum_blueprint(topic, profile, campaign_context, struggles):
+    # UPGRADE: Using Gemini 2.5 Pro for High-Level Instructional Design
+    model = get_model(intent='complex') 
     
     prompt = f"""
-    Act as a Lead Instructional Designer.
+    Act as a Lead Instructional Designer using **4C/ID Theory** (Four-Component Instructional Design).
     Create a Curriculum Blueprint for a course on: "{topic}".
     
     ### USER CONTEXT
     - Knowledge: {profile.get('marketing_knowledge', 'NOVICE')}
     - Style: {profile.get('learning_style', 'VISUAL')}
     - Data: {campaign_context}
+    - **Identified Struggles**: {struggles if struggles else "None detected."} (Address these explicitly if present).
 
-    ### PEDAGOGICAL STRATEGY
-    Select a **Visual Metaphor** to explain this concept.
-    *Example: SEO = Gardening.*
-    *Example: Paid Ads = Auction House.*
+    ### PEDAGOGICAL STRATEGY (4C/ID & Gamification)
+    1. **Learning Tasks**: Authentic, whole-task experiences.
+    2. **Supportive Information**: Theory/Mental Models (Must use a strong Visual Metaphor).
+    3. **Just-in-Time Information**: Procedural steps/Rules.
+    4. **Part-Task Practice**: Quizzes and Drills.
+    
+    Select a **Visual Metaphor** to explain this concept (e.g., SEO = Gardening).
 
     ### OUTPUT JSON
     {{
         "title": "Course Title",
         "pedagogical_metaphor": "Gardening", 
         "sections": [
-            {{ "title": "The Concept", "goal": "Explain the foundation...", "type": "activation" }},
-            {{ "title": "The Strategy", "goal": "Explain the process...", "type": "demonstration" }},
-            {{ "title": "The Execution", "goal": "Explain the optimization...", "type": "application" }}
+            {{ "title": "The Big Picture (Supportive)", "goal": "Explain the mental model...", "type": "supportive" }},
+            {{ "title": "The Process (Procedural)", "goal": "Step-by-step execution...", "type": "procedural" }},
+            {{ "title": "The Drill (Practice)", "goal": "Reinforce through gamified quiz...", "type": "practice" }}
         ]
     }}
     """
@@ -109,45 +114,48 @@ def generate_curriculum_blueprint(topic, profile, campaign_context):
 # --- 2. THE PROFESSOR (Pass 1: Text Only) ---
 def write_section_narrative(section_meta, topic, metaphor, profile):
     """
-    Writes the educational text. 
-    FIX: Now strictly bans conversational filler ("Of course...").
+    Writes the educational text using Constructivist principles.
     """
-    model = get_model(intent='complex')
+    model = get_model(intent='complex') # gemini-2.5-pro suggested
     
     prompt = f"""
-    Act as an Expert Tutor. Write the **Educational Text** for one section of "{topic}".
+    Act as an Expert Tutor applying **Constructivist Learning Theory**.
+    Write the **Educational Text** for one section of "{topic}".
     
     - **Section:** {section_meta['title']}
+    - **Type:** {section_meta.get('type', 'general')}
     - **Goal:** {section_meta['goal']}
     - **Metaphor:** {metaphor} (Weave this analogy throughout).
-    - **Tone:** Professional, encouraging, data-driven.
     
     **STRICT OUTPUT RULES:**
     1. **Start IMMEDIATELY** with the lesson content. 
-    2. **DO NOT** write "Here is the text" or "Sure, I can help".
+    2. **Tone**: Scaffolded, interactive, questioning (Encourage reflection).
     3. **DO NOT** use H1 (#) headers. Use H2 (##) or H3 (###) only.
     4. Write approx 300 words of deep, high-value content.
     """
     response = model.generate_content(prompt)
-    # Double check to strip any lingering quotes or whitespace
     return response.text.strip().strip('"')
 
 # --- 3. THE DESIGNER (Pass 2: Assets & Quiz) ---
 def design_section_assets(section_text, section_meta, metaphor):
     """
     Generates supporting assets.
-    FIX: Enforces 'correct_answer' (Integer) for ALL quizzes to prevent scoring errors.
+    STRICT ENFORCEMENT of Mixed-Media (VEO/TTS).
     """
     model = get_model(intent='complex')
     
-    # Determine required assets based on section type
+    # Determine required assets based on 4C/ID Phase
     requirements = ""
-    if section_meta['type'] == 'activation':
-        requirements = "1. `video_clip` (Metaphor visualization). 2. `quiz_single` (Scenario based)."
-    elif section_meta['type'] == 'demonstration':
-        requirements = "1. `audio_note` (Mentor script). 2. `image_diagram` (Flowchart). 3. `callout_pro_tip` (High value advice)."
-    elif section_meta['type'] == 'application':
-        requirements = "1. `callout_pro_tip`. 2. `quiz_final` (5 Questions)."
+    section_type = section_meta.get('type', 'general')
+    
+    if section_type == 'supportive' or section_type == 'activation':
+        # MUST have a VEO demonstration for mental models
+        requirements = "1. `video_clip` (VEO: Cinematic visualization of the Metaphor). 2. `quiz_single` (Reflection)."
+    elif section_type == 'procedural' or section_type == 'demonstration':
+        # Procedural needs TTS guidance and Diagrams
+        requirements = "1. `audio_note` (TTS: Step-by-step summary). 2. `image_diagram` (Flowchart). 3. `callout_pro_tip`."
+    else: # Practice/Application
+        requirements = "1. `callout_pro_tip`. 2. `quiz_final` (Gamified Assessment)."
 
     prompt = f"""
     Act as an Instructional Designer.
@@ -160,10 +168,10 @@ def design_section_assets(section_text, section_meta, metaphor):
     {requirements}
 
     **RULES:**
-    1. **Video:** Prompt must be "Cinematic, abstract shot of {metaphor}...". NO TEXT.
-    2. **Pro Tip:** GENERATE a new high-value tip relevant to the topic. Do NOT return an empty string.
-    3. **Quiz Standardization (CRITICAL):** - ALL correct answers must be **INTEGER INDICES** (0, 1, 2, or 3). Do NOT use text strings.
-       - Use the key `correct_answer` for everything.
+    1. **VEO Video:** Prompt must be "Cinematic, abstract, photorealistic shot of {metaphor}...". NO TEXT/CHARACTERS.
+    2. **TTS Audio:** Script must be a concise, engaging summary of the key concept.
+    3. **Quiz Standardization (CRITICAL):**
+       - `correct_answer` must be an INTEGER index (0-3).
        
        *Schema:*
        - `quiz_single`: {{ "question": "...", "options": ["A","B","C","D"], "correct_answer": 0 }}
@@ -173,34 +181,55 @@ def design_section_assets(section_text, section_meta, metaphor):
     {{
         "assets": [
             {{ "type": "video_clip", "visual_prompt": "..." }},
-            {{ "type": "callout_pro_tip", "content": "Always check your..." }}
+            {{ "type": "audio_note", "script": "..." }}
         ]
     }}
     """
     try:
         response = model.generate_content(prompt)
-        # Parse
         data = extract_json_safe(response.text)
-        # Validate Logic (Quizzes)
         data['assets'] = validate_quiz_data(data.get('assets', []))
         return data
     except Exception as e:
         logger.warning(f"⚠️ Asset Generation Parsing Failed: {e}. Returning empty assets.")
         return {"assets": []}
+
 # --- MAIN CONTROLLER ---
 def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context: str = None, progress_callback=None):
     creative = CreativeService()
     
-    # Fetch Context
+    # Fetch Context (Profile + Campaigns)
     user_doc = db.collection('users').document(user_id).get()
     profile = user_doc.to_dict().get("profile", {})
     campaigns_ref = db.collection('users').document(user_id).collection('campaign_performance').limit(3).stream()
     campaign_context = json.dumps([c.to_dict() for c in campaigns_ref], default=str)
 
-    logger.info(f"🎓 Agent: Blueprinting '{topic}'...")
+    # 1. NEW: Fetch Past Quiz Results (Private Collection) to find "Struggles"
+    struggles = []
+    try:
+        past_tutorials = db.collection('users').document(user_id).collection('tutorials').where('is_completed', '==', True).limit(5).stream()
+        for t_doc in past_tutorials:
+            t_data = t_doc.to_dict()
+            # Analyze quiz_results if available
+            results = t_data.get('quiz_results', [])
+            if results:
+                # Assuming simple logic: Any quiz < 50% is a struggle
+                for q_res in results:
+                    score = q_res.get('score', 100)
+                    if score < 60:
+                        struggles.append(f"Weak in: {t_data.get('title', 'Unknown')} (Score: {score}%)")
+            
+            # Fallback: Check global completion score
+            elif t_data.get('completion_score', 100) < 70:
+                struggles.append(f"Struggled with: {t_data.get('title')}")
+                
+    except Exception as e:
+        logger.warning(f"⚠️ Failed to fetch study history: {e}")
+
+    logger.info(f"🎓 Agent: Blueprinting '{topic}' (Struggles: {len(struggles)})...")
 
     # PHASE 1: BLUEPRINT
-    blueprint = generate_curriculum_blueprint(topic, profile, campaign_context)
+    blueprint = generate_curriculum_blueprint(topic, profile, campaign_context, struggles)
     metaphor = blueprint.get('pedagogical_metaphor', 'Abstract Concept')
     
     final_sections = []
@@ -230,6 +259,7 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
                 combined_blocks = []
                 assets = assets_data.get('assets', [])
                 
+                # Processing Order & STRICT FABRICATION
                 # Order: Visuals -> Text -> Audio/Tips -> Quiz
                 visuals = [b for b in assets if b['type'] in ['video_clip', 'image_diagram']]
                 audios = [b for b in assets if b['type'] in ['audio_note', 'callout_pro_tip']]
@@ -261,20 +291,15 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
                     time.sleep(2)
                 else:
                     logger.error(f"❌ Section {index+1} Failed after {max_retries} attempts.")
-                    raise RuntimeError(f"Failed to generate Section {index+1}: {sec_meta['title']}")
+                    # CRITICAL: Re-raise to abort entire tutorial if mixed-media fails
+                    raise RuntimeError(f"Mixed-Media Generation Failed for Section {index+1}: {e}")
         
         if not section_success:
-            raise RuntimeError(f"Failed to generate Section {index+1}: {sec_meta['title']}")
+             raise RuntimeError(f"Failed to generate Section {index+1}: {sec_meta['title']}")
 
-    # Final Validation before Save
+    # Final Validation
     if not final_sections:
         raise RuntimeError("Tutorial generation resulted in 0 sections. Aborting save.")
-
-    # Debug Log: Verify Data before Save
-    logger.info(f"💾 Saving Tutorial '{blueprint.get('title', topic)}' for User {user_id}")
-    logger.debug(f"   Sections Count: {len(final_sections)}")
-    if len(final_sections) > 0:
-        logger.debug(f"   First Section Blocks: {len(final_sections[0].get('blocks', []))}")
 
     # Save
     tutorial_data = {
@@ -283,19 +308,17 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
         "difficulty": profile.get("marketing_knowledge", "NOVICE"),
         "sections": final_sections,
         "owner_id": user_id,
-        "is_public": True, # Default to public for community sharing
+        "is_public": True, 
         "tags": [profile.get("learning_style", "VISUAL"), metaphor],
         "timestamp": firestore.SERVER_TIMESTAMP,
         "is_completed": False
     }
     
-    # SENIOR DEV FIX: Save to user's subcollection so the frontend listener picks it up immediately
+    # Save to User's Private Collection
     doc_ref = db.collection("users").document(user_id).collection("tutorials").add(tutorial_data)
     tutorial_data["id"] = doc_ref[1].id
     
-    # GLOBAL INDEXING: Also save to global 'tutorials' collection for community discovery
-    # We use the SAME ID as the private doc to maintain a link (conceptually)
-    # or just let Firestore generate a new one. For simplicity, we add a new doc.
+    # Save to Global Index
     try:
         global_ref = db.collection("tutorials").document(tutorial_data["id"])
         global_ref.set(tutorial_data)
@@ -306,35 +329,48 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
     return tutorial_data
 
 def fabricate_block(block, topic, creative):
-    """ Helper to call Creative Service safely """
+    """ Helper to call Creative Service safely. Raises Error on Critical Failure. """
     try:
         if block["type"] == "video_clip":
             p = block.get("visual_prompt", f"Cinematic {topic}")
             safe_p = f"Cinematic, abstract, photorealistic, 4k shot of {p}. High quality. No text, no screens."
-            logger.info(f"      🎥 Video: {p}")
+            logger.info(f"      🎥 VEO Generating: {p}")
             url = creative.generate_video(safe_p, style="cinematic")
-            if url and url.startswith("http"):
-                logger.info(f"      ✅ Video Created")
-                return { "type": "video", "url": url, "prompt": p }
+            
+            # STRICT CHECK: Must have a URL
+            if not url or not url.startswith("http"):
+                raise RuntimeError(f"VEO Generation returned invalid URL for prompt: {p}")
+            
+            logger.info(f"      ✅ Video Created: {url[:30]}...")
+            return { "type": "video", "url": url, "prompt": p }
         
         elif block["type"] == "image_diagram":
             p = block.get("visual_prompt", f"Diagram of {topic}")
             url = creative.generate_image(p)
+            # Images are less critical, but good to have. We won't crash hard on images, 
+            # but for consistency with "Mixed Media or Nothing" let's be strict if it's a diagram.
             if url and url.startswith("http"):
                 logger.info(f"      ✅ Image Created")
                 return { "type": "image", "url": url, "prompt": p }
+            logger.warning("      ⚠️ Image generation failed, skipping block (Semi-critical).")
+            return None # Skip block but don't crash
         
         elif block["type"] == "audio_note":
             s = block.get("script", "")
-            # Safety fill if script is empty
-            if not s: s = f"Let's focus on the key strategy for {topic}."
+            if not s: s = f"Let's focus on {topic}."
+            logger.info(f"      🎙️ TTS Generating...")
             url = creative.generate_audio(s)
-            if url and url.startswith("http"):
-                logger.info(f"      ✅ Audio Created")
-                return { "type": "audio", "url": url, "transcript": s }
+            
+            # STRICT CHECK: Must have a URL
+            if not url or not url.startswith("http"):
+                raise RuntimeError("TTS Generation returned invalid output.")
+                
+            logger.info(f"      ✅ Audio Created")
+            return { "type": "audio", "url": url, "transcript": s }
         
         else:
             return block 
     except Exception as e:
         logger.error(f"      ⚠️ Asset Error: {e}")
-        return None
+        # Re-raise to trigger the section retry loop
+        raise e
