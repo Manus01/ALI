@@ -37,11 +37,6 @@ class CompletionRequest(BaseModel):
 @router.post("/generate/tutorial")
 def start_tutorial_job(topic: str, background_tasks: BackgroundTasks, user: dict = Depends(verify_token)):
     try:
-        if not topic or not topic.strip():
-            raise HTTPException(status_code=400, detail="Topic is required")
-
-        _require_db("start_tutorial_job")()
-
         global process_tutorial_job
         if process_tutorial_job is None:
             try:
@@ -50,6 +45,9 @@ def start_tutorial_job(topic: str, background_tasks: BackgroundTasks, user: dict
             except Exception as imp_err:
                 logger.critical(f"❌ Tutorial Job Runner failed to import: {imp_err}")
                 raise HTTPException(status_code=503, detail="Tutorial worker unavailable. Please try again shortly.")
+
+        if not db:
+            raise HTTPException(status_code=503, detail="Database not initialized")
 
         job_ref = db.collection("jobs").document()
         job_id = job_ref.id
