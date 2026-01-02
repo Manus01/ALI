@@ -122,23 +122,23 @@ app.add_middleware(
 )
 
 # --- 5. REGISTER CORE ROUTERS ---
-routers_map = {
-    "/api/auth": (auth, ["Auth"]),
-    "/api/dashboard": (dashboard, ["Dashboard"]),
-    "/api/notifications": (notifications, ["Notifications"]),
-    "/api": (webhook, ["Webhooks"]), # Webhook shares prefix
-    "/api": (integration, ["Integrations"]), # Integration shares prefix
-    "/api/admin": (admin, ["Admin"]),
-    "/api": (publisher, ["Publisher"]), # Publisher shares prefix
-    "/api": (jobs, ["Jobs"]), # Jobs shares prefix
-    "/api": (assessments, ["Assessments"]), # Assessments shares prefix
-    "/api": (tutorials, ["Tutorials"]), # Tutorials shares prefix
-    "/api": (maintenance, ["Maintenance"]) # Maintenance shares prefix
-}
+routers_map = [
+    ("/api/auth", (auth, ["Auth"])),
+    ("/api/dashboard", (dashboard, ["Dashboard"])),
+    ("/api/notifications", (notifications, ["Notifications"])),
+    ("/api", (webhook, ["Webhooks"])), # Webhook shares prefix
+    ("/api", (integration, ["Integrations"])), # Integration shares prefix
+    ("/api/admin", (admin, ["Admin"])),
+    ("/api", (publisher, ["Publisher"])), # Publisher shares prefix
+    ("/api", (jobs, ["Jobs"])), # Jobs shares prefix
+    ("/api", (assessments, ["Assessments"])), # Assessments shares prefix
+    ("/api", (tutorials, ["Tutorials"])), # Tutorials shares prefix
+    ("/api", (maintenance, ["Maintenance"])) # Maintenance shares prefix
+]
 
-for prefix, (module, tags) in routers_map.items():
+for prefix, (module, tags) in routers_map:
     if module:
-        # Handle shared prefixes by checking if router is already included? 
+        # Handle shared prefixes by checking if router is already included?
         # FastAPI handles multiple include_router with same prefix fine.
         app.include_router(module.router, prefix=prefix, tags=tags)
         logger.info(f"✅ Registered router: {tags[0]}")
