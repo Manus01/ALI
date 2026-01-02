@@ -86,7 +86,7 @@ export default function TutorialDetailsPage() {
             <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-white">
                 <div className="text-slate-500 font-bold mb-4">Content unavailable.</div>
                 <button onClick={() => navigate('/tutorials')} className="px-4 py-2 bg-slate-100 rounded">Back</button>
-                
+
                 {/* DEBUG VIEW FOR USER DIAGNOSIS */}
                 <details className="mt-8 p-4 bg-slate-50 rounded-lg max-w-lg w-full text-left">
                     <summary className="text-xs font-bold text-slate-400 cursor-pointer">Debug Details</summary>
@@ -105,7 +105,10 @@ export default function TutorialDetailsPage() {
         );
     }
 
-    const sections = tutorial.sections || [{ title: "Lesson Content", blocks: tutorial.blocks }];
+    // SENIOR DEV FIX: Robust fallback logic to prevent blank page/crash if sections is empty array
+    const sections = (tutorial.sections && tutorial.sections.length > 0)
+        ? tutorial.sections
+        : [{ title: "Lesson Content", blocks: tutorial.blocks || [] }];
     const currentSection = sections[activeSectionIndex];
 
     const renderBlock = (block, idx) => {

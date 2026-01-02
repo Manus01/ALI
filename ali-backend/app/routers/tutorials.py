@@ -196,14 +196,21 @@ def get_tutorial_details(tutorial_id: str, user: dict = Depends(verify_token)):
         doc_ref = db.collection('tutorials').document(tutorial_id)
         doc = doc_ref.get()
         
-        if doc.exists:
-            t = _process_tutorial_doc(doc, user_id, db)
-            # Debug Log
-            sec_count = len(t.get('sections', []))
-            logger.debug(f"🔍 Fetch Global Tutorial {tutorial_id}: Found {sec_count} sections.")
-            return t
-            
-        raise HTTPException(status_code=404, detail="Tutorial not found")
+        # SENIOR DEV FIX: Explicit existence check returning 404 instead of empty dict
+        if not doc.exists:
+             logger.warning(f"⚠️ Tutorial {tutorial_id} not found in Global collection.")
+             raise HTTPException(status_code=404, detail="Tutorial not found")
+
+        t = _process_tutorial_doc(doc, user_id, db)
+        
+        # Safety check for empty content
+        if not t:
+            raise HTTPException(status_code=404, detail="Tutorial content invalid")
+
+        # Debug Log
+        sec_count = len(t.get('sections', []))
+        logger.debug(f"🔍 Fetch Global Tutorial {tutorial_id}: Found {sec_count} sections.")
+        return t
         
     except HTTPException as he:
         raise he
