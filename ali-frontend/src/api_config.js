@@ -10,8 +10,14 @@ const PROD_BACKEND = "https://ali-backend-776425171266.us-central1.run.app";
 //    - 'npm run build' sets MODE to 'production'
 //    - 'npm run dev' sets MODE to 'development'
 //    - process.env.NODE_ENV is included for parity with other tooling
+// 2. Automatically select URL based on Vite's build mode with NODE_ENV fallback
+//    - 'npm run build' sets MODE to 'production'
+//    - 'npm run dev' sets MODE to 'development'
 const APP_MODE = import.meta.env.MODE || process.env.NODE_ENV || 'development';
-const API_BASE_URL = APP_MODE === 'production'
+
+// SENIOR DEV FIX: Runtime check for Cloud Run environment to guarantee connection
+const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+const API_BASE_URL = (!isLocalhost || APP_MODE === 'production')
     ? PROD_BACKEND
     : "http://localhost:8001";
 
