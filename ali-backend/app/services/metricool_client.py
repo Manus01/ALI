@@ -30,17 +30,27 @@ class MetricoolClient:
         self.blog_id = blog_id
 
     def get_brand_status(self, blog_id: str) -> Dict[str, Any]:
-        """Checks if a brand is connected and valid."""
-        url = f"{BASE_URL}/admin/blog/{blog_id}"
-        params = {"userId": self.user_id}
+        """Checks if a brand is connected and valid by fetching the user's blog list."""
+        url = f"{BASE_URL}/v2/user"
+        params = {"userId": self.user_id, "userToken": METRICOOL_USER_TOKEN}
         
         try:
             res = requests.get(url, headers=self.headers, params=params)
             res.raise_for_status()
-            return res.json()
+            data = res.json()
+            
+            # Find the specific blog in the list
+            blogs = data.get('blogs', [])
+            found_blog = next((b for b in blogs if str(b.get('id')) == str(blog_id)), None)
+            
+            if not found_blog:
+                raise ValueError(f"Blog ID {blog_id} not found for this Metricool User.")
+                
+            return found_blog
+
         except requests.exceptions.RequestException as e:
             logger.error(f"❌ Metricool Check Failed: {e}")
-            raise ValueError(f"Could not verify Brand ID {blog_id}")
+            raise ValueError(f"Could not verify Brand ID {blog_id}: {e}")
 
     def get_account_info(self) -> Dict[str, Any]:
         """
