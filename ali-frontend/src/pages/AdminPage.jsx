@@ -3,7 +3,7 @@ import api from '../api/axiosInterceptor';
 import { useAuth } from '../hooks/useAuth';
 import {
     FaUserCog, FaDatabase, FaPlay, FaBell, FaLink,
-    FaSync, FaInstagram, FaLinkedin, FaFacebook, FaTiktok, FaSpinner, FaFileCsv, FaSearch
+    FaSync, FaInstagram, FaLinkedin, FaFacebook, FaTiktok, FaSpinner, FaFileCsv, FaSearch, FaExclamationTriangle
 } from 'react-icons/fa';
 
 const CHANNEL_ICONS = {
@@ -21,6 +21,7 @@ export default function AdminPage() {
     const pendingTasks = [];
     const [verifiedChannels, setVerifiedChannels] = useState([]);
     const [logs, setLogs] = useState([]);
+    const [integrationAlerts, setIntegrationAlerts] = useState([]);
     const [researchUsers, setResearchUsers] = useState([]);
     const [tutorials, setTutorials] = useState([]);
     const [searchTerm, setSearchTerm] = useState("");
@@ -31,6 +32,7 @@ export default function AdminPage() {
         if (currentUser?.email === "manoliszografos@gmail.com") {
             setIsAdmin(true);
             fetchLogs();
+            fetchIntegrationAlerts();
             fetchResearchUsers();
             fetchTutorials();
         }
@@ -41,6 +43,13 @@ export default function AdminPage() {
             const res = await api.get('/api/admin/research/logs');
             setLogs(res.data.data);
         } catch (err) { console.error("Failed to fetch logs", err); }
+    };
+
+    const fetchIntegrationAlerts = async () => {
+        try {
+            const res = await api.get('/api/admin/integration-alerts');
+            setIntegrationAlerts(res.data.alerts || []);
+        } catch (err) { console.error("Failed to fetch integration alerts", err); }
     };
 
     const fetchResearchUsers = async () => {
@@ -259,6 +268,33 @@ export default function AdminPage() {
                         <div className="pt-6 border-t"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Live Channels</p>
                             <div className="flex gap-3">{verifiedChannels.map(ch => <div key={ch} className="p-3 bg-slate-50 rounded-xl text-xl shadow-inner">{CHANNEL_ICONS[ch] || <FaSync className="animate-spin text-slate-300" />}</div>)}</div></div>
                     )}
+                </div>
+
+                <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-4">
+                    <div className="flex items-center justify-between">
+                        <h2 className="text-xl font-black flex items-center gap-2"><FaExclamationTriangle className="text-amber-500" /> Integration Alerts</h2>
+                        <button onClick={fetchIntegrationAlerts} className="text-xs font-bold text-amber-600 hover:bg-amber-50 px-3 py-2 rounded-xl transition-all flex items-center gap-1">
+                            <FaSync /> Refresh
+                        </button>
+                    </div>
+                    <div className="space-y-3 max-h-80 overflow-y-auto pr-2">
+                        {integrationAlerts.length === 0 ? (
+                            <p className="text-xs text-slate-400">No integration alerts.</p>
+                        ) : (
+                            integrationAlerts.map((alert) => (
+                                <div key={alert.id} className="p-3 rounded-xl border border-amber-100 bg-amber-50/50">
+                                    <div className="text-xs font-bold text-amber-700 flex items-center gap-2">
+                                        <FaExclamationTriangle /> {alert.context}
+                                    </div>
+                                    <p className="text-sm text-slate-700 mt-1 font-semibold">{alert.message}</p>
+                                    <div className="text-[10px] text-slate-400 mt-1 font-mono flex gap-2 flex-wrap">
+                                        {alert.user_email && <span>{alert.user_email}</span>}
+                                        {alert.created_at && <span>{new Date(alert.created_at).toLocaleString()}</span>}
+                                    </div>
+                                </div>
+                            ))
+                        )}
+                    </div>
                 </div>
 
                 <div className="lg:col-span-2 bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
