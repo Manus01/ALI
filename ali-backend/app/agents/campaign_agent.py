@@ -10,10 +10,21 @@ class CampaignAgent(BaseAgent):
         # Using Pro for complex strategic reasoning
         self.model = get_model(intent='complex')
 
-    async def generate_clarifying_questions(self, goal: str, brand_dna: dict):
+    async def generate_clarifying_questions(self, goal: str, brand_dna: dict, connected_platforms: list = None):
         """Analyze goal vs Brand DNA and ask 3-4 strategic questions."""
         self.log_task(f"Generating strategic questions for goal: {goal}")
         
+        # Contextual Instructions based on integrations
+        platform_instruction = ""
+        if connected_platforms and len(connected_platforms) > 0:
+            platform_instruction = f"""
+            DETECTED INTEGRATIONS: {', '.join(connected_platforms)}.
+            CRITICAL: Do NOT ask which platforms to use. We MUST use the detected ones. 
+            Instead, ask specific strategic questions about the content *for* these platforms (e.g. "For TikTok, do you want X or Y?").
+            """
+        else:
+            platform_instruction = "3. The primary channels for this campaign (Ask if they want TikTok, Instagram, etc)."
+
         prompt = f"""
         You are a Senior Marketing Consultant. 
         BRAND DNA: {json.dumps(brand_dna)}
@@ -22,6 +33,8 @@ class CampaignAgent(BaseAgent):
 
         Your task:
         Before generating assets, you must ask 3-4 surgical questions to the user.
+        {platform_instruction}
+        
         These questions should help you decide:
         1. The specific aesthetic sub-style (within their brand guidelines).
         2. The cultural hook for their target market (e.g., if Germany, focus on data; if Cyprus, focus on community).
@@ -53,7 +66,11 @@ class CampaignAgent(BaseAgent):
         1. 'theme': A 1-sentence title for the campaign.
         2. 'instagram': A 'caption' and a 'visual_prompt'.
         3. 'tiktok': A 'video_script' and 'audio_style'.
-        4. 'email': A 'subject' and 'body_copy'.
+        5. 'google_ads': {
+            'headlines': ["Headline 1 (max 30 chars)", ...],
+            'descriptions': ["Desc 1 (max 90 chars)", ...],
+            'keywords': ["keyword1", "keyword2", ...]
+        }
 
         Ensure the tone strictly follows the Brand DNA and respects the cultural target.
         Return ONLY a JSON object.

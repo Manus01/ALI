@@ -70,9 +70,26 @@ export default function CampaignCenter() {
     const hasBrandDna = !!userProfile?.brand_dna;
     // Local override to ensure immediate UI update after save
     const [localDnaSaved, setLocalDnaSaved] = useState(false);
-    
+
     // Force Edit Mode if requested via navigation state
     const [forceEditDna, setForceEditDna] = useState(false);
+    const [detectedPlatforms, setDetectedPlatforms] = useState([]);
+
+    useEffect(() => {
+        // Fetch User Integrations on Mount to show "Smart Mode" status
+        const fetchIntegrations = async () => {
+            try {
+                // We use the Metricool endpoint as it aggregates providers
+                const res = await api.get('/connect/metricool/status');
+                if (res.data.status === 'connected' && res.data.providers) {
+                    setDetectedPlatforms(res.data.providers);
+                }
+            } catch (e) {
+                console.warn("Could not fetch integrations for context", e);
+            }
+        };
+        fetchIntegrations();
+    }, []);
 
     useEffect(() => {
         if (location.state?.editDna) {
@@ -90,8 +107,8 @@ export default function CampaignCenter() {
                 if (dna.countries) {
                     setCountries(dna.countries);
                 }
-             }
-         }
+            }
+        }
     }, [location.state, userProfile]);
 
     // --- 1. REAL-TIME PROGRESS LISTENER (SECURE PATH) ---
@@ -263,8 +280,8 @@ export default function CampaignCenter() {
                             {forceEditDna ? "Update Brand Identity" : "Establish Your Identity"}
                         </h2>
                         <p className="text-slate-500 mb-10 max-w-lg mx-auto text-center font-medium">
-                            {forceEditDna 
-                                ? "Refine your brand's core essence. This will update all future campaigns." 
+                            {forceEditDna
+                                ? "Refine your brand's core essence. This will update all future campaigns."
                                 : "Before launching campaigns, we need to extract your Brand DNA."}
                         </p>
 
@@ -276,32 +293,32 @@ export default function CampaignCenter() {
                                 </label>
                                 {!useDescription ? (
                                     <div className="group relative">
-                                        <input 
-                                            type="text" 
+                                        <input
+                                            type="text"
                                             name="brandUrl"
                                             id="brandUrl"
                                             aria-label="Website URL"
-                                            placeholder="https://your-business.com" 
-                                            className="w-full p-5 rounded-2xl border border-slate-200 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none text-lg text-center transition-all text-slate-800" 
-                                            value={url} 
-                                            onChange={(e) => setUrl(e.target.value)} 
+                                            placeholder="https://your-business.com"
+                                            className="w-full p-5 rounded-2xl border border-slate-200 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none text-lg text-center transition-all text-slate-800"
+                                            value={url}
+                                            onChange={(e) => setUrl(e.target.value)}
                                         />
-                                         <button onClick={() => setUseDescription(true)} className="w-full mt-4 flex items-center justify-center gap-2 text-xs font-bold text-slate-400 hover:text-primary transition-colors">
+                                        <button onClick={() => setUseDescription(true)} className="w-full mt-4 flex items-center justify-center gap-2 text-xs font-bold text-slate-400 hover:text-primary transition-colors">
                                             <FaEdit /> I don't have a website yet
                                         </button>
                                     </div>
                                 ) : (
                                     <div className="group relative">
-                                        <textarea 
+                                        <textarea
                                             name="brandDescription"
                                             id="brandDescription"
                                             aria-label="Business Description"
-                                            placeholder="Describe your products and 'vibe'..." 
-                                            className="w-full p-5 rounded-2xl border border-slate-200 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none text-lg min-h-[140px] transition-all text-slate-800" 
-                                            value={description} 
-                                            onChange={(e) => setDescription(e.target.value)} 
+                                            placeholder="Describe your products and 'vibe'..."
+                                            className="w-full p-5 rounded-2xl border border-slate-200 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none text-lg min-h-[140px] transition-all text-slate-800"
+                                            value={description}
+                                            onChange={(e) => setDescription(e.target.value)}
                                         />
-                                         <button onClick={() => setUseDescription(false)} className="w-full mt-4 flex items-center justify-center gap-2 text-xs font-bold text-slate-400 hover:text-primary transition-colors">
+                                        <button onClick={() => setUseDescription(false)} className="w-full mt-4 flex items-center justify-center gap-2 text-xs font-bold text-slate-400 hover:text-primary transition-colors">
                                             <FaWindowMaximize /> Use a website URL instead
                                         </button>
                                     </div>
@@ -315,17 +332,17 @@ export default function CampaignCenter() {
                                     <span className="flex items-center gap-1 text-[10px] text-blue-500 font-bold"><FaInfoCircle /> High-Res PNG or SVG</span>
                                 </div>
                                 <div className="relative group border-2 border-dashed border-slate-200 rounded-2xl p-6 hover:border-primary transition-all bg-slate-50/50">
-                                    <input 
-                                        type="file" 
+                                    <input
+                                        type="file"
                                         name="brandLogo"
                                         id="brandLogo"
                                         aria-label="Upload Brand Logo"
-                                        accept=".png,.svg" 
-                                        className="absolute inset-0 opacity-0 cursor-pointer z-10" 
-                                        onChange={handleLogoChange} 
+                                        accept=".png,.svg"
+                                        className="absolute inset-0 opacity-0 cursor-pointer z-10"
+                                        onChange={handleLogoChange}
                                     />
-                                     {logoPreview ? (
-                                         <div className="flex items-center gap-4 animate-scale-up">
+                                    {logoPreview ? (
+                                        <div className="flex items-center gap-4 animate-scale-up">
                                             <img src={logoPreview} alt="Preview" className="h-12 w-12 object-contain bg-white p-2 rounded-lg shadow-sm" />
                                             <p className="text-sm font-bold text-slate-700 truncate max-w-[200px]">{logoFile.name}</p>
                                         </div>
@@ -363,15 +380,15 @@ export default function CampaignCenter() {
                             <button onClick={handleAnalyzeDna} disabled={(!url && !description)} className="w-full bg-gradient-to-r from-primary to-blue-700 text-white py-5 rounded-2xl font-black text-lg shadow-xl shadow-blue-500/30 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-30 uppercase tracking-widest">
                                 Build My DNA
                             </button>
-                            
+
                             {forceEditDna && (
                                 <button onClick={() => setForceEditDna(false)} className="w-full text-slate-400 font-bold text-sm hover:text-slate-600 transition-colors">
                                     Cancel Update
                                 </button>
                             )}
-                         </div>
-                     </div>
-                 )}
+                        </div>
+                    </div>
+                )}
 
                 {/* STEP 2: LOADING */}
                 {dnaStep === 'loading' && (
@@ -443,6 +460,18 @@ export default function CampaignCenter() {
             {stage === 'input' && (
                 <div className="bg-white p-12 text-center border border-slate-100 shadow-xl rounded-[3rem]">
                     <FaMagic className="text-5xl text-primary mx-auto mb-6 opacity-10" style={{ color: primaryColor }} />
+
+                    {/* Active Integrations Badge */}
+                    {detectedPlatforms.length > 0 ? (
+                        <div className="inline-flex items-center gap-2 px-4 py-2 bg-green-50 text-green-700 rounded-full text-xs font-black mb-6 border border-green-200 uppercase tracking-widest animate-fade-in">
+                            <FaCheckCircle /> Smart Mode Active: {detectedPlatforms.join(', ')}
+                        </div>
+                    ) : (
+                        <div className="inline-flex items-center gap-2 px-4 py-2 bg-slate-50 text-slate-400 rounded-full text-xs font-bold mb-6 border border-slate-100 uppercase tracking-widest animate-fade-in">
+                            Manual Mode (No Integrations)
+                        </div>
+                    )}
+
                     <h2 className="text-2xl font-black mb-6 text-slate-800 tracking-tight">What is your objective today?</h2>
                     <textarea
                         name="campaignGoal"
@@ -477,9 +506,9 @@ export default function CampaignCenter() {
                             <input
                                 id={`question-${i}`}
                                 name={`question-${i}`}
-                                 className="w-full p-5 rounded-xl border border-slate-100 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-primary outline-none transition-all font-medium text-slate-800"
-                                  placeholder="Enter details..."
-                                  onChange={(e) => setAnswers({ ...answers, [i]: e.target.value })}
+                                className="w-full p-5 rounded-xl border border-slate-100 bg-slate-50 focus:bg-white focus:ring-2 focus:ring-primary outline-none transition-all font-medium text-slate-800"
+                                placeholder="Enter details..."
+                                onChange={(e) => setAnswers({ ...answers, [i]: e.target.value })}
                             />
                         </div>
                     ))}
@@ -505,7 +534,7 @@ export default function CampaignCenter() {
                                 className="transition-all duration-1000 ease-in-out" strokeLinecap="round" />
                         </svg>
                         <div className="absolute inset-0 flex items-center justify-center font-black text-5xl text-slate-800 tracking-tighter">
-                            {progress.percent}% 
+                            {progress.percent}%
                         </div>
                     </div>
                     <h3 className="text-2xl font-black text-slate-800 mb-3 tracking-tight">{progress.message}</h3>
@@ -537,7 +566,7 @@ export default function CampaignCenter() {
                                     >
                                         <FaSyncAlt size={14} />
                                     </button>
-                                    <button 
+                                    <button
                                         aria-label="Download Asset"
                                         title="Download Asset"
                                         className="p-2.5 text-slate-400 hover:text-green-500 transition-colors bg-slate-50 rounded-xl"
@@ -561,6 +590,44 @@ export default function CampaignCenter() {
                                 <p className="text-slate-600 text-sm whitespace-pre-line leading-loose">{finalAssets.blueprint.email.body}</p>
                             </div>
                         </div>
+
+                        {/* GOOGLE ADS KIT */}
+                        {finalAssets.blueprint.google_ads && (
+                            <div className="bg-white p-8 border border-slate-100 rounded-[3rem] shadow-sm">
+                                <h4 className="font-black text-slate-400 uppercase text-[10px] tracking-[0.2em] mb-6">Google Ads Kit</h4>
+
+                                {/* Display Ad Visual */}
+                                {finalAssets.assets.google_ads && (
+                                    <div className="mb-6">
+                                        <p className="text-xs font-bold text-slate-500 mb-2">Display Ad (Landscape)</p>
+                                        <div className="aspect-video bg-slate-50 rounded-2xl overflow-hidden border border-slate-100">
+                                            <img src={finalAssets.assets.google_ads} alt="Display Ad" className="w-full h-full object-cover" />
+                                        </div>
+                                    </div>
+                                )}
+
+                                <div className="space-y-4">
+                                    <div>
+                                        <p className="text-xs font-bold text-slate-500 uppercase mb-2">Headlines</p>
+                                        <div className="grid gap-2">
+                                            {finalAssets.blueprint.google_ads.headlines?.map((h, i) => (
+                                                <div key={i} className="bg-slate-50 p-3 rounded-xl text-sm font-bold text-slate-700 border border-slate-100 flex justify-between items-center group cursor-pointer hover:border-primary transition-colors">
+                                                    {h} <span className="text-[10px] text-slate-300 group-hover:text-primary">COPY</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <p className="text-xs font-bold text-slate-500 uppercase mb-2">Descriptions</p>
+                                        <div className="grid gap-2">
+                                            {finalAssets.blueprint.google_ads.descriptions?.map((d, i) => (
+                                                <div key={i} className="bg-slate-50 p-3 rounded-xl text-sm text-slate-600 border border-slate-100">{d}</div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}

@@ -10,7 +10,7 @@ class OrchestratorAgent(BaseAgent):
         super().__init__("Orchestrator")
         self.db = db
 
-    async def run_full_campaign_flow(self, uid, campaign_id, goal, brand_dna, answers):
+    async def run_full_campaign_flow(self, uid, campaign_id, goal, brand_dna, answers, connected_platforms: list = None):
         try:
             # 1. Update Notification: Start
             self._update_progress(uid, campaign_id, "Analyzing Cultural Context...", 10)
@@ -23,22 +23,46 @@ class OrchestratorAgent(BaseAgent):
             # 3. Parallel Execution: Visuals & Copy
             visualizer = VisualAgent()
             
-            # Use asyncio.gather to run TikTok, Instagram, and Email generation at once
-            tiktok_task = visualizer.generate_branded_video(blueprint['tiktok'], brand_dna)
-            insta_task = visualizer.generate_branded_image(blueprint['instagram'], brand_dna)
+            # Determine target platforms
+            # If no integrations found, we might fallback to what the user answered or a default set
+            target_platforms = connected_platforms if connected_platforms else ["instagram", "tiktok"]
+            print(f"🎯 Orchestrating for platforms: {target_platforms}")
+
+            tasks = []
+            platform_map = {} # To map result back to platform name
+
+            # A. Video Generation (TikTok/Reels)
+            if any(p in target_platforms for p in ['tiktok', 'youtube_shorts']):
+                task = visualizer.generate_branded_video(blueprint.get('tiktok', {}), brand_dna)
+                tasks.append(task)
+                platform_map[len(tasks)-1] = 'tiktok'
             
+            # C. Google Display Ads (Landscape Image)
+            if any(p in target_platforms for p in ['google_ads', 'google']):
+                # Reuse the visual hook from Instagram but request landscape
+                display_ad_blueprint = blueprint.get('instagram', {}).copy()
+                display_ad_blueprint['aspect_ratio'] = "16:9" 
+                task = visualizer.generate_branded_image(display_ad_blueprint, brand_dna)
+                tasks.append(task)
+                platform_map[len(tasks)-1] = 'google_ads'
+
             self._update_progress(uid, campaign_id, "Generating Cinematic Assets...", 60)
             
-            results = await asyncio.gather(tiktok_task, insta_task)
+            # Execute all tasks concurrently
+            results = await asyncio.gather(*tasks)
+            
+            # Map results back to structured assets
+            assets = {}
+            for i, result in enumerate(results):
+                key = platform_map.get(i)
+                if key:
+                    assets[key] = result
             
             # 4. Finalize & Package
             final_data = {
                 "status": "completed",
                 "blueprint": blueprint,
-                "assets": {
-                    "tiktok": results[0],
-                    "instagram": results[1]
-                }
+                "assets": assets
             }
             
             self.db.collection('users').document(uid).collection('campaigns').document(campaign_id).update(final_data)

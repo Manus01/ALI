@@ -25,16 +25,24 @@ class VisualAgent(BaseAgent):
         # Returning the final GCS Signed URL.
         return "https://storage.googleapis.com/.../video.mp4"
 
-    async def generate_branded_image(self, prompt, brand_dna):
+    async def generate_branded_image(self, blueprint_item, brand_dna):
         """Calls Imagen 3 for high-res social posts."""
         self.log_task("Initiating Imagen Image Generation...")
         
         try:
+            # Handle prompt being a dictionary (blueprint item) or string
+            if isinstance(blueprint_item, dict):
+                visual_prompt = blueprint_item.get('visual_prompt', '') or blueprint_item.get('description', '')
+                aspect_ratio = blueprint_item.get('aspect_ratio', '1:1') # Default to square for IG
+            else:
+                visual_prompt = str(blueprint_item)
+                aspect_ratio = '16:9' # Default for legacy string calls
+
             model = ImageGenerationModel.from_pretrained("imagen-3.0-generate-001")
             images = model.generate_images(
-                prompt=prompt,
+                prompt=visual_prompt,
                 number_of_images=1,
-                aspect_ratio="16:9"
+                aspect_ratio=aspect_ratio
             )
             if images:
                 # In a real implementation, we would upload bytes to GCS here

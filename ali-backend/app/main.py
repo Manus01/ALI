@@ -190,6 +190,8 @@ async def complete_onboarding(payload: dict, user: dict = Depends(verify_token))
 async def initiate_campaign(payload: dict, user: dict = Depends(verify_token)):
     try:
         from app.agents.campaign_agent import CampaignAgent
+        from app.services.metricool_client import MetricoolClient
+        
         goal = payload.get("goal")
         uid = user['uid']
         
@@ -197,8 +199,23 @@ async def initiate_campaign(payload: dict, user: dict = Depends(verify_token)):
         if not brand_ref.exists:
             return {"questions": ["Your Brand DNA is missing. Please complete onboarding."]}
 
+        # --- SMART INTEGRATION CHECK ---
+        connected_platforms = []
+        try:
+            metricool_ref = db.collection('users').document(uid).collection('user_integrations').document('metricool').get()
+            if metricool_ref.exists and metricool_ref.to_dict().get('status') == 'active':
+                blog_id = metricool_ref.to_dict().get('blog_id')
+                client = MetricoolClient(blog_id=blog_id)
+                # Fetch live providers to know exactly what is connected
+                account_info = client.get_account_info()
+                connected_platforms = account_info.get('connected', [])
+                logger.info(f"💡 Smart Campaign: Detected platforms for {uid}: {connected_platforms}")
+        except Exception as e:
+            logger.warning(f"Failed to fetch integrations for campaign context: {e}")
+        # -------------------------------
+
         agent = CampaignAgent()
-        questions = await agent.generate_clarifying_questions(goal, brand_ref.to_dict())
+        questions = await agent.generate_clarifying_questions(goal, brand_ref.to_dict(), connected_platforms=connected_platforms)
         return {"questions": questions}
     except ImportError as e:
         logging.error(f"Failed to import CampaignAgent: {e}")
@@ -210,6 +227,8 @@ async def initiate_campaign(payload: dict, user: dict = Depends(verify_token)):
 @app.post("/api/campaign/finalize")
 async def finalize_campaign(payload: dict, background_tasks: BackgroundTasks, user: dict = Depends(verify_token)):
     from app.agents.orchestrator_agent import OrchestratorAgent
+    from app.services.metricool_client import MetricoolClient
+
     goal = payload.get("goal")
     answers = payload.get("answers")
     uid = user['uid']
@@ -217,10 +236,23 @@ async def finalize_campaign(payload: dict, background_tasks: BackgroundTasks, us
 
     brand_dna = db.collection('users').document(uid).collection('brand_profile').document('current').get().to_dict()
 
+    # --- SMART INTEGRATION CHECK (Re-verify for Execution) ---
+    connected_platforms = []
+    try:
+        metricool_ref = db.collection('users').document(uid).collection('user_integrations').document('metricool').get()
+        if metricool_ref.exists and metricool_ref.to_dict().get('status') == 'active':
+            blog_id = metricool_ref.to_dict().get('blog_id')
+            client = MetricoolClient(blog_id=blog_id)
+            account_info = client.get_account_info()
+            connected_platforms = account_info.get('connected', [])
+    except Exception:
+        pass # Fail silently on execution, default logic in Agent will handle checks
+    # ---------------------------------------------------------
+
     orchestrator = OrchestratorAgent()
     background_tasks.add_task(
         orchestrator.run_full_campaign_flow, 
-        uid, campaign_id, goal, brand_dna, answers
+        uid, campaign_id, goal, brand_dna, answers, connected_platforms
     )
     return {"campaign_id": campaign_id}
 
