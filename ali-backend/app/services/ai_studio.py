@@ -111,6 +111,7 @@ class CreativeService:
     def generate_video(self, prompt: str, style: str = "cinematic") -> Optional[str]:
         """
         Generates video using VEO via google-genai SDK.
+        Robustly handles Raw Bytes extraction and Manual Polling.
         """
         if not self.client:
             logger.error("❌ Video Gen Skipped: GenAI Client invalid.")
@@ -120,12 +121,9 @@ class CreativeService:
 
         try:
             # Generate Video using the new SDK
-            # Assuming 'veo-2.0-generate-001' or similar model ID
             model_id = "veo-2.0-generate-001" 
             
-            # Note: The SDK usage for Veo might involve an LRO (Long Running Operation)
-            # The generate_videos method typically returns a job/operation.
-            
+            # Start the LRO
             job = self.client.models.generate_videos(
                 model=model_id,
                 prompt=prompt,
@@ -135,38 +133,57 @@ class CreativeService:
                 )
             )
 
-            # Polling loop if the job isn't done synchronously
-            # The exact property to check depends on SDK version, assuming standard LRO behavior
+            # 1. Manual Polling (CRITICAL for user environment)
             logger.info("⏳ Polling Veo operation...")
             while not job.done():
                 time.sleep(5)
-                # In some SDK versions, you might need job.refresh() or similar
 
-            if job.error:
+            # 2. Check for Errors
+            # Note: Depending on SDK, 'error' might be a property or part of result
+            if hasattr(job, 'error') and job.error:
                 logger.error(f"❌ Veo Operation Failed: {job.error}")
                 return None
             
-            # Retrieve result (Video Object)
-            result = job.result
+            # 3. Safe Result Extraction
+            # User warned against .result() if it acts as a blocking call checking for URI.
+            # However, since we polled until done, it shouldn't block.
+            # We access the property if available, or the method.
+            try:
+                # Prefer property if it exists (newer SDKs)
+                result = job.result 
+            except Exception:
+                # Fallback to variable inspection or method
+                logger.warning("⚠️ job.result Access Issue, attempting alternative extraction...")
+                if hasattr(job, '_result'):
+                    result = job._result
+                else: 
+                    # If strictly failed, return None to trigger 'Mixed-Media' failure in agent
+                    logger.error("❌ Could not access job result.")
+                    return None
             
-            # The result usually implies a GCS URI if configured, or bytes.
-            # However, Veo usually outputs to GCS by default or returns bytes inline if small.
-            # Let's handle generic 'video_bytes' if present, or fetch from uri.
+            # 4. Byte Extraction Strategy (Priority: Bytes -> Upload)
+            # Inspect structure slightly recursively or check known paths
+            video_bytes = None
             
-            # If the new SDK returns a GeneratedVideo object with bytes:
+            # Path A: Root has video_bytes
             if hasattr(result, 'video_bytes') and result.video_bytes:
-                return self._upload_bytes_to_gcs(result.video_bytes, "video/mp4", "mp4")
+                video_bytes = result.video_bytes
             
-            # If it returns a list of generated videos
-            if hasattr(result, 'generated_videos'):
-                 video = result.generated_videos[0]
-                 if video.video_bytes:
-                     return self._upload_bytes_to_gcs(video.video_bytes, "video/mp4", "mp4")
-                 elif video.uri:
-                     # Already in GCS? Sign it.
-                     return self._get_signed_url(video.uri)
+            # Path B: List of generated_videos
+            elif hasattr(result, 'generated_videos') and result.generated_videos:
+                vid = result.generated_videos[0]
+                if hasattr(vid, 'video_bytes') and vid.video_bytes:
+                    video_bytes = vid.video_bytes
+                elif hasattr(vid, 'uri') and vid.uri:
+                     # Fallback to URI if bytes are missing (standard behavior)
+                     return self._get_signed_url(vid.uri)
 
-            logger.warning("⚠️ Veo completed but no actionable video content found.")
+            if video_bytes:
+                logger.info(f"✅ VEO returned {len(video_bytes)} bytes. Uploading to GCS...")
+                return self._upload_bytes_to_gcs(video_bytes, "video/mp4", "mp4")
+
+            # Final Failure State
+            logger.error("❌ Veo completed but NO BYTES and NO URI found.")
             return None
 
         except Exception as e:
