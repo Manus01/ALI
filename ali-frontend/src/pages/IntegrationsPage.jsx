@@ -1,6 +1,6 @@
 ﻿import React, { useEffect, useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import axios from 'axios';
+import api from '../api/axiosInterceptor';
 import {
     FaHashtag,
     FaCheckCircle,
@@ -16,7 +16,6 @@ import {
     FaUnlink
 } from 'react-icons/fa';
 import { getFirestore, collection, onSnapshot } from 'firebase/firestore';
-import { API_URL } from '../api_config';
 
 const PROVIDER_ICONS = {
     instagram: <FaInstagram className="text-pink-500" />,
@@ -79,10 +78,7 @@ export default function IntegrationsPage() {
         if (status !== 'active') return;
         setRefreshing(true);
         try {
-            const token = await currentUser.getIdToken();
-            const res = await axios.get(`${API_URL}/api/connect/metricool/status`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            const res = await api.get('/connect/metricool/status');
             const providers = (res.data.connected_providers || [])
                 .filter(Boolean)
                 .map(p => p.toString().toLowerCase());
@@ -103,13 +99,7 @@ export default function IntegrationsPage() {
     // --- 2. Request Access Handler ---
     const handleRequestAccess = async () => {
         try {
-            const token = await currentUser.getIdToken();
-            await axios.post(`${API_URL}/api/connect/metricool/request`, {},
-                {
-                    headers: { Authorization: `Bearer ${token}` },
-                    params: { id_token: token }
-                }
-            );
+            await api.post('/connect/metricool/request', {});
         } catch (err) {
             console.error(err);
             alert("Failed to request access.");
@@ -121,10 +111,7 @@ export default function IntegrationsPage() {
         if (!window.confirm("Are you sure you want to disconnect Metricool? You will lose access to analytics until re-connected.")) return;
 
         try {
-            const token = await currentUser.getIdToken();
-            await axios.delete(`${API_URL}/api/connect/metricool`, {
-                headers: { Authorization: `Bearer ${token}` }
-            });
+            await api.delete('/connect/metricool');
             setStatus(null);
             setConnectedProviders([]);
         } catch (err) {

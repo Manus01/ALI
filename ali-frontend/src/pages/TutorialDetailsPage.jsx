@@ -1,6 +1,6 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import api from '../api/axiosInterceptor';
 import { useAuth } from '../hooks/useAuth';
 import { FaArrowLeft, FaHeadphones, FaCheck, FaTrophy, FaChevronRight, FaChevronLeft, FaTimes, FaSearchPlus, FaExclamationTriangle, FaRedo } from 'react-icons/fa';
 
@@ -39,12 +39,8 @@ export default function TutorialDetailsPage() {
         if (!currentUser || !id) return;
         const fetchTutorial = async () => {
             try {
-                const token = await currentUser.getIdToken();
-                // SENIOR DEV FIX: Fetch specific ID directly to avoid list consistency issues
-                const res = await axios.get(`/api/tutorials/${id}`, {
-                    headers: { Authorization: `Bearer ${token}` },
-                    params: { id_token: token }
-                });
+                // FIXED: Use configured 'api' instance to handle Base URL and Headers automatically
+                const res = await api.get(`/tutorials/${id}`);
                 setTutorial(res.data);
             } catch (err) { console.error(err); }
             finally { setLoading(false); }
