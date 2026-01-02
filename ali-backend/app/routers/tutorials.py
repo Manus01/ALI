@@ -166,12 +166,30 @@ def get_tutorial_details(tutorial_id: str, user: dict = Depends(verify_token)):
         # 1. Try Private (User Subcollection) - Strong Consistency
         doc_ref = db.collection('users').document(user_id).collection('tutorials').document(tutorial_id)
         doc = doc_ref.get()
-        
+
         if doc.exists:
             t = _process_tutorial_doc(doc, user_id, db)
             # Debug Log
             sec_count = len(t.get('sections', []))
             logger.debug(f"🔍 Fetch Private Tutorial {tutorial_id}: Found {sec_count} sections.")
+
+            # If the private copy is missing content, fall back to the global public copy
+            # (this helps when a legacy write left an empty shell in the user's subcollection).
+            if sec_count == 0 and len(t.get('blocks', [])) == 0:
+                global_doc = db.collection('tutorials').document(tutorial_id).get()
+
+                if global_doc.exists:
+                    g = _process_tutorial_doc(global_doc, user_id, db)
+
+                    if g.get('sections') or g.get('blocks'):
+                        logger.warning(
+                            f"⚠️ Private tutorial {tutorial_id} was empty; using global content instead."
+                        )
+
+                        # Preserve completion status from the private doc while using the global content
+                        g['is_completed'] = t.get('is_completed', g.get('is_completed', False))
+                        return g
+
             return t
             
         # 2. Try Global (Public)
