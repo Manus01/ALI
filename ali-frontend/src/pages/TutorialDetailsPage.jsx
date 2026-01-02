@@ -88,19 +88,12 @@ export default function TutorialDetailsPage() {
                 <button onClick={() => navigate('/tutorials')} className="px-4 py-2 bg-slate-100 rounded">Back</button>
 
                 {/* DEBUG VIEW FOR USER DIAGNOSIS */}
-                <details className="mt-8 p-4 bg-slate-50 rounded-lg max-w-lg w-full text-left">
-                    <summary className="text-xs font-bold text-slate-400 cursor-pointer">Debug Details</summary>
-                    <pre className="mt-2 text-[10px] text-slate-600 overflow-auto max-h-64 font-mono">
-                        {JSON.stringify({
-                            id: tutorial.id,
-                            hasSections: !!tutorial.sections,
-                            sectionCount: tutorial.sections?.length,
-                            hasBlocks: !!tutorial.blocks,
-                            blockCount: tutorial.blocks?.length,
-                            keys: Object.keys(tutorial)
-                        }, null, 2)}
+                <div className="mt-8 p-4 bg-slate-50 rounded-lg max-w-lg w-full text-left border border-slate-200">
+                    <p className="text-xs font-bold text-red-500 mb-2">Debug Info (Please share this):</p>
+                    <pre className="text-[10px] text-slate-600 overflow-auto max-h-96 font-mono whitespace-pre-wrap">
+                        {JSON.stringify(tutorial, null, 2)}
                     </pre>
-                </details>
+                </div>
             </div>
         );
     }

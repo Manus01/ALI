@@ -209,6 +209,10 @@ def get_tutorial_details(tutorial_id: str, user: dict = Depends(verify_token)):
 
         # Debug Log
         sec_count = len(t.get('sections', []))
+        logger.info(f"🔍 RETURNING Tutorial {tutorial_id}: Keys={list(t.keys())}, Sections={sec_count}")
+        if sec_count > 0:
+             logger.info(f"First Section: {t['sections'][0].keys()}")
+        
         logger.debug(f"🔍 Fetch Global Tutorial {tutorial_id}: Found {sec_count} sections.")
         return t
         
