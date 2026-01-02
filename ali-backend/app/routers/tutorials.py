@@ -9,19 +9,12 @@ from firebase_admin import firestore
 
 logger = logging.getLogger("ali_platform.routers.tutorials")
 
-# Safe Import for Dependencies
-# We use this pattern to ensure the router module itself loads even if services fail,
-# returning 500s on specific endpoints rather than crashing the whole app booting.
-try:
-    from app.services.job_runner import process_tutorial_job
-    from app.services.llm_factory import get_model
-except ImportError as e:
-    logger.critical(f"❌ Tutorials Router Dependency Error: {e}")
-    # Define dummies ensuring router isn't broken
-    def process_tutorial_job(*args, **kwargs): 
-        raise ImportError(f"Job Runner unavailable: {e}")
-    def get_model(*args, **kwargs): 
-        raise ImportError(f"LLM Factory unavailable: {e}")
+# NOTE: We intentionally delay heavy imports (Job Runner, LLM Factory) to runtime
+# inside each endpoint. This prevents startup crashes that would stop the tutorials
+# router from registering, which in turn produced 404s for /api/generate/tutorial
+# whenever Vertex AI or other dependencies weren't ready.
+process_tutorial_job = None
+get_model = None
 
 router = APIRouter()
 
@@ -32,9 +25,18 @@ class CompletionRequest(BaseModel):
 @router.post("/generate/tutorial")
 def start_tutorial_job(topic: str, background_tasks: BackgroundTasks, user: dict = Depends(verify_token)):
     try:
+        global process_tutorial_job
+        if process_tutorial_job is None:
+            try:
+                from app.services.job_runner import process_tutorial_job as _process
+                process_tutorial_job = _process
+            except Exception as imp_err:
+                logger.critical(f"❌ Tutorial Job Runner failed to import: {imp_err}")
+                raise HTTPException(status_code=503, detail="Tutorial worker unavailable. Please try again shortly.")
+
         if not db:
             raise HTTPException(status_code=503, detail="Database not initialized")
-            
+
         job_ref = db.collection("jobs").document()
         job_id = job_ref.id
         job_ref.set({
@@ -43,10 +45,13 @@ def start_tutorial_job(topic: str, background_tasks: BackgroundTasks, user: dict
         })
         background_tasks.add_task(process_tutorial_job, job_id, user['uid'], topic)
         return {"status": "queued", "job_id": job_id}
+    except HTTPException:
+        # Re-raise intentional HTTP responses without wrapping
+        raise
     except Exception as e:
         logger.error(f"❌ Start Tutorial Job Error: {e}")
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to queue tutorial generation. Please try again.")
 
 # --- 2. GRANULAR SKILL SUGGESTIONS ---
 @router.get("/tutorials/suggestions")
@@ -72,6 +77,15 @@ def get_tutorial_suggestions(user: dict = Depends(verify_token)):
         weak_areas = [k for k, v in skills.items() if v == "NOVICE"]
         if not weak_areas: weak_areas = ["Advanced Optimization"] # If they are expert everywhere
 
+        global get_model
+        if get_model is None:
+            try:
+                from app.services.llm_factory import get_model as _get_model
+                get_model = _get_model
+            except Exception as imp_err:
+                logger.error(f"❌ LLM Factory import failed: {imp_err}")
+                raise HTTPException(status_code=503, detail="Suggestions temporarily unavailable.")
+
         model = get_model(intent='fast')
          
         prompt = f"""
@@ -91,6 +105,8 @@ def get_tutorial_suggestions(user: dict = Depends(verify_token)):
         response = model.generate_content(prompt)
         return json.loads(response.text.replace("```json", "").replace("```", "").strip())
  
+    except HTTPException as he:
+        raise he
     except Exception as e:
         # Detailed logging for debugging Cloud Run issues
         logger.error(f"❌ Suggestion Error: {e}")
