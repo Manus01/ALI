@@ -39,7 +39,12 @@ export default function DashboardPage() {
 
     // --- EDIT MODAL STATE ---
     const [editModalOpen, setEditModalOpen] = useState(false);
-    const [editFormData, setEditFormData] = useState({ brand_name: '', logo_url: '' });
+    const [editFormData, setEditFormData] = useState({
+        brand_name: '',
+        logo_url: '',
+        website_url: '',
+        description: ''
+    });
     const [logoFile, setLogoFile] = useState(null);
     const [logoPreview, setLogoPreview] = useState(null);
     const [isSavingBrand, setIsSavingBrand] = useState(false);
@@ -49,7 +54,9 @@ export default function DashboardPage() {
         if (editModalOpen && brandDna) {
             setEditFormData({
                 brand_name: brandDna.brand_name || '',
-                logo_url: brandDna.logo_url || ''
+                logo_url: brandDna.logo_url || '',
+                website_url: brandDna.website_url || '',
+                description: brandDna.description || ''
             });
             setLogoPreview(brandDna.logo_url || null);
         }
@@ -80,7 +87,9 @@ export default function DashboardPage() {
 
             await api.put('/auth/me/brand', {
                 brand_name: editFormData.brand_name,
-                logo_url: finalLogoUrl
+                logo_url: finalLogoUrl,
+                website_url: editFormData.website_url,
+                description: editFormData.description
             });
 
             await refreshProfile();
@@ -411,6 +420,30 @@ export default function DashboardPage() {
                                     onChange={(e) => setEditFormData({ ...editFormData, brand_name: e.target.value })}
                                     placeholder="Enter your brand name"
                                     className="w-full p-4 bg-slate-50 border border-slate-100 rounded-xl font-bold text-slate-800 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
+                                />
+                            </div>
+
+                            {/* Website URL Input */}
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Website URL</label>
+                                <input
+                                    type="text"
+                                    value={editFormData.website_url}
+                                    onChange={(e) => setEditFormData({ ...editFormData, website_url: e.target.value })}
+                                    placeholder="https://your-website.com"
+                                    className="w-full p-4 bg-slate-50 border border-slate-100 rounded-xl text-slate-600 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
+                                />
+                            </div>
+
+                            {/* Description Input */}
+                            <div className="space-y-2">
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Brand Mission / Description</label>
+                                <textarea
+                                    value={editFormData.description}
+                                    onChange={(e) => setEditFormData({ ...editFormData, description: e.target.value })}
+                                    placeholder="Briefly describe your brand's mission or vibe..."
+                                    rows={3}
+                                    className="w-full p-4 bg-slate-50 border border-slate-100 rounded-xl text-slate-600 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
                                 />
                             </div>
 

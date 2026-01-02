@@ -103,6 +103,8 @@ export default function BrandOnboarding() {
             await api.post('/onboarding/complete', {
                 brand_dna: {
                     ...dna,
+                    website_url: url,
+                    description: description,
                     selected_style: style.id,
                     logo_url: finalLogoUrl
                 }
