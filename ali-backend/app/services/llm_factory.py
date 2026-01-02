@@ -1,4 +1,4 @@
-﻿import os
+import os
 import logging
 import vertexai
 from vertexai.generative_models import GenerativeModel
