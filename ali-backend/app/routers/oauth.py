@@ -16,7 +16,7 @@ class ConnectRequest(BaseModel):
 def map_to_airbyte_config(platform, details):
     if platform == 'linkedin':
         return {
-            "start_date": "2024-01-01T00:00:00Z",
+            "start_date": "1970-01-01T00:00:00Z",
             "credentials": {
                 "auth_method": "o_auth2.0",
                 "client_id": details.get("client_id"),
@@ -28,7 +28,7 @@ def map_to_airbyte_config(platform, details):
         }
     elif platform == 'meta':
         return {
-            "start_date": "2024-01-01T00:00:00Z",
+            "start_date": "1970-01-01T00:00:00Z",
             "access_token": details.get("access_token"),
             "account_id": details.get("ad_account_id"),
             "include_deleted": False,
@@ -43,7 +43,7 @@ def map_to_airbyte_config(platform, details):
                 "refresh_token": details.get("refresh_token")
             },
             "customer_id": details.get("customer_id"),
-            "start_date": "2024-01-01"
+            "start_date": "1970-01-01"
         }
     return {}
 
