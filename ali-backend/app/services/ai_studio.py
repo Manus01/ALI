@@ -133,7 +133,7 @@ class CreativeService:
         try:
             model_id = "veo-2.0-generate-001" 
             
-            # Start the LRO
+            # Start the LRO (or synchronous call)
             job = self.client.models.generate_videos(
                 model=model_id,
                 prompt=prompt,
@@ -143,63 +143,74 @@ class CreativeService:
                 )
             )
 
-            # 1. Manual Polling (CRITICAL for user environment)
-            logger.info("⏳ Polling Veo operation...")
-            while not job.done():
-                time.sleep(5)
+            # 1. Manual Polling (Check if it IS an operation)
+            if hasattr(job, 'done'):
+                logger.info("⏳ Polling Veo operation...")
+                while not job.done():
+                    time.sleep(5)
+                
+                # Check for LRO Errors
+                if hasattr(job, 'error') and job.error:
+                    logger.error(f"❌ Veo Operation Failed: {job.error}")
+                    return None
+                
+                # Extract Result from LRO
+                try:
+                    result = job.result
+                except Exception:
+                     # Fallback for some SDKs where .result is a method or private
+                     result = getattr(job, '_result', None)
+            else:
+                # Synchronous Response (Job IS the result)
+                logger.info("⚡ Veo returned synchronous response.")
+                result = job
 
-            # 2. Check for Errors
-            if hasattr(job, 'error') and job.error:
-                logger.error(f"❌ Veo Operation Failed: {job.error}")
-                return None
+            # 2. Aggressive Result Extraction
+            metadata = getattr(job, 'metadata', None)
             
-            # 3. Aggressive Result Extraction
-            result = None
-            metadata = None
-            
-            # A. Try Property .result
-            try:
-                result = job.result 
-            except Exception:
-                pass
-            
-            # B. Try Internal ._result
-            if not result and hasattr(job, '_result'):
-                result = job._result
-            
-            # C. Try Metadata (Some versions put bytes here on partial success/streams)
-            if hasattr(job, 'metadata'):
-                metadata = job.metadata
-
-            # 4. Byte Extraction Strategy (Priority: Bytes -> Upload)
+            # 3. Byte Extraction Strategy (Priority: Bytes -> Upload)
             video_bytes = None
+            
+            # Helper to get attr or key
+            def get_val(obj, key):
+                if isinstance(obj, dict): return obj.get(key)
+                return getattr(obj, key, None)
             
             # Strategy A: Check Result Object
             if result:
-                if hasattr(result, 'video_bytes') and result.video_bytes:
-                    video_bytes = result.video_bytes
-                elif hasattr(result, 'generated_videos') and result.generated_videos:
-                    vid = result.generated_videos[0]
-                    if hasattr(vid, 'video_bytes') and vid.video_bytes:
-                        video_bytes = vid.video_bytes
-                    elif hasattr(vid, 'uri') and vid.uri:
-                         return self._get_signed_url(vid.uri)
+                # Direct bytes on result
+                video_bytes = get_val(result, 'video_bytes')
+                
+                # Generated Videos List
+                if not video_bytes:
+                    generated_videos = get_val(result, 'generated_videos')
+                    if generated_videos and len(generated_videos) > 0:
+                        vid = generated_videos[0]
+                        video_bytes = get_val(vid, 'video_bytes')
+                        
+                        # Fallback to URI
+                        if not video_bytes:
+                            uri = get_val(vid, 'uri')
+                            if uri:
+                                return self._get_signed_url(uri)
             
             # Strategy B: Check Metadata (Fallback)
             if not video_bytes and metadata:
                 logger.debug("🔍 Checking Metadata for video bytes...")
-                if hasattr(metadata, 'video_bytes') and metadata.video_bytes:
-                    video_bytes = metadata.video_bytes
-                # Sometimes metadata is a dict
-                elif isinstance(metadata, dict) and 'video_bytes' in metadata:
-                    video_bytes = metadata['video_bytes']
+                video_bytes = get_val(metadata, 'video_bytes')
 
             if video_bytes:
                 logger.info(f"✅ VEO returned {len(video_bytes)} bytes. Uploading to GCS...")
                 return self._upload_bytes_to_gcs(video_bytes, "video/mp4", "mp4")
 
-            # Final Failure State
+            # Final Failure State - LOG EVERYTHING
             logger.error("❌ Veo completed but NO BYTES and NO URI found.")
+            logger.error(f"DEBUG: Result Type: {type(result)}")
+            logger.error(f"DEBUG: Result Dir: {dir(result)}")
+            if result:
+                try: logger.error(f"DEBUG: Result Content: {str(result)[:500]}")
+                except: pass
+            
             return None
 
         except Exception as e:
