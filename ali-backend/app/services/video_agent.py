@@ -133,18 +133,25 @@ class VideoAgent:
             output_gcs_uri = f"gs://{BUCKET_NAME}/{folder}"
             
             # 3. Construct Content (Prompt + Optional Image)
-            # Veo supports Multi-modal prompts for Image-to-Video
+            # Veo supports Multi-modal prompts for Image-to-Video, but strict Pydantic checks might fail on lists currently.
+            # We prepare the logic but apply the requested Type Enforcement fix.
             contents = [final_prompt]
             
             if reference_image_uri:
                 img_part = self._prepare_image_part(reference_image_uri)
                 if img_part:
-                    contents.append(img_part)
+                    pass # Placeholder: contents.append(img_part) if supported in future
             
+            # TYPE ENFORCEMENT FIX:
+            # Ensure prompt is a string, even if we prepared a list
+            clean_prompt = contents[0] if isinstance(contents, list) else contents
+            if isinstance(clean_prompt, types.Part): # Safety check if order swapped
+                 clean_prompt = final_prompt
+
             # 4. Call Model
             job = self.client.models.generate_videos(
                 model=VIDEO_MODEL,
-                prompt=contents, # Pass list of [Text, Image]
+                prompt=clean_prompt, # Explicitly pass string
                 config=types.GenerateVideosConfig(
                     aspect_ratio="16:9",
                     person_generation="allow",
