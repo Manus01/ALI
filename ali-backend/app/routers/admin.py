@@ -75,6 +75,19 @@ def get_performance_logs(target_user_id: Optional[str] = None, admin: dict = Dep
     query = db.collection("ad_performance_logs").order_by("date").limit(100)
     return {"data": [doc.to_dict() for doc in query.stream()]}
 
+
+@router.get("/integration-alerts")
+def get_integration_alerts(admin: dict = Depends(verify_admin)):
+    alerts_query = db.collection("admin_alerts").order_by("created_at", direction=firestore.Query.DESCENDING).limit(50)
+    alerts = []
+
+    for doc in alerts_query.stream():
+        entry = doc.to_dict()
+        entry["id"] = doc.id
+        alerts.append(entry)
+
+    return {"alerts": alerts}
+
 @router.get("/research/users")
 def get_research_users(admin: dict = Depends(verify_admin)):
     """

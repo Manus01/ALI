@@ -29,10 +29,27 @@ class MetricoolClient:
         self.user_id = METRICOOL_USER_ID
         self.blog_id = blog_id
 
+    def _auth_params(self) -> Dict[str, Any]:
+        """
+        Metricool's docs show examples using both snake_case and camelCase auth params.
+        To stay compatible, we include both when calling the public API endpoints.
+        """
+        return {
+            # As documented in https://help.metricool.com/en/article/basic-guide-for-api-integration-abukgf/
+            "user_token": METRICOOL_USER_TOKEN,
+            "user_id": self.user_id,
+            # Some SDK examples use camelCase
+            "userToken": METRICOOL_USER_TOKEN,
+            "userId": self.user_id,
+        }
+
     def get_brand_status(self, blog_id: str) -> Dict[str, Any]:
-        """Checks if a brand is connected and valid by fetching the user's blog list."""
+        """
+        Checks if a brand (blog) exists for the authenticated agency user.
+        Metricool's "user" endpoint returns the list of blogs with their connection info.
+        """
         url = f"{BASE_URL}/v2/user"
-        params = {"userId": self.user_id, "userToken": METRICOOL_USER_TOKEN}
+        params = self._auth_params()
         
         try:
             res = requests.get(url, headers=self.headers, params=params)
@@ -52,31 +69,56 @@ class MetricoolClient:
             logger.error(f"❌ Metricool Check Failed: {e}")
             raise ValueError(f"Could not verify Brand ID {blog_id}: {e}")
 
+    def _extract_connected_providers(self, blog: Dict[str, Any]) -> List[str]:
+        """
+        Metricool can report connected social platforms in a few shapes depending on the
+        endpoint version:
+        - blogs[].socialNetworks: list of {id/name, connected/selected}
+        - blogs[].providers: list of provider codes (e.g. ["facebook", "instagram"])
+        - blogs[].networks: list of {provider, status}
+        We normalize all of them to a lowercase list of provider names.
+        """
+        connected: List[str] = []
+
+        # v2 user blogs payload often contains "socialNetworks"
+        for net in blog.get("socialNetworks", []) or []:
+            if isinstance(net, dict):
+                if net.get("connected") or net.get("selected") or net.get("status") == "connected":
+                    connected.append(net.get("id") or net.get("name") or net.get("provider"))
+
+        # Some payloads expose a flat providers array
+        if not connected and isinstance(blog.get("providers"), list):
+            connected.extend(blog.get("providers") or [])
+
+        # Other responses use a networks array with provider/status
+        for net in blog.get("networks", []) or []:
+            if isinstance(net, dict) and (net.get("connected") or net.get("status") == "connected"):
+                connected.append(net.get("provider") or net.get("id") or net.get("name"))
+
+        # Normalize and deduplicate
+        normalized = []
+        for p in connected:
+            if not p:
+                continue
+            val = str(p).lower()
+            if val not in normalized:
+                normalized.append(val)
+        return normalized
+
     def get_account_info(self) -> Dict[str, Any]:
         """
         Fetches detailed account info including connected providers.
+        Uses the user/blog discovery endpoint recommended in the Metricool basic guide
+        so we avoid undocumented calls and stay within supported API patterns.
         """
         if not self.blog_id:
             return {"connected": []}
-            
+
         try:
             # Reuse get_brand_status logic to fetch blog details
             data = self.get_brand_status(self.blog_id)
-            
-            # Extract connected providers from the response
-            # Note: The actual field name depends on Metricool API response.
-            # Usually it's 'socialNetworks' or similar.
-            # We'll assume a list of objects or keys.
-            connected = []
-            if 'socialNetworks' in data and isinstance(data['socialNetworks'], list):
-                for net in data['socialNetworks']:
-                    if net.get('selected'): # Assuming 'selected' or existence implies connection
-                        connected.append(net.get('id') or net.get('name'))
-            
-            # Fallback/Simulation if API structure differs (for safety)
-            if not connected and 'providers' in data and isinstance(data['providers'], list):
-                 connected = data['providers']
-                 
+            connected = self._extract_connected_providers(data)
+
             return {"connected": connected}
         except Exception as e:
             logger.error(f"❌ Get Account Info Failed: {e}")

@@ -1,4 +1,4 @@
-﻿from fastapi import APIRouter, Depends, HTTPException, Request
+﻿from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from app.core.security import verify_token, db
 from app.services.metricool_client import MetricoolClient
 import logging
@@ -88,3 +88,21 @@ def get_metricool_status(user: dict = Depends(verify_token)):
     except Exception as e:
         print(f"❌ Metricool Status Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/integrations/report-error")
+def report_integration_error(payload: dict = Body(...), user: dict = Depends(verify_token)):
+    """Record integration issues for admin visibility without surfacing to the user UI."""
+    message = payload.get("message", "Unknown integration error")
+    context = payload.get("context", "metricool")
+
+    db.collection("admin_alerts").add({
+        "type": "integration_error",
+        "context": context,
+        "message": message,
+        "user_id": user.get("uid"),
+        "user_email": user.get("email"),
+        "created_at": datetime.utcnow().isoformat()
+    })
+
+    return {"status": "recorded"}

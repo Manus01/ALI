@@ -13,7 +13,8 @@ import {
     FaLinkedin,
     FaFacebook,
     FaTiktok,
-    FaUnlink
+    FaUnlink,
+    FaTimes
 } from 'react-icons/fa';
 import { getFirestore, collection, onSnapshot } from 'firebase/firestore';
 
@@ -45,6 +46,14 @@ export default function IntegrationsPage() {
     const [connectedProviders, setConnectedProviders] = useState([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
+
+    const reportIntegrationIssue = async (message, context = 'metricool_status_fetch') => {
+        try {
+            await api.post('/integrations/report-error', { message, context });
+        } catch (reportErr) {
+            console.error('Failed to notify admin about integration issue', reportErr);
+        }
+    };
 
     // --- 1. Real-time Status Listener (SECURE PATH) ---
     useEffect(() => {
@@ -79,12 +88,16 @@ export default function IntegrationsPage() {
         setRefreshing(true);
         try {
             const res = await api.get('/connect/metricool/status');
+            if (res.data?.error) {
+                await reportIntegrationIssue(res.data.error, 'metricool_status_response');
+            }
             const providers = (res.data.connected_providers || [])
                 .filter(Boolean)
                 .map(p => p.toString().toLowerCase());
             setConnectedProviders([...new Set(providers)]);
         } catch (err) {
             console.error("Failed to fetch providers", err);
+            await reportIntegrationIssue(err.response?.data?.detail || err.message);
         } finally {
             setRefreshing(false);
         }
@@ -119,6 +132,9 @@ export default function IntegrationsPage() {
             alert("Failed to disconnect.");
         }
     };
+
+    const availableProviders = Array.from(new Set([...Object.keys(PROVIDER_ICONS), ...connectedProviders]));
+    const providerRows = [...availableProviders].sort();
 
     if (loading) return <div className="p-8 text-slate-400">Loading Integration Status...</div>;
 
@@ -158,14 +174,51 @@ export default function IntegrationsPage() {
                     {status === 'active' && (
                         <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex items-center gap-3 text-green-800 text-sm font-medium">
                             <FaCheckCircle className="text-lg" />
-                            <div className="flex-1">
+                            <div className="flex-1 space-y-3">
                                 <strong>Social Accounts Linked</strong>
-                                <div className="flex flex-wrap gap-3 mt-2">
+                                <div className="flex flex-wrap gap-3">
                                     {connectedProviders.length > 0 ? connectedProviders.map(p => (
                                         <ProviderBadge key={p} provider={p} />
                                     )) : <span className="text-xs opacity-70">No channels detected yet.</span>}
                                 </div>
-                                <p className="text-[11px] text-slate-500 mt-3">
+                                <div className="bg-white/60 border border-green-100 rounded-lg overflow-hidden">
+                                    <table className="w-full text-left text-xs">
+                                        <thead className="bg-green-100 text-green-700 uppercase text-[10px] tracking-widest font-black">
+                                            <tr>
+                                                <th className="py-2 px-3">Channel</th>
+                                                <th className="py-2 px-3">Status</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {providerRows.map((provider) => {
+                                                const isConnected = connectedProviders.includes(provider);
+                                                const icon = PROVIDER_ICONS[provider] || <FaHashtag />;
+                                                return (
+                                                    <tr key={provider} className="border-t border-green-100">
+                                                        <td className="py-2 px-3">
+                                                            <div className="flex items-center gap-2 text-slate-700">
+                                                                <span className="text-base">{icon}</span>
+                                                                <span className="capitalize font-semibold">{provider}</span>
+                                                            </div>
+                                                        </td>
+                                                        <td className="py-2 px-3">
+                                                            {isConnected ? (
+                                                                <span className="inline-flex items-center gap-2 text-green-700 font-bold">
+                                                                    <FaCheckCircle /> Connected
+                                                                </span>
+                                                            ) : (
+                                                                <span className="inline-flex items-center gap-2 text-red-500 font-bold">
+                                                                    <FaTimes /> Not Connected
+                                                                </span>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                );
+                                            })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <p className="text-[11px] text-slate-500">
                                     We automatically backfill data from the earliest available date provided by each platform so
                                     your dashboards start with maximum history.
                                 </p>
