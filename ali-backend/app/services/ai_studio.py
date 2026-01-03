@@ -13,7 +13,7 @@ from google.cloud import storage
 logger = logging.getLogger("ali_platform.services.ai_studio")
 
 # Stable alias defaults (auto-upgrade without code changes)
-VIDEO_MODEL_ALIAS = os.getenv("VERTEX_VIDEO_MODEL_ALIAS", "veo-2.0")
+VIDEO_MODEL_ALIAS = os.getenv("VERTEX_VIDEO_MODEL_ALIAS", "veo-3.1-generate-001")
 IMAGE_MODEL_ALIAS = os.getenv("VERTEX_IMAGE_MODEL_ALIAS", "imagen-3.0")
 TTS_MODEL_ALIAS = os.getenv("VERTEX_TTS_MODEL_ALIAS", "gemini-2.5-pro")
 BUCKET_NAME = "ali-platform-prod-73019.firebasestorage.app"
