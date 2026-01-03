@@ -5,7 +5,7 @@ from app.services.llm_factory import get_model
 
 load_dotenv()
 
-def review_tutorial_relevance(tutorial_data: dict, current_metrics: list, user_profile: dict) -> dict:
+async def review_tutorial_relevance(tutorial_data: dict, current_metrics: list, user_profile: dict) -> dict:
     """
     Analyzes if a tutorial is still valid based on new data using 4C/ID principles.
     Returns: { "is_outdated": bool, "reason": str }
@@ -46,7 +46,8 @@ def review_tutorial_relevance(tutorial_data: dict, current_metrics: list, user_p
     
     try:
         model = get_model(intent='fast')
-        response = model.generate_content(prompt)
+        # ASYNC FIX
+        response = await model.generate_content_async(prompt)
         text = response.text.replace("```json", "").replace("```", "").strip()
         return json.loads(text)
     except Exception as e:

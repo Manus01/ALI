@@ -199,15 +199,17 @@ def design_section_assets(section_text, section_meta, metaphor, struggle_topics:
 
 from app.services.video_agent import VideoAgent
 from app.services.image_agent import ImageAgent
+from app.services.audio_agent import AudioAgent
 
 # ... (imports remain)
 
 # --- MAIN CONTROLLER ---
 def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context: str = None, progress_callback=None):
     # Initialize all Creative Agents
-    creative = CreativeService() # Still used for Audio (TTS)
+    # creative = CreativeService() # DEPRECATED
     video_agent = VideoAgent()
     image_agent = ImageAgent()
+    audio_agent = AudioAgent()
     
     # Fetch Context (Profile + Campaigns)
     # ... (existing context fetching logic) ...
@@ -305,15 +307,30 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
                 audios = [b for b in assets if b['type'] in ['audio_note', 'callout_pro_tip']]
                 quizzes = [b for b in assets if b['type'] in ['quiz_single', 'quiz_final']]
                 
-                for block in visuals:
-                    processed = fabricate_block(block, topic, creative, video_agent, image_agent)
-                    if processed: combined_blocks.append(processed)
+                # PARALLEL GENERATION OPTIMIZATION
+                # Generate all assets concurrently to speed up section creation.
+                from concurrent.futures import ThreadPoolExecutor
+                
+                p_visuals = []
+                p_audios = []
+                
+                with ThreadPoolExecutor() as executor:
+                    # Helper lambda to capture agents
+                    fab_task = lambda b: fabricate_block(b, topic, video_agent, image_agent, audio_agent)
+                    
+                    # Submit both batches
+                    # We use list() to force execution and catch exceptions within the try/except block of the section loop
+                    p_visuals = list(executor.map(fab_task, visuals))
+                    p_audios = list(executor.map(fab_task, audios))
+
+                # Assemble Block (Order: Visuals -> Text -> Audio -> Quiz)
+                for pv in p_visuals:
+                    if pv: combined_blocks.append(pv)
 
                 combined_blocks.append({ "type": "text", "content": narrative_text })
 
-                for block in audios:
-                    processed = fabricate_block(block, topic, creative, video_agent, image_agent)
-                    if processed: combined_blocks.append(processed)
+                for pa in p_audios:
+                    if pa: combined_blocks.append(pa)
 
                 for block in quizzes:
                     combined_blocks.append(block)
@@ -368,7 +385,7 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
         
     return tutorial_data
 
-def fabricate_block(block, topic, creative, video_agent, image_agent):
+def fabricate_block(block, topic, video_agent, image_agent, audio_agent):
     """ Helper to call Creative Agents safely. Raises Error on Critical Failure. """
     try:
         if block["type"] == "video_clip":
@@ -403,8 +420,8 @@ def fabricate_block(block, topic, creative, video_agent, image_agent):
             if not s: s = f"Let's focus on {topic}."
             logger.info(f"      🎙️ TTS Generating...")
             
-            # Use Legacy Creative Service for Audio
-            url = creative.generate_audio(s)
+            # Use Audio Agent (Persistent)
+            url = audio_agent.generate_audio(s, folder="tutorials")
             
             # STRICT CHECK: Must have a URL
             if not url or not url.startswith("http"):

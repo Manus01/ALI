@@ -12,7 +12,7 @@ from google.cloud import storage
 logger = logging.getLogger("ali_platform.services.video_agent")
 
 # Configuration
-BUCKET_NAME = "ali-platform-prod-73019.firebasestorage.app"
+BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "ali-platform-prod-73019.firebasestorage.app")
 VIDEO_MODEL = "veo-3.1-generate-001"
 
 class VideoAgent:

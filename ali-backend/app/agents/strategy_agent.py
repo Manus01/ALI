@@ -25,7 +25,7 @@ class PredictionResult(BaseModel):
 
 # --- 2. DEFINE TOOLS (PREDICTION LOGIC) ---
 
-def predict_cpc_change(
+async def predict_cpc_change(
     current_cpc: float, 
     campaign_data: List[Dict], 
     proposed_strategy: str
@@ -53,7 +53,8 @@ def predict_cpc_change(
         
         model = get_model(intent='fast')
          
-        response = model.generate_content(
+        # ASYNC FIX
+        response = await model.generate_content_async(
             prompt,
             generation_config=GenerationConfig(
                 response_mime_type="application/json",
@@ -82,21 +83,15 @@ class StrategyAgent(BaseAgent):
     """
     def __init__(self, agent_name: str = "StrategyAgent"):
         super().__init__("StrategyAgent")
-        # self.model is used to store the model instance now, not the name string
         self.model_instance = None 
         self.client = None
         self.tools = [predict_cpc_change]
-        
-        # Services for data fetching
         self.db = db
         self.crypto_service = CryptoService()
-
-        # Eagerly initialize the GenAI client so downstream calls are ready.
         self._ensure_client()
 
     def _ensure_client(self):
-        if self.client:
-            return self.client
+        if self.client: return self.client
         try:
             self.client = get_model(intent='complex')
         except Exception as e:
@@ -105,11 +100,8 @@ class StrategyAgent(BaseAgent):
         return self.client
 
     def _fetch_real_data(self, user_id: str) -> List[Dict]:
-        """
-        Internal helper: Fetches real ad metrics from Windsor.ai for this user.
-        """
+        """Internal helper: Fetches real ad metrics from Windsor.ai for this user."""
         try:
-            # 1. Get Windsor API Key from Firestore
             doc_ref = self.db.collection("user_integrations").document(f"{user_id}_windsor_ai")
             doc = doc_ref.get()
             
@@ -120,21 +112,15 @@ class StrategyAgent(BaseAgent):
             encrypted_key = doc.to_dict().get("credentials")
             api_key = self.crypto_service.decrypt_credential(user_id, encrypted_key)
             
-            # 2. Fetch Data (e.g., Meta Ads + Google Ads)
             windsor = WindsorClient(api_key=api_key)
-            
-            # Fetch last 30 days of data
-            # You can aggregate multiple sources here if needed
             meta_data = windsor.fetch_metrics("meta_ads", days_lookback=30)
-            
-            # Return raw data list
             return meta_data
             
         except Exception as e:
             logger.error(f"StrategyAgent Data Fetch Error: {e}")
             return []
 
-    def generate_strategy(self, user_prompt: str, user_id: str) -> str:
+    async def generate_strategy(self, user_prompt: str, user_id: str) -> str:
         """
         Generates a marketing strategy based on REAL Windsor.ai data.
         """
@@ -168,30 +154,6 @@ class StrategyAgent(BaseAgent):
         current_cpc = round(total_spend / total_clicks, 2) if total_clicks > 0 else 0.0
 
         # 3. PREPARE PROMPT
-        system_instruction = f"""
-        You are the 'Strategy Agent'. Your goal is to analyze the user's prompt and their REAL ad performance data
-        to devise a detailed marketing strategy.
-        
-        CRITICAL:
-        1. Analyze the historical data patterns.
-        2. Formulate a strategy.
-        3. Call the `predict_cpc_change` tool with the strategy and data.
-        4. Output the final JSON.
-
-        Final JSON Schema:
-        {{
-            "title": "string",
-            "summary": "string",
-            "strategy_steps": ["string", "string"],
-            "metrics_to_watch": ["string"],
-            "prediction": {{PredictionResult Schema}},
-            "created_at": "ISO string"
-        }}
-        """
-
-        # Summarize data for token efficiency
-        data_summary = json.dumps(historical_data[:15], indent=2) # Limit to recent 15 records
-
         user_prompt_with_data = f"""
         User Goal: {user_prompt}
         
@@ -200,43 +162,22 @@ class StrategyAgent(BaseAgent):
         - Avg CPC: ${current_cpc}
         
         Recent Campaign Data:
-        {data_summary}
+        {json.dumps(historical_data[:15], indent=2)}
         """
 
-        # 4. AGENT EXECUTION LOOP
+        # 4. AGENT EXECUTION LOOP (ASYNC)
         try:
-            from vertexai.generative_models import Content, Part, Tool
-        except Exception as e:
-            logger.error(f"Types import failed: {e}")
-            return json.dumps({
-                "title": "AI Unavailable",
-                "summary": "GenAI types not available.",
-                "strategy_steps": [],
-                "metrics_to_watch": [],
-                "prediction": None,
-                "created_at": datetime.now().isoformat()
-            })
-        
-        # Vertex AI SDK uses Content/Part objects differently or similar structure
-        # Content(role="user", parts=[Part.from_text(...)])
-        messages = [Content(role="user", parts=[Part.from_text(user_prompt_with_data)])]
-        
-        # A. Plan & Tool Call
-        # client is now the GenerativeModel instance
-        # Vertex AI tools need to be wrapped in Tool object
-        # For simplicity in this refactor, we might skip the tool definition if complex
-        # But let's try to adapt. Vertex AI tools are defined differently.
-        # We will simplify to text-only for this surgical refactor to ensure stability
-        # or use the model directly.
-        
-        response = client.generate_content(
-             contents=messages,
-             # system_instruction is passed to GenerativeModel constructor usually, 
-             # but can be passed here in some versions? No, usually constructor.
-             # We'll skip system_instruction here or re-init model with it.
-        )
+            from vertexai.generative_models import Content, Part
+            messages = [Content(role="user", parts=[Part.from_text(user_prompt_with_data)])]
+            
+            # ASYNC FIX
+            response = await client.generate_content_async(
+                 contents=messages
+            )
 
-        # B. Handle Tool Call
-        # (Simplified for refactor stability - Vertex AI tool handling is verbose)
-        # We return text directly.
-        return response.text
+            # B. Handle Tool Call (Simplified text return for stability)
+            return response.text
+
+        except Exception as e:
+            logger.error(f"Strategy Gen Error: {e}")
+            return json.dumps({"error": str(e)})

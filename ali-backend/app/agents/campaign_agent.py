@@ -44,7 +44,7 @@ class CampaignAgent(BaseAgent):
         """
         
         try:
-            response = self.model.generate_content(prompt)
+            response = await self.model.generate_content_async(prompt)
             # Cleanup JSON formatting from AI response
             raw_text = response.text.strip().replace('```json', '').replace('```', '')
             return json.loads(raw_text)
@@ -66,18 +66,18 @@ class CampaignAgent(BaseAgent):
         1. 'theme': A 1-sentence title for the campaign.
         2. 'instagram': A 'caption' and a 'visual_prompt'.
         3. 'tiktok': A 'video_script' and 'audio_style'.
-        5. 'google_ads': {
+        5. 'google_ads': {{
             'headlines': ["Headline 1 (max 30 chars)", ...],
             'descriptions': ["Desc 1 (max 90 chars)", ...],
             'keywords': ["keyword1", "keyword2", ...]
-        }
+        }}
 
         Ensure the tone strictly follows the Brand DNA and respects the cultural target.
         Return ONLY a JSON object.
         """
         
         try:
-            response = self.model.generate_content(prompt)
+            response = await self.model.generate_content_async(prompt)
             raw_text = response.text.strip().replace('```json', '').replace('```', '')
             return json.loads(raw_text)
         except Exception as e:

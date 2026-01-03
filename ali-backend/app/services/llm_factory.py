@@ -9,7 +9,8 @@ from typing import Optional
 logger = logging.getLogger("ali_platform.services.llm_factory")
 
 # Initialize Vertex AI globally using Identity (No Keys)
-project_id = os.environ.get("GOOGLE_CLOUD_PROJECT")
+# Prefer GENAI_PROJECT_ID if set (Standard for this project)
+project_id = os.environ.get("GENAI_PROJECT_ID") or os.environ.get("GOOGLE_CLOUD_PROJECT")
 location = os.environ.get("VERTEX_LOCATION", "us-central1")
 
 try:

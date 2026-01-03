@@ -3,6 +3,7 @@ from bs4 import BeautifulSoup
 import os
 import json
 import logging
+import asyncio
 from .base_agent import BaseAgent
 from app.services.llm_factory import get_model
 
@@ -34,12 +35,15 @@ class BrandAgent(BaseAgent):
                     'Upgrade-Insecure-Requests': '1'
                 }
                 
-                response = requests.get(url, headers=headers, timeout=15)
+                # CRITICAL FIX: Run blocking I/O (requests) in a separate thread
+                response = await asyncio.to_thread(requests.get, url, headers=headers, timeout=15)
                 
                 if response.status_code != 200:
                     self.log_task(f"Warning: Site returned status {response.status_code}. Using fallback logic.")
                 
-                soup = BeautifulSoup(response.text, 'html.parser')
+                # Parsing HTML can be CPU bound, offload if heavy, but usually okay for small pages.
+                # To be safe:
+                soup = await asyncio.to_thread(BeautifulSoup, response.text, 'html.parser')
                 
                 # Strip noise
                 for script_or_style in soup(["script", "style"]):
@@ -84,7 +88,8 @@ class BrandAgent(BaseAgent):
             }}
             """
 
-            response = self.model.generate_content(prompt)
+            # CRITICAL FIX: Use Native Async Method
+            response = await self.model.generate_content_async(prompt)
             clean_json = response.text.strip().replace('```json', '').replace('```', '')
             return json.loads(clean_json)
 

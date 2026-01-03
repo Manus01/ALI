@@ -12,7 +12,7 @@ from google.cloud import storage
 logger = logging.getLogger("ali_platform.services.image_agent")
 
 # Configuration
-BUCKET_NAME = "ali-platform-prod-73019.firebasestorage.app"
+BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "ali-platform-prod-73019.firebasestorage.app")
 IMAGE_MODEL = "imagen-3.0-generate-001"
 
 class ImageAgent:
