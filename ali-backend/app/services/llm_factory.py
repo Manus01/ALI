@@ -22,10 +22,11 @@ except Exception as e:
     logger.error(f"⚠️ Vertex AI Init Failed: {e}. AI features may be unavailable.")
 
 # 🏛️ Stable Aliases (Auto-healing)
+# 🏛️ Stable Aliases (Auto-healing)
 MODEL_ALIASES = {
-    "complex": os.getenv("VERTEX_MODEL_ALIAS_COMPLEX", "gemini-1.5-pro-latest"),
-    "fast": os.getenv("VERTEX_MODEL_ALIAS_FAST", "gemini-1.5-flash-latest"),
-    "lite": os.getenv("VERTEX_MODEL_ALIAS_LITE", "gemini-1.5-flash-latest"),
+    "complex": os.getenv("VERTEX_MODEL_ALIAS_COMPLEX", "gemini-2.5-pro"),
+    "fast": os.getenv("VERTEX_MODEL_ALIAS_FAST", "gemini-2.5-pro"),
+    "lite": os.getenv("VERTEX_MODEL_ALIAS_LITE", "gemini-2.5-pro"),
 }
 
 def get_model(intent: str = "fast") -> GenerativeModel:
