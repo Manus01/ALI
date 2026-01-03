@@ -154,22 +154,45 @@ class CreativeService:
         logger.info(f"🎬 Veo Engine: Generating video for '{prompt}'...")
 
         try:
+            # 1. Prepare GCS Output (Robustness Fix)
+            # Instead of relying on unreliable byte returns, ask VEO to write to GCS directly.
+            project_id = os.getenv("PROJECT_ID", "ali-platform-prod-73019")
+            bucket_name = f"{project_id}-assets"
+            output_gcs_uri = f"gs://{bucket_name}"
+            
+            # Ensure bucket exists
+            if self.storage_client:
+                try:
+                    bucket = self.storage_client.bucket(bucket_name)
+                    if not bucket.exists():
+                         logger.info(f"   Bucket {bucket_name} missing. Creating for VEO output...")
+                         bucket = self.storage_client.create_bucket(bucket_name, location=os.getenv("AI_STUDIO_LOCATION", "us-central1"))
+                except Exception as b_err:
+                     logger.warning(f"⚠️ Bucket check failed: {b_err}. VEO might fail if bucket missing.")
+
             model_id = "veo-2.0-generate-001" 
             
-            # Start the LRO (or synchronous call)
+            # Start the LRO
             job = self.client.models.generate_videos(
                 model=model_id,
                 prompt=prompt,
                 config=types.GenerateVideosConfig(
                     aspect_ratio="16:9",
-                    person_generation="allow"
+                    person_generation="allow",
+                    output_gcs_uri=output_gcs_uri
                 )
             )
 
-            # 1. Manual Polling (Check if it IS an operation)
+            # 2. Manual Polling (Check if it IS an operation)
             if hasattr(job, 'done'):
-                logger.info("⏳ Polling Veo operation...")
-                while not job.done():
+                logger.debug(f"⏳ Polling Veo operation... (job.done is {type(job.done)})")
+                
+                def is_done(j):
+                    if callable(j.done): return j.done()
+                    if j.done is None: return True # Assume done if None to avoid loop
+                    return j.done # Boolean property
+                
+                while not is_done(job):
                     time.sleep(5)
                 
                 # Check for LRO Errors
@@ -179,9 +202,12 @@ class CreativeService:
                 
                 # Extract Result from LRO
                 try:
-                    result = job.result
+                    if hasattr(job, 'result') and callable(job.result):
+                         result = job.result()
+                    else:
+                         result = getattr(job, 'result', None)
                 except Exception:
-                     # Fallback for some SDKs where .result is a method or private
+                     # Fallback for some SDKs where .result property raises if not ready (should be ready here)
                      result = getattr(job, '_result', None)
             else:
                 # Synchronous Response (Job IS the result)
@@ -191,11 +217,12 @@ class CreativeService:
             # 2. Aggressive Result Extraction
             metadata = getattr(job, 'metadata', None)
             
-            # 3. Byte Extraction Strategy (Priority: Bytes -> Upload)
+            # 3. Byte Extraction Strategy
             video_bytes = None
             
             # Helper to get attr or key
             def get_val(obj, key):
+                if not obj: return None
                 if isinstance(obj, dict): return obj.get(key)
                 return getattr(obj, key, None)
             
@@ -217,7 +244,7 @@ class CreativeService:
                             if uri:
                                 return self._get_signed_url(uri)
             
-            # Strategy B: Check Metadata (Fallback)
+            # Strategy B: Check Metadata
             if not video_bytes and metadata:
                 logger.debug("🔍 Checking Metadata for video bytes...")
                 video_bytes = get_val(metadata, 'video_bytes')
@@ -226,14 +253,13 @@ class CreativeService:
                 logger.info(f"✅ VEO returned {len(video_bytes)} bytes. Uploading to GCS...")
                 return self._upload_bytes_to_gcs(video_bytes, "video/mp4", "mp4")
 
-            # Final Failure State - LOG EVERYTHING
+            # Final Failure State
             logger.error("❌ Veo completed but NO BYTES and NO URI found.")
-            logger.error(f"DEBUG: Result Type: {type(result)}")
-            logger.error(f"DEBUG: Result Dir: {dir(result)}")
-            if result:
-                try: logger.error(f"DEBUG: Result Content: {str(result)[:500]}")
-                except: pass
-            
+            try: logger.error(f"DEBUG: Job Type: {type(job)}")
+            except: pass
+            try: logger.error(f"DEBUG: Result Type: {type(result)}")
+            except: pass
+             
             return None
 
         except Exception as e:
