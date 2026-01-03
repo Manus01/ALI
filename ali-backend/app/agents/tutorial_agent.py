@@ -59,7 +59,7 @@ def validate_quiz_data(assets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return assets
 
 # --- 1. THE ARCHITECT (Curriculum + Metaphor) ---
-def generate_curriculum_blueprint(topic, profile, campaign_context, struggles):
+def generate_curriculum_blueprint(topic, profile, campaign_context, struggles, struggle_topics: Optional[List[Dict[str, Any]]] = None):
     # UPGRADE: Using Gemini 2.5 Pro for High-Level Instructional Design
     model = get_model(intent='complex') 
     
@@ -72,6 +72,7 @@ def generate_curriculum_blueprint(topic, profile, campaign_context, struggles):
     - Style: {profile.get('learning_style', 'VISUAL')}
     - Data: {campaign_context}
     - **Identified Struggles**: {struggles if struggles else "None detected."} (Address these explicitly if present).
+    - **Quiz Weak Points**: {struggle_topics if struggle_topics else "None provided."}
 
     ### PEDAGOGICAL STRATEGY (4C/ID & Gamification)
     1. **Learning Tasks**: Authentic, whole-task experiences.
@@ -112,7 +113,7 @@ def generate_curriculum_blueprint(topic, profile, campaign_context, struggles):
             time.sleep(2)
 
 # --- 2. THE PROFESSOR (Pass 1: Text Only) ---
-def write_section_narrative(section_meta, topic, metaphor, profile):
+def write_section_narrative(section_meta, topic, metaphor, profile, struggle_topics: Optional[List[Dict[str, Any]]] = None):
     """
     Writes the educational text using Constructivist principles.
     """
@@ -126,6 +127,7 @@ def write_section_narrative(section_meta, topic, metaphor, profile):
     - **Type:** {section_meta.get('type', 'general')}
     - **Goal:** {section_meta['goal']}
     - **Metaphor:** {metaphor} (Weave this analogy throughout).
+    - **Remediation Targets:** {struggle_topics if struggle_topics else "None"}
     
     **STRICT OUTPUT RULES:**
     1. **Start IMMEDIATELY** with the lesson content. 
@@ -137,7 +139,7 @@ def write_section_narrative(section_meta, topic, metaphor, profile):
     return response.text.strip().strip('"')
 
 # --- 3. THE DESIGNER (Pass 2: Assets & Quiz) ---
-def design_section_assets(section_text, section_meta, metaphor):
+def design_section_assets(section_text, section_meta, metaphor, struggle_topics: Optional[List[Dict[str, Any]]] = None):
     """
     Generates supporting assets.
     STRICT ENFORCEMENT of Mixed-Media (VEO/TTS).
@@ -172,6 +174,7 @@ def design_section_assets(section_text, section_meta, metaphor):
     2. **TTS Audio:** Script must be a concise, engaging summary of the key concept.
     3. **Quiz Standardization (CRITICAL):**
        - `correct_answer` must be an INTEGER index (0-3).
+       - Integrate remediation for these quiz weaknesses: {struggle_topics if struggle_topics else "None"}.
        
        *Schema:*
        - `quiz_single`: {{ "question": "...", "options": ["A","B","C","D"], "correct_answer": 0 }}
@@ -206,6 +209,7 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
 
     # 1. NEW: Fetch Past Quiz Results (Private Collection) to find "Struggles"
     struggles = []
+    struggle_topics: List[Dict[str, Any]] = []
     try:
         past_tutorials = db.collection('users').document(user_id).collection('tutorials').where('is_completed', '==', True).limit(5).stream()
         for t_doc in past_tutorials:
@@ -218,18 +222,45 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
                     score = q_res.get('score', 100)
                     if score < 60:
                         struggles.append(f"Weak in: {t_data.get('title', 'Unknown')} (Score: {score}%)")
-            
+                        struggle_topics.append({
+                            "topic": t_data.get('title', 'Unknown'),
+                            "section_title": q_res.get('section_title') or q_res.get('question', 'Unknown Section'),
+                            "score": score,
+                            "detail": q_res
+                        })
+
             # Fallback: Check global completion score
             elif t_data.get('completion_score', 100) < 70:
                 struggles.append(f"Struggled with: {t_data.get('title')}")
-                
+                struggle_topics.append({
+                    "topic": t_data.get('title', 'Unknown'),
+                    "section_title": "Overall Course",
+                    "score": t_data.get('completion_score', 0),
+                    "detail": {"note": "Low completion score"}
+                })
+
+        # Deep dive on the current topic if it exists in the private collection
+        targeted_stream = db.collection('users').document(user_id).collection('tutorials').where('title', '==', topic).limit(1).stream()
+        for t_doc in targeted_stream:
+            targeted_data = t_doc.to_dict()
+            for q_res in targeted_data.get('quiz_results', []):
+                score = q_res.get('score', 100)
+                if score < 80:
+                    struggles.append(f"Needs remediation in '{q_res.get('section_title', 'section')}' for {topic} (Score: {score}%)")
+                    struggle_topics.append({
+                        "topic": topic,
+                        "section_title": q_res.get('section_title', 'Unknown Section'),
+                        "score": score,
+                        "detail": q_res
+                    })
+
     except Exception as e:
         logger.warning(f"⚠️ Failed to fetch study history: {e}")
 
     logger.info(f"🎓 Agent: Blueprinting '{topic}' (Struggles: {len(struggles)})...")
 
     # PHASE 1: BLUEPRINT
-    blueprint = generate_curriculum_blueprint(topic, profile, campaign_context, struggles)
+    blueprint = generate_curriculum_blueprint(topic, profile, campaign_context, struggles, struggle_topics)
     metaphor = blueprint.get('pedagogical_metaphor', 'Abstract Concept')
     
     final_sections = []
@@ -247,13 +278,13 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
         for attempt in range(max_retries):
             try:
                 # PASS 1: Narrative (Text)
-                narrative_text = write_section_narrative(sec_meta, topic, metaphor, profile)
+                narrative_text = write_section_narrative(sec_meta, topic, metaphor, profile, struggle_topics)
                 
                 if not narrative_text or len(narrative_text) < 50:
                     raise ValueError("Narrative text too short or empty")
 
                 # PASS 2: Assets (JSON)
-                assets_data = design_section_assets(narrative_text, sec_meta, metaphor)
+                assets_data = design_section_assets(narrative_text, sec_meta, metaphor, struggle_topics)
                 
                 # MERGE
                 combined_blocks = []

@@ -15,15 +15,20 @@ logger = logging.getLogger("ali_platform.services.ai_studio")
 # Stable alias defaults (auto-upgrade without code changes)
 VIDEO_MODEL_ALIAS = os.getenv("VERTEX_VIDEO_MODEL_ALIAS", "veo-2.0")
 IMAGE_MODEL_ALIAS = os.getenv("VERTEX_IMAGE_MODEL_ALIAS", "imagen-3.0")
-TTS_MODEL_ALIAS = os.getenv("VERTEX_TTS_MODEL_ALIAS", "gemini-1.5-pro-latest")
+TTS_MODEL_ALIAS = os.getenv("VERTEX_TTS_MODEL_ALIAS", "gemini-2.5-pro")
+BUCKET_NAME = "ali-platform-prod-73019.firebasestorage.app"
 
 
 def _resolve_project_id(numeric_env_id: Optional[str], standard_env_id: Optional[str]) -> Optional[int]:
-    try:
-        return int(numeric_env_id) if numeric_env_id else int(standard_env_id)
-    except (ValueError, TypeError):
-        logger.warning(f"⚠️ Non-numeric ID detected. Using fallback: {standard_env_id}")
-        return standard_env_id
+    """Parse project ID, strictly enforcing numeric value."""
+    for candidate in (numeric_env_id, standard_env_id):
+        try:
+            if candidate is not None:
+                return int(candidate)
+        except (ValueError, TypeError):
+            logger.warning(f"⚠️ Non-numeric PROJECT_ID detected: {candidate}")
+    logger.error("❌ GENAI_PROJECT_ID missing or non-numeric. Aborting client init.")
+    return None
 
 
 class CreativeService:
@@ -45,7 +50,7 @@ class CreativeService:
         except Exception as e:
             logger.error(f"❌ Storage client initialization failed: {e}")
 
-        if not final_project_id:
+        if final_project_id is None:
             logger.error("⚠️ GenAI Client skipped: No PROJECT_ID found.")
             return
 
@@ -53,7 +58,7 @@ class CreativeService:
             # Initialize the new google-genai Client
             self.client = genai.Client(
                 vertexai=True,
-                project=str(final_project_id),
+                project=str(int(final_project_id)),
                 location=location
             )
             logger.info("✅ CreativeService initialized successfully (google-genai SDK).")
@@ -116,25 +121,10 @@ class CreativeService:
             logger.error("❌ Storage Client not initialized.")
             return ""
 
-        # Use project name to construct the bucket
-        project_id = os.getenv("PROJECT_ID", "ali-platform-prod-73019")
-        bucket_prefix = project_id
-        bucket_name = f"{bucket_prefix}-assets"
-        location = os.getenv("AI_STUDIO_LOCATION", "us-central1")
-        
-        logger.debug(f"📤 Uploading {len(data)} bytes to bucket: {bucket_name}")
+        logger.debug(f"📤 Uploading {len(data)} bytes to bucket: {BUCKET_NAME}")
 
         try:
-            bucket = self.storage_client.bucket(bucket_name)
-            if not bucket.exists():
-                logger.info(f"   Bucket {bucket_name} not found. Attempting creation in {location}...")
-                try:
-                    bucket = self.storage_client.create_bucket(bucket_name, location=location)
-                except Exception as create_err:
-                    logger.warning(f"   ⚠️ Failed to create custom bucket: {create_err}. Trying default project bucket.")
-                    # Fallback to a simpler bucket name or default behavior
-                    bucket_name = f"{project_id}.appspot.com" # Firebase default
-                    bucket = self.storage_client.bucket(bucket_name)
+            bucket = self.storage_client.bucket(BUCKET_NAME)
 
             filename = f"asset_{int(time.time())}_{os.urandom(4).hex()}.{extension}"
             blob = bucket.blob(filename)
@@ -159,10 +149,24 @@ class CreativeService:
         logger.info(f"🎬 Veo Engine: Generating video for '{prompt}'...")
 
         try:
+            def _normalize_bytes(raw: Any) -> Optional[bytes]:
+                if raw is None:
+                    return None
+                if isinstance(raw, bytes):
+                    return raw
+                if isinstance(raw, bytearray):
+                    return bytes(raw)
+                if isinstance(raw, list):
+                    try:
+                        return bytes(raw)
+                    except Exception:
+                        if all(isinstance(chunk, (bytes, bytearray)) for chunk in raw):
+                            return b"".join(raw)
+                return None
+
             # 1. Prepare GCS Output (Robustness Fix)
             # Instead of relying on unreliable byte returns, ask VEO to write to GCS directly.
-            project_id = os.getenv("PROJECT_ID", "ali-platform-prod-73019")
-            bucket_name = f"{project_id}-assets"
+            bucket_name = BUCKET_NAME
             output_gcs_uri = f"gs://{bucket_name}"
             
             # Ensure bucket exists
@@ -189,31 +193,34 @@ class CreativeService:
             )
 
             # 2. Manual Polling (Check if it IS an operation)
+            result = None
             if hasattr(job, 'done'):
-                logger.debug(f"⏳ Polling Veo operation... (job.done is {type(job.done)})")
-                
+                logger.debug(f"⏳ Polling Veo operation... (job.done is {type(getattr(job, 'done', None))})")
+
                 def is_done(j):
-                    if callable(j.done): return j.done()
-                    if j.done is None: return True # Assume done if None to avoid loop
-                    return j.done # Boolean property
-                
+                    state = getattr(j, 'done', None)
+                    if callable(state):
+                        return state()
+                    if state is None:
+                        return True
+                    return bool(state)
+
                 while not is_done(job):
                     time.sleep(5)
-                
+
                 # Check for LRO Errors
-                if hasattr(job, 'error') and job.error:
+                if getattr(job, 'error', None):
                     logger.error(f"❌ Veo Operation Failed: {job.error}")
                     return None
-                
-                # Extract Result from LRO
-                try:
-                    if hasattr(job, 'result') and callable(job.result):
-                         result = job.result()
-                    else:
-                         result = getattr(job, 'result', None)
-                except Exception:
-                     # Fallback for some SDKs where .result property raises if not ready (should be ready here)
-                     result = getattr(job, '_result', None)
+
+                # Extract Result without using .result()
+                response_candidate = getattr(job, 'response', None)
+                if response_candidate is not None:
+                    result = response_candidate
+                elif not callable(getattr(job, 'result', None)):
+                    result = getattr(job, 'result', None)
+                else:
+                    result = getattr(job, '_result', None)
             else:
                 # Synchronous Response (Job IS the result)
                 logger.info("⚡ Veo returned synchronous response.")
@@ -234,14 +241,14 @@ class CreativeService:
             # Strategy A: Check Result Object
             if result:
                 # Direct bytes on result
-                video_bytes = get_val(result, 'video_bytes')
+                video_bytes = _normalize_bytes(get_val(result, 'video_bytes'))
                 
                 # Generated Videos List
                 if not video_bytes:
                     generated_videos = get_val(result, 'generated_videos')
                     if generated_videos and len(generated_videos) > 0:
                         vid = generated_videos[0]
-                        video_bytes = get_val(vid, 'video_bytes')
+                        video_bytes = _normalize_bytes(get_val(vid, 'video_bytes'))
                         
                         # Fallback to URI
                         if not video_bytes:
@@ -252,7 +259,7 @@ class CreativeService:
             # Strategy B: Check Metadata
             if not video_bytes and metadata:
                 logger.debug("🔍 Checking Metadata for video bytes...")
-                video_bytes = get_val(metadata, 'video_bytes')
+                video_bytes = _normalize_bytes(get_val(metadata, 'video_bytes'))
 
             if video_bytes:
                 logger.info(f"✅ VEO returned {len(video_bytes)} bytes. Uploading to GCS...")
@@ -303,37 +310,74 @@ class CreativeService:
         try:
             clean_text = re.sub(r'[*#`]', '', text) # Sanitize markdown
 
+            def _normalize_bytes(raw: Any) -> Optional[bytes]:
+                if raw is None:
+                    return None
+                if isinstance(raw, bytes):
+                    return raw
+                if isinstance(raw, bytearray):
+                    return bytes(raw)
+                if isinstance(raw, list):
+                    try:
+                        return bytes(raw)
+                    except Exception:
+                        if all(isinstance(chunk, (bytes, bytearray)) for chunk in raw):
+                            return b"".join(raw)
+                return None
+
             # Prompting for specific voice and format
             prompt = f"Generate spoken audio for the following text using the 'Aoede' voice (High Definition). Return raw MP3 bytes.\n\nTEXT: {clean_text}"
 
             # Gemini via stable alias
-            response = self.client.models.generate_content(
+            operation = self.client.models.generate_content(
                 model=TTS_MODEL_ALIAS,
                 contents=prompt
             )
 
+            audio_bytes = None
+            response = operation
+
+            if hasattr(operation, "done"):
+                def is_done(op):
+                    state = getattr(op, "done", None)
+                    if callable(state):
+                        return state()
+                    if state is None:
+                        return True
+                    return bool(state)
+
+                while not is_done(operation):
+                    time.sleep(5)
+
+                if getattr(operation, "error", None):
+                    logger.error(f"❌ TTS Operation Failed: {operation.error}")
+                    return ""
+
+                response_candidate = getattr(operation, "response", None)
+                if response_candidate is not None:
+                    response = response_candidate
+                elif not callable(getattr(operation, "result", None)):
+                    response = getattr(operation, "result", None)
+
             try:
                 # Attempt to extract inline data from candidates
-                # Structure might vary, traversing defensively
-                # response.candidates[0].content.parts[0].inline_data.data
-                audio_bytes = None
-                
-                if response.candidates:
+                if response and getattr(response, "candidates", None):
                     for part in response.candidates[0].content.parts:
-                        if part.inline_data:
-                            audio_bytes = part.inline_data.data
+                        inline_data = getattr(part, "inline_data", None)
+                        if inline_data and getattr(inline_data, "data", None):
+                            audio_bytes = _normalize_bytes(inline_data.data)
                             break
-                
-                if not audio_bytes and response.text:
+
+                if not audio_bytes and getattr(response, "text", None):
                     # Fallback to text encoding if bytes missing (placeholder behavior)
-                    audio_bytes = response.text.encode('utf-8')
-                    
+                    audio_bytes = _normalize_bytes(response.text.encode('utf-8'))
+
             except Exception:
-                 audio_bytes = b"" 
+                audio_bytes = b""
 
             if audio_bytes:
                 return self._upload_bytes_to_gcs(audio_bytes, "audio/mpeg", "mp3")
-            
+
             return ""
 
         except Exception as e:
