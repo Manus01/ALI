@@ -22,3 +22,4 @@ google-genai
 google-auth>=2.30.0
 urllib3>=2.2.2
 pyopenssl>=24.0.0
+google-cloud-logging

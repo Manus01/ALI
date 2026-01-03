@@ -270,3 +270,20 @@ def delete_tutorial(tutorial_id: str, admin: dict = Depends(verify_admin)):
     except Exception as e:
         print(f"❌ Admin Tutorial Delete Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/research/troubleshoot")
+def trigger_troubleshooting_agent(admin: dict = Depends(verify_admin)):
+    """
+    Triggers the AI Troubleshooting Agent to:
+    1. Scan Backend Logs (last 24h) for ERRORS
+    2. Analyze them with Gemini + Web Search
+    3. File 'error_report' tasks in Admin Dashboard
+    """
+    from app.agents.troubleshooting_agent import TroubleshootingAgent
+    try:
+        agent = TroubleshootingAgent()
+        report = agent.run_troubleshooter()
+        return report
+    except Exception as e:
+        print(f"❌ Troubleshooter Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
