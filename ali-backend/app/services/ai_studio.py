@@ -56,6 +56,20 @@ class CreativeService:
             logger.error(f"❌ Vertex AI initialization failed: {e}")
 
     # --- HELPER: GCS SIGNED URLS ---
+    def _gs_to_https(self, gcs_uri: str) -> str:
+        """Convert a gs:// URI into a public HTTPS URL.
+
+        We use this when signing fails so downstream validators still receive
+        an http(s) link rather than a gs:// scheme.
+        """
+        if gcs_uri and str(gcs_uri).startswith("gs://"):
+            parts = gcs_uri.split("/")
+            if len(parts) >= 4:
+                bucket_name = parts[2]
+                blob_name = "/".join(parts[3:])
+                return f"https://storage.googleapis.com/{bucket_name}/{blob_name}"
+        return gcs_uri
+
     def _get_signed_url(self, gcs_uri: str) -> str:
         """Generates a V4 signed URL for secure asset access."""
         if not self.storage_client:
@@ -87,7 +101,8 @@ class CreativeService:
             )
         except Exception as e:
             logger.error(f"⚠️ Signing Error: {e}")
-            return gcs_uri
+            # Even if signing fails, return an HTTPS URL to avoid invalid URL errors downstream.
+            return self._gs_to_https(gcs_uri)
 
     # --- HELPER: UPLOAD RAW BYTES (Critical for VEO/Imagen) ---
     def _upload_bytes_to_gcs(self, data: bytes, content_type: str, extension: str) -> str:
