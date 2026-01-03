@@ -21,11 +21,11 @@ try:
 except Exception as e:
     logger.error(f"⚠️ Vertex AI Init Failed: {e}. AI features may be unavailable.")
 
-# 🏛️ 2025 Stable Aliases (Auto-healing)
-MODELS = {
-    "complex": "gemini-2.5-pro",  # Standardized High-Reasoning Model
-    "fast": "gemini-2.5-pro",     # Standardized for consistency
-    "lite": "gemini-2.5-pro"      # Standardized for consistency
+# 🏛️ Stable Aliases (Auto-healing)
+MODEL_ALIASES = {
+    "complex": os.getenv("VERTEX_MODEL_ALIAS_COMPLEX", "gemini-1.5-pro-latest"),
+    "fast": os.getenv("VERTEX_MODEL_ALIAS_FAST", "gemini-1.5-flash-latest"),
+    "lite": os.getenv("VERTEX_MODEL_ALIAS_LITE", "gemini-1.5-flash-latest"),
 }
 
 def get_model(intent: str = "fast") -> GenerativeModel:
@@ -33,7 +33,7 @@ def get_model(intent: str = "fast") -> GenerativeModel:
     Surgically selects the best Gemini model based on task intent.
     Automatically handles version updates via stable aliases.
     """
-    model_name = MODELS.get(intent, MODELS["fast"])
+    model_name = MODEL_ALIASES.get(intent, MODEL_ALIASES["fast"])
     
     try:
         # Initial attempt with the stable alias

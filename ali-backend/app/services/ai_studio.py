@@ -12,6 +12,11 @@ from google.cloud import storage
 # --- CONFIGURATION & LOGGING ---
 logger = logging.getLogger("ali_platform.services.ai_studio")
 
+# Stable alias defaults (auto-upgrade without code changes)
+VIDEO_MODEL_ALIAS = os.getenv("VERTEX_VIDEO_MODEL_ALIAS", "veo-2.0")
+IMAGE_MODEL_ALIAS = os.getenv("VERTEX_IMAGE_MODEL_ALIAS", "imagen-3.0")
+TTS_MODEL_ALIAS = os.getenv("VERTEX_TTS_MODEL_ALIAS", "gemini-1.5-pro-latest")
+
 
 def _resolve_project_id(numeric_env_id: Optional[str], standard_env_id: Optional[str]) -> Optional[int]:
     try:
@@ -170,7 +175,7 @@ class CreativeService:
                 except Exception as b_err:
                      logger.warning(f"⚠️ Bucket check failed: {b_err}. VEO might fail if bucket missing.")
 
-            model_id = "veo-2.0-generate-001" 
+            model_id = VIDEO_MODEL_ALIAS
             
             # Start the LRO
             job = self.client.models.generate_videos(
@@ -273,7 +278,7 @@ class CreativeService:
         try:
             # New SDK Image Generation
             response = self.client.models.generate_images(
-                model='imagen-3.0-generate-001',
+                model=IMAGE_MODEL_ALIAS,
                 prompt=prompt,
                 config=types.GenerateImageConfig(
                     number_of_images=1,
@@ -301,9 +306,9 @@ class CreativeService:
             # Prompting for specific voice and format
             prompt = f"Generate spoken audio for the following text using the 'Aoede' voice (High Definition). Return raw MP3 bytes.\n\nTEXT: {clean_text}"
 
-            # Gemini 2.5 Pro via Generate Content
+            # Gemini via stable alias
             response = self.client.models.generate_content(
-                model='gemini-2.5-pro',
+                model=TTS_MODEL_ALIAS,
                 contents=prompt
             )
 

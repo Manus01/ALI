@@ -56,8 +56,22 @@ def start_tutorial_job(topic: str, background_tasks: BackgroundTasks, user: dict
             "id": job_id, "user_id": user['uid'], "type": "tutorial_generation",
             "topic": topic.strip(), "status": "queued", "created_at": firestore.SERVER_TIMESTAMP
         })
-        background_tasks.add_task(process_tutorial_job, job_id, user['uid'], topic.strip())
-        return {"status": "queued", "job_id": job_id}
+
+        # Immediately create a notification so the UI updates instantly
+        notification_ref = db.collection("users").document(user['uid']).collection("notifications").document(job_id)
+        notification_ref.set({
+            "user_id": user['uid'],
+            "type": "info",
+            "status": "queued",
+            "title": "Tutorial Requested",
+            "message": f"Queued: '{topic.strip()}' is about to start processing...",
+            "link": None,
+            "read": False,
+            "created_at": firestore.SERVER_TIMESTAMP
+        })
+
+        background_tasks.add_task(process_tutorial_job, job_id, user['uid'], topic.strip(), notification_ref.id)
+        return {"status": "queued", "job_id": job_id, "notification_id": notification_ref.id}
     except HTTPException:
         # Re-raise intentional HTTP responses without wrapping
         raise
