@@ -252,7 +252,8 @@ class CreativeService:
                         
                         # Fallback to URI
                         if not video_bytes:
-                            uri = get_val(vid, 'uri')
+                            # Official VEO API returns 'gcsUri' (or snake_case) when output_gcs_uri is used
+                            uri = get_val(vid, 'uri') or get_val(vid, 'gcs_uri') or get_val(vid, 'gcsUri')
                             if uri:
                                 return self._get_signed_url(uri)
             
