@@ -1,6 +1,8 @@
 import os
 import time
 import logging
+import uuid
+import urllib.parse
 from typing import Optional
 from google import genai
 from google.genai import types
@@ -45,16 +47,28 @@ class ImageAgent:
         except Exception as e:
             logger.error(f"❌ ImageAgent Client Init Failed: {e}")
 
-    def _upload_bytes(self, data: bytes, extension: str = "png", content_type: str = "image/png") -> str:
-        """Uploads raw bytes to GCS."""
+    def _upload_bytes(self, data: bytes, folder: str = "general", extension: str = "png", content_type: str = "image/png") -> str:
+        """Uploads raw bytes to GCS and returns a persistent Firebase Download URL."""
         if not self.storage_client: return ""
         try:
             bucket = self.storage_client.bucket(BUCKET_NAME)
-            filename = f"image_{int(time.time())}_{os.urandom(4).hex()}.{extension}"
+            filename = f"{folder}/image_{int(time.time())}_{os.urandom(4).hex()}.{extension}"
             blob = bucket.blob(filename)
+            
+            # Generate Token
+            token = str(uuid.uuid4())
+            metadata = {"firebaseStorageDownloadTokens": token}
+            blob.metadata = metadata
+
             blob.upload_from_string(data, content_type=content_type)
-            logger.info(f"   ✅ Image Uploaded: {filename}")
-            return blob.generate_signed_url(version="v4", expiration=3600, method="GET")
+            blob.metadata = metadata
+            blob.patch()
+            
+            logger.info(f"   ✅ Image Uploaded (Persistent): {filename}")
+            
+            encoded_path = urllib.parse.quote(filename, safe="")
+            public_url = f"https://firebasestorage.googleapis.com/v0/b/{BUCKET_NAME}/o/{encoded_path}?alt=media&token={token}"
+            return public_url
         except Exception as e:
             logger.error(f"❌ Upload Failed: {e}")
             return ""
@@ -74,12 +88,13 @@ class ImageAgent:
             logger.error(f"❌ Failed to process reference image: {e}")
             return None
 
-    def generate_image(self, prompt: str, reference_image: Optional[str] = None, brand_dna: Optional[str] = None) -> Optional[str]:
+    def generate_image(self, prompt: str, reference_image_uri: Optional[str] = None, brand_dna: Optional[str] = None, folder: str = "general") -> Optional[str]:
         """
         Generates an image using Imagen 3.0.
         Supports:
-        - Adaptive Inputs (Reference Image)
+        - Adaptive Inputs (Reference Image URI)
         - Contextual Prompts (Brand DNA)
+        - Folder Organization
         """
         if not self.client: return None
         
@@ -89,14 +104,14 @@ class ImageAgent:
             final_prompt = f"{prompt} Style requirements: {brand_dna}. Maintain brand consistency."
 
         logger.info(f"🎨 Imagen 3.0 Generating: {final_prompt[:50]}...")
-        if reference_image:
+        if reference_image_uri:
              logger.info("   📸 Using Reference Image.")
 
         try:
              # 2. Construct Prompt Content
              contents = [final_prompt]
-             if reference_image:
-                 img_part = self._prepare_image_part(reference_image)
+             if reference_image_uri:
+                 img_part = self._prepare_image_part(reference_image_uri)
                  if img_part:
                      contents.append(img_part)
 
@@ -115,12 +130,10 @@ class ImageAgent:
              if response.generated_images:
                 img = response.generated_images[0]
                 if img.image_bytes:
-                    return self._upload_bytes(img.image_bytes)
+                    return self._upload_bytes(img.image_bytes, folder=folder)
             
              logger.warning("⚠️ No image bytes returned.")
              return None
-
-
 
         except Exception as e:
             logger.error(f"❌ Image Generation Error: {e}")

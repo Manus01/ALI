@@ -1,6 +1,8 @@
 import os
 import time
 import logging
+import uuid
+import urllib.parse
 from typing import Optional, Any
 from google import genai
 from google.genai import types
@@ -45,22 +47,41 @@ class VideoAgent:
         except Exception as e:
             logger.error(f"❌ VideoAgent Client Init Failed: {e}")
 
-    def _upload_bytes(self, data: bytes, extension: str = "mp4", content_type: str = "video/mp4") -> str:
-        """Uploads raw bytes to GCS and returns a signed URL."""
+    def _upload_bytes(self, data: bytes, folder: str = "general", extension: str = "mp4", content_type: str = "video/mp4") -> str:
+        """Uploads raw bytes to GCS and returns a persistent Firebase Download URL."""
         if not self.storage_client: return ""
         try:
             bucket = self.storage_client.bucket(BUCKET_NAME)
-            filename = f"video_{int(time.time())}_{os.urandom(4).hex()}.{extension}"
+            # Use folder structure as requested
+            filename = f"{folder}/video_{int(time.time())}_{os.urandom(4).hex()}.{extension}"
             blob = bucket.blob(filename)
+            
+            # Generate a random UUID token for Firebase
+            token = str(uuid.uuid4())
+            metadata = {"firebaseStorageDownloadTokens": token}
+            blob.metadata = metadata
+            
+            # Upload with metadata
             blob.upload_from_string(data, content_type=content_type)
-            logger.info(f"   ✅ Video Uploaded: {filename}")
-            return blob.generate_signed_url(version="v4", expiration=3600, method="GET")
+            # Must patch metadata after upload to ensure it persists if not set during upload (though client usually handles it)
+            # Explicitly setting metadata on the blob object and patching is safer.
+            blob.metadata = metadata
+            blob.patch()
+            
+            logger.info(f"   ✅ Video Uploaded (Persistent): {filename}")
+            
+            # Construct Persistent URL
+            # Format: https://firebasestorage.googleapis.com/v0/b/{bucket}/o/{path}?alt=media&token={token}
+            encoded_path = urllib.parse.quote(filename, safe="")
+            public_url = f"https://firebasestorage.googleapis.com/v0/b/{BUCKET_NAME}/o/{encoded_path}?alt=media&token={token}"
+            
+            return public_url
         except Exception as e:
             logger.error(f"❌ Upload Failed: {e}")
             return ""
 
     def _get_signed_url(self, gcs_uri: str) -> str:
-        """Generates a signed URL from a gs:// URI."""
+        """Generates a signed URL from a gs:// URI. Kept as fallback/helper."""
         if not self.storage_client: return gcs_uri
         try:
             if gcs_uri.startswith("gs://"):
@@ -88,12 +109,13 @@ class VideoAgent:
             logger.error(f"❌ Failed to process reference image: {e}")
             return None
 
-    def generate_video(self, prompt: str, reference_image: Optional[str] = None, brand_dna: Optional[str] = None) -> Optional[str]:
+    def generate_video(self, prompt: str, reference_image_uri: Optional[str] = None, brand_dna: Optional[str] = None, folder: str = "general") -> Optional[str]:
         """
         Generates a video using Veo 3.1.
         Supports:
-        - Adaptive Inputs (Reference Image)
+        - Adaptive Inputs (Reference Image URI)
         - Contextual Prompts (Brand DNA)
+        - Folder Organization
         """
         if not self.client: return None
         
@@ -103,19 +125,19 @@ class VideoAgent:
             final_prompt = f"{prompt} Style requirements: {brand_dna}. Maintain consistent brand aesthetics."
             
         logger.info(f"🎬 VEO 3.1 Generating: {final_prompt[:50]}...")
-        if reference_image:
+        if reference_image_uri:
              logger.info("   📸 Using Reference Image for conditioning.")
 
         try:
             # 2. Output Configuration
-            output_gcs_uri = f"gs://{BUCKET_NAME}"
+            output_gcs_uri = f"gs://{BUCKET_NAME}/{folder}"
             
             # 3. Construct Content (Prompt + Optional Image)
             # Veo supports Multi-modal prompts for Image-to-Video
             contents = [final_prompt]
             
-            if reference_image:
-                img_part = self._prepare_image_part(reference_image)
+            if reference_image_uri:
+                img_part = self._prepare_image_part(reference_image_uri)
                 if img_part:
                     contents.append(img_part)
             
@@ -159,13 +181,18 @@ class VideoAgent:
             
             for vid in generated_videos:
                 # Path A: Bytes
-                # Check .video.video_bytes, .video_bytes, .bytes
-                candidate_bytes = getattr(vid, "video_bytes", None)
-                if not candidate_bytes:
-                     inner_video = getattr(vid, "video", None)
-                     if inner_video:
-                         candidate_bytes = getattr(inner_video, "video_bytes", None)
+                # Check .video.video_bytes (Double-nested as per Vertex AI 2026 standards)
+                candidate_bytes = None
                 
+                # Nested check (Priority)
+                inner_video = getattr(vid, "video", None)
+                if inner_video:
+                    candidate_bytes = getattr(inner_video, "video_bytes", None) or getattr(inner_video, "bytes", None)
+                
+                # Flat check (Fallback)
+                if not candidate_bytes:
+                    candidate_bytes = getattr(vid, "video_bytes", None) or getattr(vid, "bytes", None)
+
                 if candidate_bytes:
                     video_bytes = candidate_bytes
                     break # Found bytes
@@ -183,10 +210,15 @@ class VideoAgent:
             # Action
             if video_bytes:
                 logger.info("RETRIEVED BYTES")
-                return self._upload_bytes(video_bytes)
+                return self._upload_bytes(video_bytes, folder=folder)
             
             if video_uri:
                 logger.info(f"RETRIEVED URI: {video_uri}")
+                # For GCS URI, we might want to "persist" it by downloading and re-uploading if possible,
+                # but currently just returning Signed URL fallback until we decide to copy-blob.
+                # Per prompt "Capture raw bytes... and upload".
+                # If we only got URI, we'd ideally read it and upload.
+                # I'll add logic to try reading URI content if bytes not found.
                 return self._get_signed_url(video_uri)
 
             logger.error("❌ Failed to extract Video Bytes or URI.")

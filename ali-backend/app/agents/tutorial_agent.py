@@ -377,7 +377,7 @@ def fabricate_block(block, topic, creative, video_agent, image_agent):
             logger.info(f"      🎥 VEO Generating: {p}")
             
             # Use Video Agent
-            url = video_agent.generate_video(safe_p)
+            url = video_agent.generate_video(safe_p, folder="tutorials")
             
             # STRICT CHECK: Must have a URL
             if not url or not url.startswith("http"):
@@ -390,7 +390,7 @@ def fabricate_block(block, topic, creative, video_agent, image_agent):
             p = block.get("visual_prompt", f"Diagram of {topic}")
             
             # Use Image Agent
-            url = image_agent.generate_image(p)
+            url = image_agent.generate_image(p, folder="tutorials")
             
             if url and url.startswith("http"):
                 logger.info(f"      ✅ Image Created")
