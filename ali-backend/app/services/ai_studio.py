@@ -227,44 +227,59 @@ class CreativeService:
                 result = job
 
             # 2. Aggressive Result Extraction
-            metadata = getattr(job, 'metadata', None)
+            # Target specifically the 'generated_videos' list as per official structure
             
-            # 3. Byte Extraction Strategy
-            video_bytes = None
-            
-            # Helper to get attr or key
-            def get_val(obj, key):
-                if not obj: return None
-                if isinstance(obj, dict): return obj.get(key)
-                return getattr(obj, key, None)
-            
-            # Strategy A: Check Result Object
-            if result:
-                # Direct bytes on result
-                video_bytes = _normalize_bytes(get_val(result, 'video_bytes'))
-                
-                # Generated Videos List
-                if not video_bytes:
-                    generated_videos = get_val(result, 'generated_videos')
-                    if generated_videos and len(generated_videos) > 0:
-                        vid = generated_videos[0]
-                        video_bytes = _normalize_bytes(get_val(vid, 'video_bytes'))
-                        
-                        # Fallback to URI
-                        if not video_bytes:
-                            # Official VEO API returns 'gcsUri' (or snake_case) when output_gcs_uri is used
-                            uri = get_val(vid, 'uri') or get_val(vid, 'gcs_uri') or get_val(vid, 'gcsUri')
-                            if uri:
-                                return self._get_signed_url(uri)
-            
-            # Strategy B: Check Metadata
-            if not video_bytes and metadata:
-                logger.debug("🔍 Checking Metadata for video bytes...")
-                video_bytes = _normalize_bytes(get_val(metadata, 'video_bytes'))
+            # Helper to safely navigate nested objects/dicts
+            def deep_get(obj, *keys):
+                for key in keys:
+                    if not obj: return None
+                    if isinstance(obj, dict): obj = obj.get(key)
+                    else: obj = getattr(obj, key, None)
+                return obj
 
+            video_bytes = None
+            uri = None
+            
+            # 1. Try to get the list of videos
+            generated_videos = deep_get(result, 'generated_videos')
+            
+            if not generated_videos and hasattr(job, 'response'): 
+                 generated_videos = deep_get(job.response, 'generated_videos')
+
+            # 2. Iterate if found
+            if generated_videos and len(generated_videos) > 0:
+                vid = generated_videos[0]
+                
+                # Path A: Check for Bytes (video, bytes, video_bytes)
+                if not output_gcs_uri:
+                     logger.debug("🔍 Checking Path A (Bytes) in generated_videos[0]...")
+                     video_bytes = _normalize_bytes(deep_get(vid, 'video_bytes')) or \
+                                   _normalize_bytes(deep_get(vid, 'bytes')) or \
+                                   _normalize_bytes(deep_get(vid, 'video'))
+
+                # Path B: Check for URI (gcsUri, gcs_uri, uri)
+                if not video_bytes: 
+                    logger.debug("🔍 Checking Path B (URI) in generated_videos[0]...")
+                    uri = deep_get(vid, 'gcs_uri') or \
+                          deep_get(vid, 'gcsUri') or \
+                          deep_get(vid, 'uri')
+
+            # 3. Fallback: Check top-level result/metadata just in case
+            if not video_bytes and not uri:
+                logger.debug("🔍 Checking Top-Level Fallbacks...")
+                video_bytes = _normalize_bytes(deep_get(result, 'video_bytes'))
+                if not video_bytes:
+                     metadata = getattr(job, 'metadata', None)
+                     video_bytes = _normalize_bytes(deep_get(metadata, 'video_bytes'))
+
+            # --- ACTION ---
             if video_bytes:
                 logger.info(f"✅ VEO returned {len(video_bytes)} bytes. Uploading to GCS...")
                 return self._upload_bytes_to_gcs(video_bytes, "video/mp4", "mp4")
+            
+            if uri:
+                logger.info(f"✅ VEO returned URI: {uri}")
+                return self._get_signed_url(uri)
 
             # Final Failure State
             logger.error("❌ Veo completed but NO BYTES and NO URI found.")
