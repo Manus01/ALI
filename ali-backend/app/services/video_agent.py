@@ -163,13 +163,24 @@ class VideoAgent:
                     )
                 )
 
-            # 5. Manual Polling
+            # 5. Robust Polling with Timeout
             if hasattr(job, "done"):
-                # Handle 'done' being a property or method
-                is_done = job.done() if callable(job.done) else job.done
-                while not is_done:
+                start_time = time.time()
+                timeout = 600  # 10 minutes max
+                
+                is_done_func = job.done if callable(job.done) else lambda: job.done
+                
+                while not is_done_func():
+                    elapsed = time.time() - start_time
+                    if elapsed > timeout:
+                        logger.error(f"❌ Video Generation Timed Out after {timeout}s")
+                        return None
+                        
+                    if int(elapsed) % 30 == 0:
+                        logger.info(f"   ⏳ VEO Processing... ({int(elapsed)}s)")
+                        
                     time.sleep(5)
-                    is_done = job.done() if callable(job.done) else job.done
+            
             
             # 6. Result Extraction (Fixed)
             generated_videos = None

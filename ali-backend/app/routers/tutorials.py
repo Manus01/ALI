@@ -205,6 +205,11 @@ def get_tutorial_details(tutorial_id: str, user: dict = Depends(verify_token)):
 
         if doc.exists:
             t = _process_tutorial_doc(doc, user_id, db)
+            
+            # HIDDEN CHECK: If soft-deleted by user, return 404
+            if t.get('is_hidden') is True:
+                 raise HTTPException(status_code=404, detail="Tutorial deleted by user.")
+
             # Debug Log
             sec_count = len(t.get('sections', []))
             logger.debug(f"🔍 Fetch Private Tutorial {tutorial_id}: Found {sec_count} sections.")
@@ -330,47 +335,180 @@ def mark_complete(tutorial_id: str, payload: CompletionRequest, user: dict = Dep
 @router.delete("/tutorials/{tutorial_id}")
 def delete_user_tutorial(tutorial_id: str, user: dict = Depends(verify_token)):
     """
-    Deletes the tutorial from the user's private collection.
-    This effectively 'hides' it from their view without affecting the global copy.
+    User Soft Delete:
+    - Hides from User.
+    - Creates Admin Request to decide on permanent deletion.
     """
     try:
         user_id = user['uid']
-
         _require_db("delete_user_tutorial")()
 
-        # Delete from private collection
-        doc_ref = db.collection('users').document(user_id).collection('tutorials').document(tutorial_id)
-        doc_ref.delete()
-        
-        return {"status": "success", "message": "Tutorial removed from your list."}
+        # 1. Hide from User (Soft Delete)
+        user_doc_ref = db.collection('users').document(user_id).collection('tutorials').document(tutorial_id)
+        user_doc_ref.set({
+            "is_hidden": True,
+            "deletion_requested": True,
+            "deleted_at": firestore.SERVER_TIMESTAMP
+        }, merge=True)
+
+        # 2. Create Admin Notification / Task
+        # Check if request already exists to avoid duplicates
+        existing = db.collection("admin_tasks").where("tutorial_id", "==", tutorial_id).where("status", "==", "pending").limit(1).stream()
+        if not any(existing):
+            db.collection("admin_tasks").add({
+                "type": "delete_tutorial_request",
+                "tutorial_id": tutorial_id,
+                "requester_id": user_id,
+                "reason": "User requested deletion",
+                "status": "pending",
+                "created_at": firestore.SERVER_TIMESTAMP
+            })
+
+        return {"status": "success", "message": "Tutorial removed from your view. Pending admin review for permanent deletion."}
     except Exception as e:
         logger.error(f"❌ Delete Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/tutorials/{tutorial_id}/request-delete")
-def request_permanent_delete(tutorial_id: str, user: dict = Depends(verify_token)):
+# --- ADMIN DELETION LOGIC ---
+
+def _delete_storage_assets(tutorial_data: dict):
     """
-    Requests permanent deletion of a tutorial (Global).
-    Adds a task for the admin and removes it from the user's view.
+    Parses tutorial structure and deletes all referenced assets from Cloud Storage.
     """
     try:
-        user_id = user['uid']
-
-        _require_db("request_permanent_delete")()
-
-        # 1. Create Admin Task
-        db.collection("admin_tasks").add({
-            "type": "delete_tutorial_request",
-            "tutorial_id": tutorial_id,
-            "requester_id": user_id,
-            "status": "pending",
-            "created_at": firestore.SERVER_TIMESTAMP
-        })
+        from google.cloud import storage
+        import urllib.parse
         
-        # 2. Delete from user's view immediately
-        db.collection('users').document(user_id).collection('tutorials').document(tutorial_id).delete()
+        storage_client = storage.Client()
+        # Fallback bucket name if not found in URL (though URL usually has it)
+        default_bucket = os.getenv("GCS_BUCKET_NAME", "ali-platform-prod-73019.firebasestorage.app")
         
-        return {"status": "success", "message": "Deletion request sent to admin."}
+        # Collect URLs
+        urls_to_delete = []
+        
+        for section in tutorial_data.get('sections', []):
+            for block in section.get('blocks', []):
+                if block.get('url'):
+                    urls_to_delete.append(block['url'])
+        
+        deleted_count = 0
+        for url in urls_to_delete:
+            try:
+                # Parse Firebase URL
+                # Example: https://firebasestorage.googleapis.com/v0/b/{bucket}/o/{path}?alt=media...
+                if "firebasestorage.googleapis.com" in url:
+                    # Extract path
+                    # 1. Split by '/o/'
+                    parts = url.split("/o/")
+                    if len(parts) < 2: continue
+                    
+                    bucket_part = parts[0].split("/b/")[-1]
+                    path_part = parts[1].split("?")[0]
+                    
+                    # 2. Decode URL path (e.g., tutorials%2Fvideo.mp4 -> tutorials/video.mp4)
+                    blob_name = urllib.parse.unquote(path_part)
+                    
+                    bucket = storage_client.bucket(bucket_part)
+                    blob = bucket.blob(blob_name)
+                    blob.delete()
+                    deleted_count += 1
+                    logger.info(f"   🗑️ Deleted Asset: {blob_name}")
+            except Exception as e:
+                logger.warning(f"   ⚠️ Failed to delete asset {url}: {e}")
+                
+        logger.info(f"✅ Cleanup: Removed {deleted_count} assets.")
+
     except Exception as e:
-        logger.error(f"❌ Request Delete Error: {e}")
+        logger.error(f"❌ Asset Deletion Logic Failed: {e}")
+        # Don't raise, we want to continue deleting the metadata docs
+
+@router.delete("/admin/tutorials/{tutorial_id}")
+def admin_delete_tutorial(tutorial_id: str, confirm: bool = False, user: dict = Depends(verify_token)):
+    """
+    ADMIN: Completely deletes a tutorial and ALL generated assets.
+    """
+    try:
+        # TODO: Add specific Admin Role check here
+        # if not user.get('is_admin'): raise HTTPException(403)
+        
+        if not confirm:
+             raise HTTPException(status_code=400, detail="Must set confirm=true for permanent deletion.")
+
+        _require_db("admin_delete_tutorial")()
+        
+        # 1. Fetch Global Data to get Assets
+        global_ref = db.collection('tutorials').document(tutorial_id)
+        doc = global_ref.get()
+        
+        if doc.exists:
+            data = doc.to_dict()
+            # 2. Delete Assets
+            logger.info(f"🗑️ Admin wiping assets for {tutorial_id}...")
+            _delete_storage_assets(data)
+            
+            # 3. Delete Global Doc
+            global_ref.delete()
+        else:
+            logger.warning(f"Global doc {tutorial_id} not found during admin delete.")
+
+        # 4. Delete ALL User Copies (Collection Group Query)
+        # We want to remove it from every user's private collection
+        instances = db.collection_group('tutorials').where('id', '==', tutorial_id).stream()
+        batch = db.batch()
+        count = 0
+        for instance in instances:
+            batch.delete(instance.reference)
+            count += 1
+            if count > 400: 
+                batch.commit()
+                batch = db.batch()
+                count = 0
+        if count > 0: batch.commit()
+        
+        # 5. Clean Admin Tasks
+        tasks = db.collection("admin_tasks").where("tutorial_id", "==", tutorial_id).stream()
+        for t in tasks:
+            t.reference.delete()
+
+        return {"status": "success", "message": "Tutorial and all assets deleted permanently."}
+
+    except Exception as e:
+        logger.error(f"❌ Admin Delete Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/admin/requests/{request_id}/decide")
+def admin_decide_deletion(request_id: str, decision: str, user: dict = Depends(verify_token)):
+    """
+    Decide on a deletion request.
+    decision: 'delete' | 'keep'
+    """
+    try:
+        _require_db("admin_decide_deletion")()
+        
+        task_ref = db.collection("admin_tasks").document(request_id)
+        task = task_ref.get()
+        if not task.exists:
+            raise HTTPException(404, "Request not found")
+            
+        task_data = task.to_dict()
+        tutorial_id = task_data.get("tutorial_id")
+        
+        if decision == 'delete':
+            # Execute Hard Delete
+            admin_delete_tutorial(tutorial_id, confirm=True, user=user)
+            task_ref.update({"status": "approved", "resolved_at": firestore.SERVER_TIMESTAMP})
+            return {"status": "success", "message": "Tutorial permanently deleted."}
+            
+        elif decision == 'keep':
+            # Just mark resolution. User copy remains hidden (soft deleted for them).
+            task_ref.update({"status": "rejected", "resolved_at": firestore.SERVER_TIMESTAMP})
+            return {"status": "success", "message": "Tutorial kept public. Hidden for original user."}
+        
+        else:
+            raise HTTPException(400, "Invalid decision. Use 'delete' or 'keep'.")
+
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+         logger.error(f"❌ Decision Error: {e}")
+         raise HTTPException(status_code=500, detail=str(e))

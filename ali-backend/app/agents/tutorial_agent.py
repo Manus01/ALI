@@ -9,6 +9,8 @@ from app.services.ai_studio import CreativeService
 from app.services.llm_factory import get_model
 from app.core.security import db
 from firebase_admin import firestore
+from app.services.metricool_client import MetricoolClient
+from concurrent.futures import ThreadPoolExecutor
 
 # Configure Logger
 logger = logging.getLogger("ali_platform.agents.tutorial_agent")
@@ -58,8 +60,55 @@ def validate_quiz_data(assets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                     
     return assets
 
+# --- NEW: THE INSPECTOR (QA) ---
+def review_tutorial_quality(tutorial_data: Dict[str, Any], original_blueprint: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Audits the final tutorial against the original blueprint.
+    Ensures 4C/ID compliance and Constructivist alignment.
+    """
+    model = get_model(intent='complex')
+    
+    # Extract simplified structure for the LLM
+    final_structure = []
+    for sec in tutorial_data.get('sections', []):
+        blocks = [b.get('type') for b in sec.get('blocks', [])]
+        final_structure.append(f"{sec['title']}: {blocks}")
+        
+    prompt = f"""
+    Act as a Pedagogical Quality Assurance Auditor.
+    Compare the Produced Tutorial against the Approved Blueprint.
+    
+    ### BLUEPRINT
+    - Metaphor: {original_blueprint.get('pedagogical_metaphor')}
+    - Planned Sections: {[s['title'] for s in original_blueprint.get('sections', [])]}
+    
+    ### PRODUCED CONTENT
+    - Title: {tutorial_data.get('title')}
+    - Structure: {final_structure}
+    
+    ### AUDIT CRITERIA (Score 0-100)
+    1. **Metaphor Integrity**: Is the metaphor used consistently?
+    2. **Asset Relevance**: Do sections have appropriate media (Video for Support, Quiz for Practice)?
+    3. **Completeness**: Are all planned sections present?
+    
+    ### OUTPUT JSON
+    {{
+        "score": 85,
+        "status": "PASSED" | "FLAGGED",
+        "feedback": "Metaphor well integrated...",
+        "flags": ["Missing video in section 2"]
+    }}
+    Threshold: < 70 = FLAGGED.
+    """
+    try:
+        response = model.generate_content(prompt)
+        return extract_json_safe(response.text)
+    except Exception as e:
+        logger.warning(f"⚠️ QA Audit Failed: {e}")
+        return {"score": 0, "status": "FLAGGED", "feedback": "Audit failed due to error.", "flags": [str(e)]}
+
 # --- 1. THE ARCHITECT (Curriculum + Metaphor) ---
-def generate_curriculum_blueprint(topic, profile, campaign_context, struggles, struggle_topics: Optional[List[Dict[str, Any]]] = None):
+def generate_curriculum_blueprint(topic, profile, campaign_context, struggles, struggle_topics: Optional[List[Dict[str, Any]]] = None, connected_channels: List[str] = None):
     # UPGRADE: Using Gemini 2.5 Pro for High-Level Instructional Design
     model = get_model(intent='complex') 
     
@@ -70,6 +119,7 @@ def generate_curriculum_blueprint(topic, profile, campaign_context, struggles, s
     ### USER CONTEXT
     - Knowledge: {profile.get('marketing_knowledge', 'NOVICE')}
     - Style: {profile.get('learning_style', 'VISUAL')}
+    - **Active Channels**: {connected_channels if connected_channels else "None specific"}
     - Data: {campaign_context}
     - **Identified Struggles**: {struggles if struggles else "None detected."} (Address these explicitly if present).
     - **Quiz Weak Points**: {struggle_topics if struggle_topics else "None provided."}
@@ -203,190 +253,286 @@ from app.services.audio_agent import AudioAgent
 
 # ... (imports remain)
 
-# --- MAIN CONTROLLER ---
+    # --- MAIN CONTROLLER ---
 def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context: str = None, progress_callback=None):
-    # Initialize all Creative Agents
-    # creative = CreativeService() # DEPRECATED
-    video_agent = VideoAgent()
-    image_agent = ImageAgent()
-    audio_agent = AudioAgent()
-    
-    # Fetch Context (Profile + Campaigns)
-    # ... (existing context fetching logic) ...
-    user_doc = db.collection('users').document(user_id).get()
-    profile = user_doc.to_dict().get("profile", {})
-    campaigns_ref = db.collection('users').document(user_id).collection('campaign_performance').limit(3).stream()
-    campaign_context = json.dumps([c.to_dict() for c in campaigns_ref], default=str)
-
-    # 1. NEW: Fetch Past Quiz Results (Private Collection) to find "Struggles"
-    struggles = []
-    struggle_topics: List[Dict[str, Any]] = []
     try:
-        past_tutorials = db.collection('users').document(user_id).collection('tutorials').where('is_completed', '==', True).limit(5).stream()
-        for t_doc in past_tutorials:
-            t_data = t_doc.to_dict()
-            # Analyze quiz_results if available
-            results = t_data.get('quiz_results', [])
-            if results:
-                # Assuming simple logic: Any quiz < 50% is a struggle
-                for q_res in results:
+        # Initialize all Creative Agents
+        # creative = CreativeService() # DEPRECATED
+        video_agent = VideoAgent()
+        image_agent = ImageAgent()
+        audio_agent = AudioAgent()
+        
+        # Fetch Context (Profile + Campaigns)
+        # ... (existing context fetching logic) ...
+        user_doc = db.collection('users').document(user_id).get()
+        profile = user_doc.to_dict().get("profile", {})
+        campaigns_ref = db.collection('users').document(user_id).collection('campaign_performance').limit(3).stream()
+        campaign_context = json.dumps([c.to_dict() for c in campaigns_ref], default=str)
+
+        # 0. NEW: Fetch Connected Channels (Metricool)
+        connected_channels = []
+        try:
+            mc = MetricoolClient()
+            # Mocking blog_id logic or assuming fetching first available for context
+            # In a real scenario we might need the user's specific blog_id
+            # For now, we use get_account_info which is safe
+            # Note: MetricoolClient needs env vars, assuming they are set
+            acct_info = mc.get_account_info()
+            connected_channels = acct_info.get('connected', [])
+            logger.info(f"   📱 User Channels: {connected_channels}")
+        except Exception as e:
+            logger.warning(f"   ⚠️ Metricool Context Failed: {e}")
+
+        # 1. NEW: Fetch Past Quiz Results (Private Collection) to find "Struggles"
+        struggles = []
+        struggle_topics: List[Dict[str, Any]] = []
+        try:
+            past_tutorials = db.collection('users').document(user_id).collection('tutorials').where('is_completed', '==', True).limit(5).stream()
+            for t_doc in past_tutorials:
+                t_data = t_doc.to_dict()
+                # Analyze quiz_results if available
+                results = t_data.get('quiz_results', [])
+                if results:
+                    # Assuming simple logic: Any quiz < 50% is a struggle
+                    for q_res in results:
+                        score = q_res.get('score', 100)
+                        if score < 60:
+                            struggles.append(f"Weak in: {t_data.get('title', 'Unknown')} (Score: {score}%)")
+                            struggle_topics.append({
+                                "topic": t_data.get('title', 'Unknown'),
+                                "section_title": q_res.get('section_title') or q_res.get('question', 'Unknown Section'),
+                                "score": score,
+                                "detail": q_res
+                            })
+
+                # Fallback: Check global completion score
+                elif t_data.get('completion_score', 100) < 70:
+                    struggles.append(f"Struggled with: {t_data.get('title')}")
+                    struggle_topics.append({
+                        "topic": t_data.get('title', 'Unknown'),
+                        "section_title": "Overall Course",
+                        "score": t_data.get('completion_score', 0),
+                        "detail": {"note": "Low completion score"}
+                    })
+
+            # Deep dive on the current topic if it exists in the private collection
+            targeted_stream = db.collection('users').document(user_id).collection('tutorials').where('title', '==', topic).limit(1).stream()
+            for t_doc in targeted_stream:
+                targeted_data = t_doc.to_dict()
+                for q_res in targeted_data.get('quiz_results', []):
                     score = q_res.get('score', 100)
-                    if score < 60:
-                        struggles.append(f"Weak in: {t_data.get('title', 'Unknown')} (Score: {score}%)")
+                    if score < 80:
+                        struggles.append(f"Needs remediation in '{q_res.get('section_title', 'section')}' for {topic} (Score: {score}%)")
                         struggle_topics.append({
-                            "topic": t_data.get('title', 'Unknown'),
-                            "section_title": q_res.get('section_title') or q_res.get('question', 'Unknown Section'),
+                            "topic": topic,
+                            "section_title": q_res.get('section_title', 'Unknown Section'),
                             "score": score,
                             "detail": q_res
                         })
 
-            # Fallback: Check global completion score
-            elif t_data.get('completion_score', 100) < 70:
-                struggles.append(f"Struggled with: {t_data.get('title')}")
-                struggle_topics.append({
-                    "topic": t_data.get('title', 'Unknown'),
-                    "section_title": "Overall Course",
-                    "score": t_data.get('completion_score', 0),
-                    "detail": {"note": "Low completion score"}
-                })
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to fetch study history: {e}")
 
-        # Deep dive on the current topic if it exists in the private collection
-        targeted_stream = db.collection('users').document(user_id).collection('tutorials').where('title', '==', topic).limit(1).stream()
-        for t_doc in targeted_stream:
-            targeted_data = t_doc.to_dict()
-            for q_res in targeted_data.get('quiz_results', []):
-                score = q_res.get('score', 100)
-                if score < 80:
-                    struggles.append(f"Needs remediation in '{q_res.get('section_title', 'section')}' for {topic} (Score: {score}%)")
-                    struggle_topics.append({
-                        "topic": topic,
-                        "section_title": q_res.get('section_title', 'Unknown Section'),
-                        "score": score,
-                        "detail": q_res
-                    })
+        logger.info(f"🎓 Agent: Blueprinting '{topic}' (Struggles: {len(struggles)})...")
 
-    except Exception as e:
-        logger.warning(f"⚠️ Failed to fetch study history: {e}")
-
-    logger.info(f"🎓 Agent: Blueprinting '{topic}' (Struggles: {len(struggles)})...")
-
-    # PHASE 1: BLUEPRINT
-    blueprint = generate_curriculum_blueprint(topic, profile, campaign_context, struggles, struggle_topics)
-    metaphor = blueprint.get('pedagogical_metaphor', 'Abstract Concept')
-    
-    final_sections = []
-
-    # PHASE 2: SECTION LOOP
-    for index, sec_meta in enumerate(blueprint.get('sections', [])):
-        logger.info(f"   Writing Section {index+1}: {sec_meta['title']} ({metaphor})...")
+        # PHASE 1: BLUEPRINT
+        blueprint = generate_curriculum_blueprint(topic, profile, campaign_context, struggles, struggle_topics, connected_channels)
+        metaphor = blueprint.get('pedagogical_metaphor', 'Abstract Concept')
         
-        if progress_callback:
-            progress_callback(f"Crafting Section {index+1}: {sec_meta['title']}...")
+        final_sections = []
+
+        # PHASE 2: PARALLEL SECTION GENERATION
+        final_sections = [None] * len(blueprint.get('sections', [])) # Pre-allocate to maintain order
         
-        section_success = False
-        max_retries = 3
-        
-        for attempt in range(max_retries):
+        def process_section(index, sec_meta):
+            """Helper to process a single section fully."""
             try:
-                # PASS 1: Narrative (Text)
-                narrative_text = write_section_narrative(sec_meta, topic, metaphor, profile, struggle_topics)
+                logger.info(f"   🚀 Starting Section {index+1}: {sec_meta['title']}...")
+                if progress_callback:
+                    progress_callback(f"Generating Section {index+1}/{len(blueprint['sections'])}...")
+
+                section_result = None
+                max_retries = 3
+
+                for attempt in range(max_retries):
+                    try:
+                        # PASS 1: Narrative (Text)
+                        narrative_text = write_section_narrative(sec_meta, topic, metaphor, profile, struggle_topics)
+                        
+                        if not narrative_text or len(narrative_text) < 50:
+                            raise ValueError("Narrative text too short or empty")
+
+                        # PASS 2: Assets (JSON)
+                        assets_data = design_section_assets(narrative_text, sec_meta, metaphor, struggle_topics)
+                        
+                        # MERGE
+                        combined_blocks = []
+                        assets = assets_data.get('assets', [])
+                        
+                        # Processing Order & STRICT FABRICATION
+                        visuals = [b for b in assets if b['type'] in ['video_clip', 'image_diagram']]
+                        audios = [b for b in assets if b['type'] in ['audio_note', 'callout_pro_tip']]
+                        quizzes = [b for b in assets if b['type'] in ['quiz_single', 'quiz_final']]
+                        
+                        # PARALLEL GENERATION INSIDE SECTION (Nested ThreadPool)
+                        # Note: Nesting ThreadPools is generally safe in Python but we should be mindful of worker limits.
+                        # Since the outer loop will use threads, this inner part assumes sufficient workers or runs sequentially if saturated.
+                        
+                        processed_visuals = []
+                        processed_audios = []
+
+                        # We use a context manager for the inner execution to ensure clean-up
+                        with ThreadPoolExecutor(max_workers=3) as inner_executor:
+                             fab_task = lambda b: fabricate_block(b, topic, video_agent, image_agent, audio_agent)
+                             processed_visuals = list(inner_executor.map(fab_task, visuals))
+                             processed_audios = list(inner_executor.map(fab_task, audios))
+
+                        # Assemble Block
+                        for pv in processed_visuals:
+                            if pv: combined_blocks.append(pv)
+
+                        combined_blocks.append({ "type": "text", "content": narrative_text })
+
+                        for pa in processed_audios:
+                            if pa: combined_blocks.append(pa)
+
+                        for block in quizzes:
+                            combined_blocks.append(block)
+
+                        section_result = {
+                            "title": sec_meta['title'],
+                            "blocks": combined_blocks
+                        }
+                        break # Success
+
+                    except Exception as e:
+                        logger.warning(f"⚠️ Section {index+1} Attempt {attempt+1} Failed: {e}")
+                        if attempt == max_retries - 1:
+                            raise RuntimeError(f"Mixed-Media Generation Failed for Section {index+1}: {e}")
+                        time.sleep(2)
                 
-                if not narrative_text or len(narrative_text) < 50:
-                    raise ValueError("Narrative text too short or empty")
-
-                # PASS 2: Assets (JSON)
-                assets_data = design_section_assets(narrative_text, sec_meta, metaphor, struggle_topics)
+                return index, section_result
                 
-                # MERGE
-                combined_blocks = []
-                assets = assets_data.get('assets', [])
-                
-                # Processing Order & STRICT FABRICATION
-                # Order: Visuals -> Text -> Audio/Tips -> Quiz
-                visuals = [b for b in assets if b['type'] in ['video_clip', 'image_diagram']]
-                audios = [b for b in assets if b['type'] in ['audio_note', 'callout_pro_tip']]
-                quizzes = [b for b in assets if b['type'] in ['quiz_single', 'quiz_final']]
-                
-                # PARALLEL GENERATION OPTIMIZATION
-                # Generate all assets concurrently to speed up section creation.
-                from concurrent.futures import ThreadPoolExecutor
-                
-                p_visuals = []
-                p_audios = []
-                
-                with ThreadPoolExecutor() as executor:
-                    # Helper lambda to capture agents
-                    fab_task = lambda b: fabricate_block(b, topic, video_agent, image_agent, audio_agent)
-                    
-                    # Submit both batches
-                    # We use list() to force execution and catch exceptions within the try/except block of the section loop
-                    p_visuals = list(executor.map(fab_task, visuals))
-                    p_audios = list(executor.map(fab_task, audios))
-
-                # Assemble Block (Order: Visuals -> Text -> Audio -> Quiz)
-                for pv in p_visuals:
-                    if pv: combined_blocks.append(pv)
-
-                combined_blocks.append({ "type": "text", "content": narrative_text })
-
-                for pa in p_audios:
-                    if pa: combined_blocks.append(pa)
-
-                for block in quizzes:
-                    combined_blocks.append(block)
-
-                final_sections.append({
-                    "title": sec_meta['title'],
-                    "blocks": combined_blocks
-                })
-                section_success = True
-                break # Success, exit retry loop
-
             except Exception as e:
-                logger.warning(f"⚠️ Section {index+1} Attempt {attempt+1} Failed: {e}")
-                if attempt < max_retries - 1:
-                    time.sleep(2)
-                else:
-                    logger.error(f"❌ Section {index+1} Failed after {max_retries} attempts.")
-                    # CRITICAL: Re-raise to abort entire tutorial if mixed-media fails
-                    raise RuntimeError(f"Mixed-Media Generation Failed for Section {index+1}: {e}")
+                logger.error(f"❌ Critical Failure in Section {index+1}: {e}")
+                raise e
+
+        # EXECUTE PARALLEL SECTIONS
+        logger.info(f"   ⚡ Launching {len(blueprint['sections'])} sections in parallel...")
+        if progress_callback:
+            progress_callback(f"Generating {len(blueprint['sections'])} sections simultaneously...")
+
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            futures = []
+            for i, sec in enumerate(blueprint.get('sections', [])):
+                futures.append(executor.submit(process_section, i, sec))
+                
+            for future in futures:
+                idx, result = future.result() # This re-raises exceptions from threads
+                final_sections[idx] = result # Store in correct order
+
+        # Final Validation
+        if not all(final_sections):
+             raise RuntimeError("One or more sections failed to generate.")
+
+        # PHASE 3: FINAL AUDIO SUMMARY
+        try:
+            logger.info("   🎙️ Generating Course Summary Audio...")
+            if progress_callback: progress_callback("Finalizing: Generating Audio Summary...")
+            
+            summary_script = f"Congratulations on completing this course on {topic}. To recap: We explored {metaphor} to understand the core concepts. Remember to apply these strategies on your channels like {', '.join(connected_channels) if connected_channels else 'social media'}. Keep experimenting!"
+            
+            summary_url = audio_agent.generate_audio(summary_script, folder="tutorials")
+            if summary_url:
+                final_sections.append({
+                    "title": "Course Summary",
+                    "blocks": [{ "type": "audio", "url": summary_url, "transcript": summary_script }]
+                })
+        except Exception as e:
+            logger.warning(f"⚠️ Summary Audio Failed: {e}")
+
+        # PHASE 4: QA AUDIT
+        audit_report = review_tutorial_quality({ "title": blueprint.get("title", topic), "sections": final_sections }, blueprint)
+        logger.info(f"   🧐 QA Score: {audit_report.get('score')}/100 - {audit_report.get('status')}")
+
+        # Save
+        tutorial_data = {
+            "title": blueprint.get("title", topic),
+            "category": "Adaptive Course",
+            "difficulty": profile.get("marketing_knowledge", "NOVICE"),
+            "sections": final_sections,
+            "owner_id": user_id,
+            "is_public": True, 
+            "tags": [profile.get("learning_style", "VISUAL"), metaphor],
+            "timestamp": firestore.SERVER_TIMESTAMP,
+            "is_completed": False,
+            "audit_report": audit_report,
+            "generation_alerts": [] # Populated by blocks if needed
+        }
         
-        if not section_success:
-             raise RuntimeError(f"Failed to generate Section {index+1}: {sec_meta['title']}")
+        # Collect Alerts from blocks
+        alerts = []
+        for i, sec in enumerate(final_sections):
+            if not sec: continue
+            for block in sec.get('blocks', []):
+                if block.get('status') == 'failed':
+                    alerts.append({
+                        "section_index": i,
+                        "section_title": sec['title'],
+                        "type": block.get('original_type'),
+                        "prompt": block.get('prompt'),
+                        "timestamp": datetime.datetime.now().isoformat()
+                    })
+        tutorial_data['generation_alerts'] = alerts
 
-    # Final Validation
-    if not final_sections:
-        raise RuntimeError("Tutorial generation resulted in 0 sections. Aborting save.")
+        # Create Admin Task if Alerts Exist
+        if alerts:
+            try:
+                db.collection('admin_tasks').add({
+                    "type": "content_alert",
+                    "status": "pending",
+                    "user_id": user_id,
+                    "tutorial_title": tutorial_data['title'],
+                    "alerts": alerts,
+                    "created_at": firestore.SERVER_TIMESTAMP
+                })
+                logger.warning(f"   ⚠️ Created Admin Task for {len(alerts)} generation failures.")
+            except Exception as e:
+                logger.error(f"Failed to create admin task: {e}")
+        
+        # Save to User's Private Collection
+        doc_ref = db.collection("users").document(user_id).collection("tutorials").add(tutorial_data)
+        tutorial_data["id"] = doc_ref[1].id
+        
+        # Save to Global Index
+        try:
+            global_ref = db.collection("tutorials").document(tutorial_data["id"])
+            global_ref.set(tutorial_data)
+            logger.info(f"   🌍 Published to Global Library: {tutorial_data['id']}")
+        except Exception as e:
+            logger.error(f"   ⚠️ Failed to publish globally: {e}")
+            
+        return tutorial_data
 
-    # Save
-    tutorial_data = {
-        "title": blueprint.get("title", topic),
-        "category": "Adaptive Course",
-        "difficulty": profile.get("marketing_knowledge", "NOVICE"),
-        "sections": final_sections,
-        "owner_id": user_id,
-        "is_public": True, 
-        "tags": [profile.get("learning_style", "VISUAL"), metaphor],
-        "timestamp": firestore.SERVER_TIMESTAMP,
-        "is_completed": False
-    }
-    
-    # Save to User's Private Collection
-    doc_ref = db.collection("users").document(user_id).collection("tutorials").add(tutorial_data)
-    tutorial_data["id"] = doc_ref[1].id
-    
-    # Save to Global Index
-    try:
-        global_ref = db.collection("tutorials").document(tutorial_data["id"])
-        global_ref.set(tutorial_data)
-        logger.info(f"   🌍 Published to Global Library: {tutorial_data['id']}")
     except Exception as e:
-        logger.error(f"   ⚠️ Failed to publish globally: {e}")
-        
-    return tutorial_data
+        logger.error(f"❌ Critical Tutorial System Failure: {e}")
+        # Create CRITICAL ALERT
+        try:
+            db.collection('admin_tasks').add({
+                "type": "system_failure",
+                "severity": "critical",
+                "status": "pending",
+                "user_id": user_id,
+                "context": {"topic": topic},
+                "error": str(e),
+                "created_at": firestore.SERVER_TIMESTAMP
+            })
+        except:
+            pass # Last resort
+        raise e
 
 def fabricate_block(block, topic, video_agent, image_agent, audio_agent):
-    """ Helper to call Creative Agents safely. Raises Error on Critical Failure. """
+    """ Helper to call Creative Agents safely. Handles Fallbacks and Alerts. """
     try:
         if block["type"] == "video_clip":
             p = block.get("visual_prompt", f"Cinematic {topic}")
@@ -396,9 +542,24 @@ def fabricate_block(block, topic, video_agent, image_agent, audio_agent):
             # Use Video Agent
             url = video_agent.generate_video(safe_p, folder="tutorials")
             
-            # STRICT CHECK: Must have a URL
+            # Fallback 1: Try Image if Video fails
             if not url or not url.startswith("http"):
-                raise RuntimeError(f"VEO Generation returned invalid URL for prompt: {p}")
+                logger.warning(f"      ⚠️ VEO Failed. Falling back to Image Agent for: {p}")
+                url = image_agent.generate_image(f"Cinematic photorealistic image of {p}", folder="tutorials")
+                if url:
+                    logger.info("      ✅ Fallback Image Created")
+                    return { "type": "image", "url": url, "prompt": p, "fallback": True }
+            
+            # Fallback 2: Alert (Soft Failure)
+            if not url or not url.startswith("http"):
+                 logger.error(f"      ❌ All Visual Generation Failed on: {p}")
+                 return { 
+                     "type": "placeholder", 
+                     "original_type": "video",
+                     "prompt": p, 
+                     "status": "failed",
+                     "info": "Generation failed. Admin regeneration required." 
+                 }
             
             logger.info(f"      ✅ Video Created: {url[:30]}...")
             return { "type": "video", "url": url, "prompt": p }
@@ -412,8 +573,15 @@ def fabricate_block(block, topic, video_agent, image_agent, audio_agent):
             if url and url.startswith("http"):
                 logger.info(f"      ✅ Image Created")
                 return { "type": "image", "url": url, "prompt": p }
-            logger.warning("      ⚠️ Image generation failed, skipping block (Semi-critical).")
-            return None # Skip block but don't crash
+            
+            logger.warning("      ⚠️ Image generation failed, recording alert.")
+            return {
+                "type": "placeholder",
+                "original_type": "image",
+                "prompt": p,
+                "status": "failed",
+                "info": "Image generation failed."
+            }
         
         elif block["type"] == "audio_note":
             s = block.get("script", "")
@@ -423,9 +591,16 @@ def fabricate_block(block, topic, video_agent, image_agent, audio_agent):
             # Use Audio Agent (Persistent)
             url = audio_agent.generate_audio(s, folder="tutorials")
             
-            # STRICT CHECK: Must have a URL
+            # Alert on Audio Fail
             if not url or not url.startswith("http"):
-                raise RuntimeError("TTS Generation returned invalid output.")
+                logger.error("      ❌ TTS Failed.")
+                return {
+                    "type": "placeholder",
+                    "original_type": "audio",
+                    "script": s,
+                    "status": "failed",
+                    "info": "Audio generation failed."
+                }
                 
             logger.info(f"      ✅ Audio Created")
             return { "type": "audio", "url": url, "transcript": s }
@@ -434,5 +609,10 @@ def fabricate_block(block, topic, video_agent, image_agent, audio_agent):
             return block 
     except Exception as e:
         logger.error(f"      ⚠️ Asset Error: {e}")
-        # Re-raise to trigger the section retry loop
-        raise e
+        # Soft Fail for unexpected exceptions too
+        return {
+            "type": "placeholder",
+            "original_type": block.get("type", "unknown"),
+             "status": "failed",
+             "error": str(e)
+        }
