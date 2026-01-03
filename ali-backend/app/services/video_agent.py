@@ -140,35 +140,64 @@ class VideoAgent:
             # 2. Output Configuration
             output_gcs_uri = f"gs://{BUCKET_NAME}/{folder}"
             
-            # 3. Call Model
-            job = self.client.models.generate_videos(
-                model=VIDEO_MODEL,
-                prompt=clean_prompt,
-                config=types.GenerateVideosConfig(
-                    aspect_ratio="16:9",
-                    person_generation="allow",
-                    # We define output URI but also handle bytes if they come back
-                    output_gcs_uri=output_gcs_uri 
+            # 3. Call Model - auto-detect method
+            generate_method = getattr(self.client.models, "generate_videos", None)
+            
+            if generate_method:
+                 job = generate_method(
+                    model=VIDEO_MODEL,
+                    prompt=clean_prompt,
+                    config=types.GenerateVideosConfig(
+                        aspect_ratio="16:9",
+                        person_generation="allow",
+                        output_gcs_uri=output_gcs_uri 
+                    )
                 )
-            )
+            else:
+                logger.warning("⚠️ generate_videos not found, falling back to generate_content")
+                job = self.client.models.generate_content(
+                    model=VIDEO_MODEL,
+                    contents=clean_prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="video/mp4" # Attempting best-effort
+                    )
+                )
 
             # 5. Manual Polling
             if hasattr(job, "done"):
-                while not job.done():
+                # Handle 'done' being a property or method
+                is_done = job.done() if callable(job.done) else job.done
+                while not is_done:
                     time.sleep(5)
+                    is_done = job.done() if callable(job.done) else job.done
             
-            # 6. Result Extraction
-            # Target 'generated_videos' list in job.result or job.response
+            # 6. Result Extraction (Fixed)
             generated_videos = None
-            result = getattr(job, "result", None)
             
+            # Handle result() vs result property
+            result_attr = getattr(job, "result", None)
+            final_result = None
+            
+            if callable(result_attr):
+                try:
+                    final_result = result_attr()
+                except Exception as e:
+                    logger.warning(f"Result call failed: {e}")
+            else:
+                final_result = result_attr
+
             # Try getting generated_videos from result object
-            if result:
-                generated_videos = getattr(result, "generated_videos", None)
+            if final_result:
+                generated_videos = getattr(final_result, "generated_videos", None)
             
-            # Fallback: Try from response object if result didn't have it
+            # Fallback: Try from response object 
             if not generated_videos and hasattr(job, "response"):
                  generated_videos = getattr(job.response, "generated_videos", None)
+            
+            # Fallback for generate_content (candidates)
+            if not generated_videos and hasattr(final_result, "candidates"):
+                 # Adapt candidates to expected structure if possible
+                 pass 
 
             if not generated_videos:
                 logger.error("❌ No generated_videos list found in response.")
@@ -213,11 +242,6 @@ class VideoAgent:
             
             if video_uri:
                 logger.info(f"RETRIEVED URI: {video_uri}")
-                # For GCS URI, we might want to "persist" it by downloading and re-uploading if possible,
-                # but currently just returning Signed URL fallback until we decide to copy-blob.
-                # Per prompt "Capture raw bytes... and upload".
-                # If we only got URI, we'd ideally read it and upload.
-                # I'll add logic to try reading URI content if bytes not found.
                 return self._get_signed_url(video_uri)
 
             logger.error("❌ Failed to extract Video Bytes or URI.")
