@@ -7,7 +7,7 @@ from typing import Any, Dict, List
 # Configure logger
 logger = logging.getLogger("ali_platform.services.job_runner")
 
-def process_tutorial_job(job_id: str, user_id: str, topic: str):
+def process_tutorial_job(job_id: str, user_id: str, topic: str, notification_id: str | None = None):
     """
     Background task that generates the tutorial and updates status.
     Updates the SAME notification to prevent 'stale loading' UI.
@@ -35,23 +35,41 @@ def process_tutorial_job(job_id: str, user_id: str, topic: str):
         # 1. Update Status -> Processing
         job_ref.update({"status": "processing", "started_at": firestore.SERVER_TIMESTAMP})
 
-        # 2. Create "Started" Notification (Spinner)
-        # We capture the reference (add() returns [timestamp, doc_ref])
-        # SENIOR DEV FIX: Save to user's subcollection so the frontend listener picks it up
-        _, notification_ref = db.collection("users").document(user_id).collection("notifications").add({
-            "user_id": user_id,
-            "type": "info", # Usually renders as spinner/info icon
-            "title": "Generation Started",
-            "message": f"AI is crafting your course on '{topic}'. This may take a minute.",
-            "link": None,
-            "read": False,
-            "created_at": firestore.SERVER_TIMESTAMP
-        })
+        # 2. Create or reuse notification to reflect processing immediately
+        notifications_col = db.collection("users").document(user_id).collection("notifications")
+        if notification_id:
+            notification_ref = notifications_col.document(notification_id)
+            notification_ref.set({
+                "user_id": user_id,
+                "status": "processing",
+                "type": "info",
+                "title": "Generation Started",
+                "message": f"AI is crafting your course on '{topic}'. This may take a minute.",
+                "link": None,
+                "read": False,
+                "created_at": firestore.SERVER_TIMESTAMP,
+                "updated_at": firestore.SERVER_TIMESTAMP
+            }, merge=True)
+        else:
+            _, notification_ref = notifications_col.add({
+                "user_id": user_id,
+                "type": "info", # Usually renders as spinner/info icon
+                "status": "processing",
+                "title": "Generation Started",
+                "message": f"AI is crafting your course on '{topic}'. This may take a minute.",
+                "link": None,
+                "read": False,
+                "created_at": firestore.SERVER_TIMESTAMP
+            })
 
         # Define progress callback to update the notification in real-time
         def update_progress(msg):
             if notification_ref:
-                notification_ref.update({"message": msg})
+                notification_ref.update({
+                    "message": msg,
+                    "status": "processing",
+                    "updated_at": firestore.SERVER_TIMESTAMP
+                })
 
         # 3. Run the Heavy AI Generation (Takes 60s+)
         # Now uses the locally imported function
@@ -62,6 +80,7 @@ def process_tutorial_job(job_id: str, user_id: str, topic: str):
         if notification_ref:
             notification_ref.update({
                 "type": "success",
+                "status": "completed",
                 "title": "New Lesson Ready",
                 "message": f"Your tutorial on '{topic}' is ready.",
                 "link": f"/tutorials/{tutorial_data['id']}",
@@ -85,7 +104,9 @@ def process_tutorial_job(job_id: str, user_id: str, topic: str):
         if notification_ref:
             notification_ref.update({
                 "type": "error",
+                "status": "failed",
                 "title": "Generation Failed",
                 "message": f"Something went wrong: {str(e)}",
-                "read": False
+                "read": False,
+                "updated_at": firestore.SERVER_TIMESTAMP
             })
