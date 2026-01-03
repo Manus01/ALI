@@ -119,46 +119,33 @@ class VideoAgent:
         """
         if not self.client: return None
         
-        # 1. Contextual Prompting (Brand DNA)
-        final_prompt = prompt
+        # 1. Pydantic Fix: String-Strict Validation
+        # Ensure prompt is a flat string.
+        clean_prompt = prompt
+        if isinstance(clean_prompt, list):
+            clean_prompt = clean_prompt[0]
+        
+        # 2. Contextual Prompting (Brand DNA)
         if brand_dna:
-            final_prompt = f"{prompt} Style requirements: {brand_dna}. Maintain consistent brand aesthetics."
-            
-        logger.info(f"🎬 VEO 3.1 Generating: {final_prompt[:50]}...")
+            clean_prompt = f"{clean_prompt} Style requirements: {brand_dna}. Maintain consistent brand aesthetics."
+        
+        logger.info(f"🎬 VEO 3.1 Generating: {clean_prompt[:50]}...")
+
         if reference_image_uri:
-             logger.info("   📸 Using Reference Image for conditioning.")
+             logger.info("   📸 Using Reference Image (Reference support pending SDK update).")
+             # Note: Multi-modal reference support in Veo with strict string prompts requires specific config 
+             # or waiting for SDK Pydantic fix. For now, we proceed with Text-to-Video.
 
-        try:
-            # 2. Output Configuration
-            output_gcs_uri = f"gs://{BUCKET_NAME}/{folder}"
-            
-            # 3. Construct Content (Prompt + Optional Image)
-            # Veo supports Multi-modal prompts for Image-to-Video, but strict Pydantic checks might fail on lists currently.
-            # We prepare the logic but apply the requested Type Enforcement fix.
-            contents = [final_prompt]
-            
-            if reference_image_uri:
-                img_part = self._prepare_image_part(reference_image_uri)
-                if img_part:
-                    pass # Placeholder: contents.append(img_part) if supported in future
-            
-            # TYPE ENFORCEMENT FIX:
-            # Ensure prompt is a string, even if we prepared a list
-            clean_prompt = contents[0] if isinstance(contents, list) else contents
-            if isinstance(clean_prompt, types.Part): # Safety check if order swapped
-                 clean_prompt = final_prompt
-
-            # 4. Call Model
-            job = self.client.models.generate_videos(
-                model=VIDEO_MODEL,
-                prompt=clean_prompt, # Explicitly pass string
-                config=types.GenerateVideosConfig(
-                    aspect_ratio="16:9",
-                    person_generation="allow",
-                    # We define output URI but also handle bytes if they come back
-                    output_gcs_uri=output_gcs_uri 
-                )
+        # 3. Call Model
+        job = self.client.models.generate_videos(
+            model=VIDEO_MODEL,
+            prompt=clean_prompt,
+            config=types.GenerateVideosConfig(
+                aspect_ratio="16:9",
+                person_generation="allow",
+                output_gcs_uri=output_gcs_uri 
             )
+        )
 
             # 5. Manual Polling
             if hasattr(job, "done"):

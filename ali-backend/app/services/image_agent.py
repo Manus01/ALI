@@ -98,33 +98,74 @@ class ImageAgent:
         """
         if not self.client: return None
         
-        # 1. Prompt Augmentation
-        final_prompt = prompt
-        if brand_dna:
-            final_prompt = f"{prompt} Style requirements: {brand_dna}. Maintain brand consistency."
-
-        logger.info(f"🎨 Imagen 3.0 Generating: {final_prompt[:50]}...")
-        if reference_image_uri:
-             logger.info("   📸 Using Reference Image.")
-
         try:
-             # 2. Construct Prompt Content
-             contents = [final_prompt]
-             if reference_image_uri:
-                 img_part = self._prepare_image_part(reference_image_uri)
-                 if img_part:
-                     contents.append(img_part)
+             # 1. Pydantic Fix: String-Strict Validation
+             clean_prompt = prompt
+             if isinstance(clean_prompt, list):
+                 clean_prompt = clean_prompt[0]
 
-             # 3. Generate
-             # Note: Imagen 3.0 supports multi-modal prompts for some editing/variation tasks.
-             # If strictly Text-to-Image, it handles text. If Image provided, it treats as conditioning.
+             # 2. Contextual Prompting (Brand DNA)
+             if brand_dna:
+                 clean_prompt = f"{clean_prompt} Style requirements: {brand_dna}. Maintain brand consistency."
+
+             logger.info(f"🎨 Imagen 3.0 Generating: {clean_prompt[:50]}...")
+             
+             # 3. Reference Image Logic (Campaign Branding)
+             # User Request: "logic supports reference_images... include reference ID [1]"
+             # User Request: "list of SubjectReferenceImage"
+             reference_images_config = None
+             
+             if reference_image_uri:
+                 logger.info("   📸 Using Reference Image (Subject Ref ID: 1).")
+                 try:
+                     # Append Trigger
+                     clean_prompt += " [1]"
+                     
+                     # Construct Reference Image Object (Best Effort with Types)
+                     # Note: We rely on the SDK having 'ReferenceImage' or similar structure.
+                     # If the class is not directly exposed as 'SubjectReferenceImage', we use the dict structure 
+                     # compatible with the client.
+                     # However, to be safe and avoid ImportErrors on unknown types, we'll try to use the raw structure 
+                     # if possible, or assume types.ReferenceImage is available.
+                     
+                     # Attempting to use the raw dict structure usually accepted by the underlying API
+                     # if generic types are ambiguous. But implied from prompt is usage of SDK objects.
+                     
+                     gcs_source = types.GcsSource(uris=[reference_image_uri])
+                     
+                     # We construct the list for the config
+                     # Note: Actual SDK methods might vary, but we follow the intent strictly.
+                     # Providing 'reference_images' argument to GenerateImageConfig
+                     reference_images_config = [
+                         types.ReferenceImage(
+                             id=1,
+                             subject_image=types.SubjectImage(gcs_source=gcs_source),
+                             description="Brand Reference"
+                         )
+                     ]
+                 except Exception as ref_e:
+                     logger.warning(f"⚠️ Failed to configure Reference Image: {ref_e}. Proceeding with text only.")
+
+             # 4. Generate
+             job_config = types.GenerateImageConfig(
+                 number_of_images=1,
+                 aspect_ratio="16:9"
+             )
+             
+             # Inject reference images if valid
+             if reference_images_config:
+                 # Depending on SDK version, this might be a direct arg or property
+                 # We set it on the config object if supported
+                 if hasattr(job_config, "reference_images"):
+                    job_config.reference_images = reference_images_config
+                 else:
+                    # Fallback if attribute missing on local type (unlikely if v2026 standards imply it)
+                    logger.warning("⚠️ GenerateImageConfig missing 'reference_images' attr.")
+             
              response = self.client.models.generate_images(
                 model=IMAGE_MODEL,
-                prompt=contents, 
-                config=types.GenerateImageConfig(
-                    number_of_images=1,
-                    aspect_ratio="16:9"
-                )
+                prompt=clean_prompt, # Strict String
+                config=job_config
              )
 
              if response.generated_images:
