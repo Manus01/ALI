@@ -136,16 +136,21 @@ class VideoAgent:
              # Note: Multi-modal reference support in Veo with strict string prompts requires specific config 
              # or waiting for SDK Pydantic fix. For now, we proceed with Text-to-Video.
 
-        # 3. Call Model
-        job = self.client.models.generate_videos(
-            model=VIDEO_MODEL,
-            prompt=clean_prompt,
-            config=types.GenerateVideosConfig(
-                aspect_ratio="16:9",
-                person_generation="allow",
-                output_gcs_uri=output_gcs_uri 
+        try:
+            # 2. Output Configuration
+            output_gcs_uri = f"gs://{BUCKET_NAME}/{folder}"
+            
+            # 3. Call Model
+            job = self.client.models.generate_videos(
+                model=VIDEO_MODEL,
+                prompt=clean_prompt,
+                config=types.GenerateVideosConfig(
+                    aspect_ratio="16:9",
+                    person_generation="allow",
+                    # We define output URI but also handle bytes if they come back
+                    output_gcs_uri=output_gcs_uri 
+                )
             )
-        )
 
             # 5. Manual Polling
             if hasattr(job, "done"):
