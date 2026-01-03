@@ -197,11 +197,20 @@ def design_section_assets(section_text, section_meta, metaphor, struggle_topics:
         logger.warning(f"⚠️ Asset Generation Parsing Failed: {e}. Returning empty assets.")
         return {"assets": []}
 
+from app.services.video_agent import VideoAgent
+from app.services.image_agent import ImageAgent
+
+# ... (imports remain)
+
 # --- MAIN CONTROLLER ---
 def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context: str = None, progress_callback=None):
-    creative = CreativeService()
+    # Initialize all Creative Agents
+    creative = CreativeService() # Still used for Audio (TTS)
+    video_agent = VideoAgent()
+    image_agent = ImageAgent()
     
     # Fetch Context (Profile + Campaigns)
+    # ... (existing context fetching logic) ...
     user_doc = db.collection('users').document(user_id).get()
     profile = user_doc.to_dict().get("profile", {})
     campaigns_ref = db.collection('users').document(user_id).collection('campaign_performance').limit(3).stream()
@@ -297,13 +306,13 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
                 quizzes = [b for b in assets if b['type'] in ['quiz_single', 'quiz_final']]
                 
                 for block in visuals:
-                    processed = fabricate_block(block, topic, creative)
+                    processed = fabricate_block(block, topic, creative, video_agent, image_agent)
                     if processed: combined_blocks.append(processed)
 
                 combined_blocks.append({ "type": "text", "content": narrative_text })
 
                 for block in audios:
-                    processed = fabricate_block(block, topic, creative)
+                    processed = fabricate_block(block, topic, creative, video_agent, image_agent)
                     if processed: combined_blocks.append(processed)
 
                 for block in quizzes:
@@ -359,14 +368,16 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
         
     return tutorial_data
 
-def fabricate_block(block, topic, creative):
-    """ Helper to call Creative Service safely. Raises Error on Critical Failure. """
+def fabricate_block(block, topic, creative, video_agent, image_agent):
+    """ Helper to call Creative Agents safely. Raises Error on Critical Failure. """
     try:
         if block["type"] == "video_clip":
             p = block.get("visual_prompt", f"Cinematic {topic}")
             safe_p = f"Cinematic, abstract, photorealistic, 4k shot of {p}. High quality. No text, no screens."
             logger.info(f"      🎥 VEO Generating: {p}")
-            url = creative.generate_video(safe_p, style="cinematic")
+            
+            # Use Video Agent
+            url = video_agent.generate_video(safe_p)
             
             # STRICT CHECK: Must have a URL
             if not url or not url.startswith("http"):
@@ -377,9 +388,10 @@ def fabricate_block(block, topic, creative):
         
         elif block["type"] == "image_diagram":
             p = block.get("visual_prompt", f"Diagram of {topic}")
-            url = creative.generate_image(p)
-            # Images are less critical, but good to have. We won't crash hard on images, 
-            # but for consistency with "Mixed Media or Nothing" let's be strict if it's a diagram.
+            
+            # Use Image Agent
+            url = image_agent.generate_image(p)
+            
             if url and url.startswith("http"):
                 logger.info(f"      ✅ Image Created")
                 return { "type": "image", "url": url, "prompt": p }
@@ -390,6 +402,8 @@ def fabricate_block(block, topic, creative):
             s = block.get("script", "")
             if not s: s = f"Let's focus on {topic}."
             logger.info(f"      🎙️ TTS Generating...")
+            
+            # Use Legacy Creative Service for Audio
             url = creative.generate_audio(s)
             
             # STRICT CHECK: Must have a URL
