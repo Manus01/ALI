@@ -50,39 +50,61 @@ class TroubleshootingAgent:
                 self.tools = []
         
     def fetch_recent_errors(self, hours: int = 24, limit: int = 10) -> List[Any]:
-        """ Fetches 'ERROR' severity logs from the last X hours. """
-        if not self.logging_client:
-            return []
-            
-        logger.info(f"🔎 Fetching logs for last {hours}h...")
+        """ Fetches errors from Cloud Logging AND 'admin_alerts' Firestore collection. """
+        combined_errors = []
+        
+        # 1. Fetch from Firestore (admin_alerts) - FAST & RELIABLE for App Signals
         try:
-            time_threshold = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=hours)
-            filter_str = f"severity>=ERROR AND timestamp>=\"{time_threshold.isoformat()}\""
+            cutoff = datetime.datetime.utcnow() - datetime.timedelta(hours=hours)
+            alerts_ref = db.collection("admin_alerts")\
+                           .where("created_at", ">=", cutoff.isoformat())\
+                           .stream()
             
-            entries = self.logging_client.list_entries(
-                filter_=filter_str,
-                order_by=DESCENDING,
-                page_size=limit
-            )
-            
-            # Simple Deduplication by payload signature
-            unique_errors = {}
-            for entry in entries:
-                # payload can be dict or str
-                payload = entry.payload
-                sig = str(payload)[:200] # Signature based on first 200 chars
-                if sig not in unique_errors:
-                    unique_errors[sig] = {
-                        "timestamp": entry.timestamp,
-                        "payload": payload,
-                        "resource": entry.resource.labels if entry.resource else {},
-                        "signature": sig
-                    }
-                    
-            return list(unique_errors.values())
+            for doc in alerts_ref:
+                data = doc.to_dict()
+                payload = f"[{data.get('type', 'ALERT')}] {data.get('message')} (Context: {data.get('context')})"
+                sig = f"firestore_{doc.id}"
+                combined_errors.append({
+                    "timestamp": data.get("created_at"),
+                    "payload": payload,
+                    "resource": {"type": "firestore_alert"},
+                    "signature": sig
+                })
         except Exception as e:
-            logger.error(f"❌ Log Fetch Failed: {e}")
-            return []
+            logger.warning(f"⚠️ Failed to fetch admin_alerts: {e}")
+
+        # 2. Fetch from Cloud Logging (if available) - DEEP INFRA LOGS
+        if self.logging_client:
+            try:
+                logger.info(f"🔎 Fetching Cloud Logs for last {hours}h...")
+                time_threshold = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=hours)
+                filter_str = f"severity>=ERROR AND timestamp>=\"{time_threshold.isoformat()}\""
+                
+                entries = self.logging_client.list_entries(
+                    filter_=filter_str,
+                    order_by=DESCENDING,
+                    page_size=limit
+                )
+                
+                unique_sigs = set(e['signature'] for e in combined_errors)
+                
+                for entry in entries:
+                    payload = entry.payload
+                    sig = str(payload)[:200]
+                    
+                    if sig not in unique_sigs:
+                        combined_errors.append({
+                            "timestamp": entry.timestamp,
+                            "payload": payload,
+                            "resource": entry.resource.labels if entry.resource else {},
+                            "signature": sig
+                        })
+                        unique_sigs.add(sig)
+
+            except Exception as e:
+                logger.error(f"❌ Log Fetch Failed: {e}")
+        
+        return combined_errors[:limit]
 
     def analyze_error(self, error_entry: Dict[str, Any]) -> Dict[str, Any]:
         """
