@@ -4,6 +4,7 @@ import firebase_admin
 from firebase_admin import auth
 from app.core.security import verify_token, db
 from google.cloud import firestore
+import logging
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
