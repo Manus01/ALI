@@ -33,7 +33,8 @@ class GCSService:
         # Expiration for signed URLs (default 1 hour)
         try:
             self.expiration = int(os.getenv("GCS_SIGNED_URL_EXPIRATION", "3600"))
-        except:
+        except Exception as e:
+            logger.error(f"GCS Setup Failed: {e}")
             self.expiration = 3600
 
     def upload_video(self, file_obj, filename: str, content_type: str = "video/mp4") -> str:

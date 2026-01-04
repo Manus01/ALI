@@ -55,7 +55,7 @@ def run_nightly_performance_log():
             db.collection("ad_performance_logs").document(log_id).set(log_entry)
             
             count += 1
-            print(f"✅ Logged stats for User {user_id}")
+            logger.info(f"✅ Logged stats for User {user_id}")
             
         except Exception as e:
             logger.error(f"❌ Failed to log user {user_id}: {e}")

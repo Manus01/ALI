@@ -100,7 +100,8 @@ class TroubleshootingAgent:
             from vertexai.generative_models import GoogleSearchRetrieval
             gsr = GoogleSearchRetrieval(disable_attribution=False)
             search_tool = Tool.from_google_search_retrieval(gsr)
-        except:
+        except Exception as e:
+             logger.warning(f"Google Search Tool Init Failed: {e}")
              # Fallback to previously initialized tool or empty if unavailable
              search_tool = self.tools[0] if self.tools else None
         
@@ -150,7 +151,8 @@ class TroubleshootingAgent:
             try:
                 clean_text = text.replace("```json", "").replace("```", "").strip()
                 analysis = json.loads(clean_text)
-            except:
+            except Exception as e:
+                logger.warning(f"JSON Parsing failed: {e}")
                 match = re.search(r'(\{.*\})', text, re.DOTALL)
                 if match:
                     analysis = json.loads(match.group(1))

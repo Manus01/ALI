@@ -10,7 +10,8 @@ async def review_tutorial_relevance(tutorial_data: dict, current_metrics: list, 
     Analyzes if a tutorial is still valid based on new data using 4C/ID principles.
     Returns: { "is_outdated": bool, "reason": str }
     """
-    print(f"🕵️ Gardener: Reviewing '{tutorial_data.get('title')}'...")
+    logger = logging.getLogger(__name__)
+    logger.info(f"🕵️ Gardener: Reviewing '{tutorial_data.get('title')}'...")
     
     # 1. Summarize Current Context
     metrics_summary = ""
@@ -51,5 +52,5 @@ async def review_tutorial_relevance(tutorial_data: dict, current_metrics: list, 
         text = response.text.replace("```json", "").replace("```", "").strip()
         return json.loads(text)
     except Exception as e:
-        print(f"❌ Review Error: {e}")
+        logger.error(f"❌ Review Error: {e}")
         return {"is_outdated": False, "reason": "Error during review"}

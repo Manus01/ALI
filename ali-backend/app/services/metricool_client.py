@@ -20,7 +20,10 @@ class MetricoolClient:
     """
     def __init__(self, blog_id: Optional[str] = None):
         if not METRICOOL_USER_TOKEN or not METRICOOL_USER_ID:
-            raise ValueError("METRICOOL_USER_TOKEN or METRICOOL_USER_ID is missing.")
+            logger.warning("⚠️ Metricool Env Vars missing. Client strictly disabled.")
+            self.disabled = True
+        else:
+            self.disabled = False
             
         self.headers = {
             "X-Mc-Auth": METRICOOL_USER_TOKEN,
@@ -163,7 +166,7 @@ class MetricoolClient:
         # 1. Normalize Media (Upload to Metricool)
         metricool_media = None
         if media_url:
-            print(f"🔄 Handing off video to Metricool: {media_url[:50]}...")
+            logger.info(f"🔄 Handing off video to Metricool: {media_url[:50]}...")
             metricool_media = self.normalize_media(media_url)
 
         # 2. Construct Post Object
@@ -209,6 +212,7 @@ class MetricoolClient:
         return [] # Placeholder: You would implement specific GET /stats/instagram calls here
 
     def get_yesterday_stats(self, blog_id: str) -> Dict[str, float]:
+        if self.disabled: return {"total_spend": 0, "clicks": 0, "cpc": 0.0, "ctr": 0.0}
         """
         Fetches a simplified snapshot of YESTERDAY'S performance across all networks.
         Used for the nightly research log.

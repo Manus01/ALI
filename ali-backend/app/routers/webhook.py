@@ -42,8 +42,8 @@ async def handle_airbyte_webhook(request: Request):
         # We will log the alert for now.
         failure_reason = payload.get("failureReason", {}).get("externalMessage", "Unknown Error")
         
-        print(f"🚨 ALERT: Connection {connection_id} FAILED!")
-        print(f"⚠️ Reason: {failure_reason}")
+        logger.error(f"🚨 ALERT: Connection {connection_id} FAILED!")
+        logger.warning(f"⚠️ Reason: {failure_reason}")
 
         # In a real production app, you would query Firestore here:
         # db = firestore.Client()
@@ -52,6 +52,6 @@ async def handle_airbyte_webhook(request: Request):
         return {"status": "processed", "alert": "logged"}
 
     except Exception as e:
-        print(f"❌ Webhook Error: {e}")
+        logger.error(f"❌ Webhook Error: {e}")
         # Return 200 OK anyway so Airbyte stops retrying
         return {"status": "error", "detail": str(e)}

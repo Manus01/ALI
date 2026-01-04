@@ -46,7 +46,7 @@ def save_hft_result(data: HFTResult, user: dict = Depends(verify_token)):
 
         return {"status": "success"}
     except Exception as e:
-        print(f"❌ HFT Error: {e}")
+        logger.error(f"❌ HFT Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # --- 2. MARKETING KNOWLEDGE (Hard Skills) ---
@@ -76,7 +76,7 @@ def save_marketing_result(data: StandardTestResult, user: dict = Depends(verify_
 
         return {"status": "success", "level": level}
     except Exception as e:
-        print(f"❌ Marketing Error: {e}")
+        logger.error(f"❌ Marketing Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # --- 3. EQ TEST (The Final Step) ---
@@ -101,5 +101,5 @@ def save_eq_result(data: StandardTestResult, user: dict = Depends(verify_token))
 
         return {"status": "success"}
     except Exception as e:
-        print(f"❌ EQ Error: {e}")
+        logger.error(f"❌ EQ Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))

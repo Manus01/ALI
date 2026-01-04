@@ -81,12 +81,12 @@ def get_metricool_status(user: dict = Depends(verify_token)):
                 "blog_id": blog_id
             }
         except Exception as e:
-            print(f"⚠️ Metricool Status Fetch Error: {e}")
+            logger.warning(f"⚠️ Metricool Status Fetch Error: {e}")
             # Return active but with error note, so UI doesn't break
             return {"status": "active", "connected_providers": [], "error": "Could not fetch live providers"}
             
     except Exception as e:
-        print(f"❌ Metricool Status Error: {e}")
+        logger.error(f"❌ Metricool Status Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

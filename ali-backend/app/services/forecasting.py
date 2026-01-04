@@ -27,7 +27,7 @@ def generate_forecast(history: List[float], days: int = 7) -> List[float]:
         return [max(0, val) for val in forecast]
         
     except Exception as e:
-        print(f"?? Forecasting Error: {e}")
+        logger.error(f"?? Forecasting Error: {e}")
         # Fallback: Return the average of the last 3 days repeated
         avg = sum(history[-3:]) / 3 if len(history) >= 3 else sum(history) / len(history)
         return [avg] * days

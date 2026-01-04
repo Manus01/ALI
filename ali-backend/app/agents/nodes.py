@@ -7,7 +7,8 @@ from app.core.security import db
 
 try:
     import pandas as pd
-except Exception:
+except Exception as e:
+    logger.warning(f"Pandas import failed (Optional): {e}")
     pd = None
 
 logger = logging.getLogger(__name__)
@@ -18,7 +19,7 @@ def analyst_node(state: AgentState) -> dict:
     The 'Data Detective'.
     Reads REAL data from Firestore and finds anomalies.
     """
-    print("🕵️ Analyst Agent: Reading REAL data from Firestore...")
+    logger.info("🕵️ Analyst Agent: Reading REAL data from Firestore...")
     user_id = state.get("user_id")
 
     # 1. Fetch from Firestore
@@ -79,7 +80,7 @@ def analyst_node(state: AgentState) -> dict:
     if not anomalies:
         anomalies.append("Performance is stable. No major anomalies detected.")
 
-    print(f"✅ Analyst found {len(anomalies)} items.")
+    logger.info(f"✅ Analyst found {len(anomalies)} items.")
     return {"anomalies": anomalies}
 
 
@@ -89,7 +90,7 @@ def strategist_node(state: AgentState) -> dict:
     The 'Marketing Genius'.
     Generates EXECUTABLE strategies with tool parameters.
     """
-    print("🧠 Strategist Agent: Generating executable plan...")
+    logger.info("🧠 Strategist Agent: Generating executable plan...")
 
     anomalies = state.get("anomalies", [])
     issues_text = "\n".join(f"- {issue}" for issue in anomalies)
@@ -132,7 +133,7 @@ def strategist_node(state: AgentState) -> dict:
         plan = json.loads(content)
 
     except Exception as e:
-        print(f"⚠️ AI Error: {e}")
+        logger.error(f"⚠️ AI Error: {e}")
         plan = {
             "title": "Manual Strategy (Fallback)",
             "rationale": "AI service temporarily unavailable.",
@@ -141,5 +142,5 @@ def strategist_node(state: AgentState) -> dict:
             ]
         }
 
-    print("✅ Strategy Generated.")
+    logger.info("✅ Strategy Generated.")
     return {"strategy_plan": plan}

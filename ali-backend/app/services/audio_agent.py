@@ -125,7 +125,9 @@ class AudioAgent:
                 if isinstance(raw, bytearray): return bytes(raw)
                 if isinstance(raw, list):
                     try: return bytes(raw)
-                    except: return b"".join(raw) if all(isinstance(x, (bytes, bytearray)) for x in raw) else None
+                    except Exception: 
+                        logger.warning("Audio concatenation fallback failed.")
+                        return b"".join(raw) if all(isinstance(x, (bytes, bytearray)) for x in raw) else None
                 return None
 
             try:

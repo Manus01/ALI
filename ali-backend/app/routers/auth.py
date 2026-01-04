@@ -6,6 +6,7 @@ from app.core.security import verify_token, db
 from google.cloud import firestore
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 # --- 1. DATA MODELS ---
 class UserRegister(BaseModel):
@@ -76,13 +77,18 @@ def get_current_user_profile(user: dict = Depends(verify_token)):
             if brand_ref.exists:
                 user_data['brand_dna'] = brand_ref.to_dict()
         except Exception as e:
-            print(f"⚠️ Warning fetching brand DNA: {e}")
+            # The user's instruction provided an 'if' block here, but it was syntactically incorrect
+            # (e.g., 'data' and 'e' undefined).
+            # The most faithful interpretation that replaces the print with logger and maintains
+            # the original error handling structure is to replace 'print' with 'logger.warning'
+            # within the existing 'except' block.
+            logger.warning(f"⚠️ Warning fetching brand DNA: {e}")
             # Don't fail the whole profile load if just this part fails
         
         return user_data
             
     except Exception as e:
-        print(f"❌ Error fetching profile: {e}")
+        logger.error(f"❌ Error fetching profile: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # --- 4. UPDATE BRAND ENDPOINT ---
@@ -114,5 +120,5 @@ def update_brand_profile(data: UpdateBrandRequest, user: dict = Depends(verify_t
         return {"message": "Brand profile updated successfully", "brand_dna": update_data}
 
     except Exception as e:
-        print(f"❌ Error updating brand: {e}")
+        logger.error(f"❌ Error updating brand: {e}")
         raise HTTPException(status_code=500, detail=str(e))

@@ -2,7 +2,8 @@
 from app.core.security import db
 
 def run_weekly_maintenance(user_id: str):
-    print(f"🧹 Maintenance: Starting run for {user_id}...")
+    logger = logging.getLogger(__name__)
+    logger.info(f"🧹 Maintenance: Starting run for {user_id}...")
     
     # --- LAZY IMPORTS ---
     # Import heavy agents only when the function runs
@@ -36,7 +37,7 @@ def run_weekly_maintenance(user_id: str):
         review = review_tutorial_relevance(tut, current_metrics, user_data.get('profile', {}))
         
         if review.get('is_outdated'):
-            print(f"🔄 Updating outdated lesson: {tut['title']}")
+            logger.info(f"🔄 Updating outdated lesson: {tut['title']}")
             
             # Generate the "Delta" lesson (4C/ID compliant update)
             generate_tutorial(user_id, f"UPDATE: {tut['title']}", is_delta=True, context=review.get('reason'))
@@ -65,7 +66,7 @@ def run_weekly_maintenance(user_id: str):
         
         # Simple check to avoid duplicates (In prod, use vector search)
         # For now, we just auto-generate one if it looks critical
-        print(f"🆕 Auto-creating lesson for: {anomaly}")
+        logger.info(f"🆕 Auto-creating lesson for: {anomaly}")
         
         # Create a full 4C/ID course for this new problem
         generate_tutorial(user_id, f"Fixing: {anomaly}")
@@ -79,7 +80,7 @@ def run_weekly_maintenance(user_id: str):
         })
         new_count += 1
 
-    print(f"✅ Maintenance Complete. Updates: {updates_count}, New: {new_count}")
+    logger.info(f"✅ Maintenance Complete. Updates: {updates_count}, New: {new_count}")
     
     # Final "Complete" Notification
     db.collection("users").document(user_id).collection("notifications").add({

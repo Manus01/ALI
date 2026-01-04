@@ -28,7 +28,7 @@ class OrchestratorAgent(BaseAgent):
             
             # Determine target platforms
             target_platforms = connected_platforms if connected_platforms else ["instagram", "tiktok"]
-            print(f"🎯 Orchestrating for platforms: {target_platforms}")
+            logger.info(f"🎯 Orchestrating for platforms: {target_platforms}")
 
             tasks = []
             platform_map = {} # To map result back to platform name

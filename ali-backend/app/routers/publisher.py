@@ -62,5 +62,5 @@ async def publish_video(payload: Dict[str, Any] = Body(...), user: dict = Depend
         }
 
     except Exception as e:
-        print(f"❌ Metricool Publish Failed: {e}")
+        logger.error(f"❌ Metricool Publish Failed: {e}")
         raise HTTPException(status_code=500, detail=f"Publishing failed: {e}")

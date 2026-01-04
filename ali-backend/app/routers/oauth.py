@@ -5,7 +5,9 @@ from app.core.security import verify_token
 from app.services.airbyte_client import AirbyteClient
 import json
 
+import logging
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 # Defines the structure of the data coming from the frontend
 class ConnectRequest(BaseModel):
@@ -55,7 +57,7 @@ def connect_platform(
     user: dict = Depends(verify_token)
 ):
     try:
-        print(f"🔌 Connecting {platform} to Airbyte for user {user['uid']}...")
+        logger.info(f"🔌 Connecting {platform} to Airbyte for user {user['uid']}...")
         
         # 1. Initialize Airbyte Client
         ab_client = AirbyteClient()
@@ -94,10 +96,10 @@ def connect_platform(
 
     except ValueError as ve:
         # Airbyte rejected the config (e.g. bad password)
-        print(f"❌ Airbyte Config Error: {ve}")
+        logger.error(f"❌ Airbyte Config Error: {ve}")
         raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
-        print(f"❌ Internal Error: {e}")
+        logger.error(f"❌ Internal Error: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error")
 
 @router.get("/integrations")

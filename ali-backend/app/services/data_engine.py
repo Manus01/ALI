@@ -28,7 +28,7 @@ class DataEngine:
         Standardizes and saves metrics to Firestore 'campaign_performance'
         """
         if not metrics:
-            print(f"⚠️ No data found for {platform}")
+            logger.warning(f"⚠️ No data found for {platform}")
             return
 
         batch = self.db.batch()
@@ -44,7 +44,7 @@ class DataEngine:
             batch.set(doc_ref, item, merge=True)
 
         batch.commit()
-        print(f"✅ Saved {len(metrics)} {platform} records to Firestore.")
+        logger.info(f"✅ Saved {len(metrics)} {platform} records to Firestore.")
 
     # --- 1. LINKEDIN ADS (REST API) ---
     def fetch_linkedin(self, credentials_json, dry_run=False):
@@ -52,7 +52,7 @@ class DataEngine:
         Verifies keys and fetches data.
         dry_run=True: Tests connection only, saves nothing.
         """
-        print(f"🔄 {'Testing' if dry_run else 'Fetching'} LinkedIn Data...")
+        logger.info(f"🔄 {'Testing' if dry_run else 'Fetching'} LinkedIn Data...")
         creds = json.loads(credentials_json)
         token = creds.get("access_token")
         account = creds.get("ad_account_id") 
@@ -82,11 +82,11 @@ class DataEngine:
         
         if response.status_code != 200:
             error_msg = f"LinkedIn Error {response.status_code}: {response.text}"
-            print(f"❌ {error_msg}")
+            logger.error(f"❌ {error_msg}")
             raise ValueError(error_msg) # Raise so Router knows it failed
 
         if dry_run:
-            print("✅ LinkedIn Connection Verified.")
+            logger.info("✅ LinkedIn Connection Verified.")
             return True
 
         # Process Data (Only if not dry_run)
@@ -113,7 +113,7 @@ class DataEngine:
         """
         dry_run=True: Tests connection only.
         """
-        print(f"🔄 {'Testing' if dry_run else 'Fetching'} Meta Ads Data...")
+        logger.info(f"🔄 {'Testing' if dry_run else 'Fetching'} Meta Ads Data...")
         if not FacebookAdsApi:
             raise ImportError("Facebook SDK not installed.")
 
@@ -128,7 +128,7 @@ class DataEngine:
             # Lightweight call for verification
             if dry_run:
                 account.api_get(fields=['name', 'account_status'])
-                print("✅ Meta Connection Verified.")
+                logger.info("✅ Meta Connection Verified.")
                 return True
 
             # Full Ingestion
@@ -159,7 +159,7 @@ class DataEngine:
             self.save_metrics("meta", clean_data)
 
         except Exception as e:
-            print(f"❌ Meta Error: {e}")
+            logger.error(f"❌ Meta Error: {e}")
             raise ValueError(f"Meta Auth Failed: {str(e)}")
 
     # --- 3. GOOGLE ADS (Google SDK) ---
@@ -167,7 +167,7 @@ class DataEngine:
         """
         dry_run=True: Tests connection only.
         """
-        print(f"🔄 {'Testing' if dry_run else 'Fetching'} Google Ads Data...")
+        logger.info(f"🔄 {'Testing' if dry_run else 'Fetching'} Google Ads Data...")
         if not GoogleAdsClient:
             raise ImportError("Google Ads SDK not installed.")
 
@@ -207,7 +207,7 @@ class DataEngine:
                 break 
 
             if dry_run:
-                print("✅ Google Ads Connection Verified.")
+                logger.info("✅ Google Ads Connection Verified.")
                 return True
 
             # Process Full Data
@@ -235,5 +235,5 @@ class DataEngine:
             self.save_metrics("google", clean_data)
 
         except Exception as e:
-            print(f"❌ Google Ads Error: {e}")
+            logger.error(f"❌ Google Ads Error: {e}")
             raise ValueError(f"Google Auth Failed: {str(e)}")

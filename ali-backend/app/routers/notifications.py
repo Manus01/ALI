@@ -1,7 +1,9 @@
 ﻿from fastapi import APIRouter, Depends, HTTPException
 from app.core.security import verify_token, db
 
+import logging
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 @router.delete("/{notification_id}")
 def delete_notification(notification_id: str, user: dict = Depends(verify_token)):
@@ -20,5 +22,5 @@ def delete_notification(notification_id: str, user: dict = Depends(verify_token)
         notif_ref.delete()
         return {"status": "success"}
     except Exception as e:
-        print(f"❌ Notification Delete Error: {e}")
+        logger.error(f"❌ Notification Delete Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))

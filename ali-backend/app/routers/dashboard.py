@@ -82,7 +82,7 @@ def get_dashboard_overview(user: dict = Depends(verify_token)):
                         chart_history = client.get_historical_breakdown(blog_id)
 
                 except Exception as e:
-                    print(f"⚠️ Metricool Fetch Failed: {e}")
+                    logger.warning(f"⚠️ Metricool Fetch Failed: {e}")
                     # Don't crash, just fall back to empty/offline state
         
         # --- END LIVE DATA ---
@@ -99,7 +99,8 @@ def get_dashboard_overview(user: dict = Depends(verify_token)):
                  from app.services.forecasting import generate_forecast
                 # Forecast the next 7 days based on the 'all' aggregated history
                  forecast = generate_forecast(chart_history["datasets"]["all"], days=7)
-             except Exception:
+             except Exception as e:
+                 logger.warning(f"Forecast generation failed: {e}")
                  forecast = []
         elif metrics:
              # Fallback to old logic if chart history is missing (unlikely now)
@@ -108,7 +109,8 @@ def get_dashboard_overview(user: dict = Depends(verify_token)):
                 # This old usage was likely wrong (metrics is a list of dicts), but keeping as safe fallback stub
                 # forecast = generate_forecast(metrics) 
                 forecast = [] 
-             except:
+             except Exception as e:
+                logger.warning(f"Error expanding metric: {e}")
                 forecast = []
 
         # 5. Dynamic Success Story / Context Message
@@ -129,7 +131,7 @@ def get_dashboard_overview(user: dict = Depends(verify_token)):
         }
 
     except Exception as e:
-        print(f"❌ Unexpected error in dashboard overview: {e}")
+        logger.error(f"❌ Unexpected error in dashboard overview: {e}")
         return {
             "profile": {"role": "User"},
             "agent_status": "error",

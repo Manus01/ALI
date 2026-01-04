@@ -57,16 +57,16 @@ def verify_user_channels(target_uid: str, admin: dict = Depends(verify_admin)):
             info = client.get_account_info()
             # Handle case where get_account_info returns None or error dict
             if not info or "error" in info:
-                print(f"?? Metricool API Error for {target_uid}: {info}")
+                logger.error(f"?? Metricool API Error for {target_uid}: {info}")
                 return {"connected_channels": [], "error": "Metricool API unavailable"}
                 
             return {"connected_channels": info.get("connected", [])}
         except Exception as e:
-            print(f"? Metricool Client Error: {e}")
+            logger.error(f"? Metricool Client Error: {e}")
             return {"connected_channels": [], "error": str(e)}
             
     except Exception as e:
-        print(f"? Verify Channels Error: {e}")
+        logger.error(f"? Verify Channels Error: {e}")
         raise HTTPException(status_code=500, detail=f"Verification failed: {str(e)}")
 
 # PRESERVED: Original PhD Data Access
@@ -191,7 +191,7 @@ def get_user_analytics(target_uid: str, user: dict = Depends(verify_token)):
         return stats
 
     except Exception as e:
-        print(f"❌ Analytics Fetch Error: {e}")
+        logger.error(f"❌ Analytics Fetch Error: {e}")
         # Return zero state instead of 500 to prevent frontend crash
         return {"clicks": 0, "spend": 0.0, "ctr": 0.0, "error": str(e)}
 
@@ -235,7 +235,7 @@ def get_all_tutorials(admin: dict = Depends(verify_admin)):
             
         return {"tutorials": results}
     except Exception as e:
-        print(f"❌ Admin Tutorials Fetch Error: {e}")
+        logger.error(f"❌ Admin Tutorials Fetch Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.delete("/tutorials/{tutorial_id}")
@@ -268,7 +268,7 @@ def delete_tutorial(tutorial_id: str, admin: dict = Depends(verify_admin)):
     except HTTPException as he:
         raise he
     except Exception as e:
-        print(f"❌ Admin Tutorial Delete Error: {e}")
+        logger.error(f"❌ Admin Tutorial Delete Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/research/troubleshoot")
@@ -285,5 +285,5 @@ def trigger_troubleshooting_agent(admin: dict = Depends(verify_admin)):
         report = agent.run_troubleshooter()
         return report
     except Exception as e:
-        print(f"❌ Troubleshooter Error: {e}")
+        logger.error(f"❌ Troubleshooter Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))

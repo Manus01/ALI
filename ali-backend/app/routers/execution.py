@@ -3,7 +3,9 @@ from pydantic import BaseModel
 from app.core.security import verify_token
 import time
 
+import logging
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 class ExecutionRequest(BaseModel):
     tool: str
@@ -14,7 +16,7 @@ def execute_marketing_action(body: ExecutionRequest, user: dict = Depends(verify
     """
     Executes a marketing action directly on the platform API.
     """
-    print(f"⚡ Executing tool '{body.tool}' for user {user['uid']}...")
+    logger.info(f"⚡ Executing tool '{body.tool}' for user {user['uid']}...")
     
     try:
         # Simulate API Latency
@@ -43,5 +45,5 @@ def execute_marketing_action(body: ExecutionRequest, user: dict = Depends(verify
             raise HTTPException(status_code=400, detail="Unknown tool type.")
 
     except Exception as e:
-        print(f"❌ Execution Error: {e}")
+        logger.error(f"❌ Execution Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))

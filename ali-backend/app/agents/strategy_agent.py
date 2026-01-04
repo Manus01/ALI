@@ -66,7 +66,7 @@ async def predict_cpc_change(
         return PredictionResult(**result_dict)
 
     except Exception as e:
-        print(f"Prediction Error: {e}")
+        logger.error(f"Prediction Error: {e}")
         return PredictionResult(
             metric="CPC",
             current_value=current_cpc,
