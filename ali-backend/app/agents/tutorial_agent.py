@@ -509,6 +509,20 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
             global_ref = db.collection("tutorials").document(tutorial_data["id"])
             global_ref.set(tutorial_data)
             logger.info(f"   🌍 Published to Global Library: {tutorial_data['id']}")
+            
+            # NOTIFICATION: SUCCESS
+            try:
+                db.collection('users').document(user_id).collection('notifications').add({
+                    "title": "Tutorial Ready",
+                    "message": f"'{topic}' has been generated successfully.",
+                    "type": "success",
+                    "link": f"/tutorials/{tutorial_data['id']}",
+                    "is_read": False,
+                    "created_at": firestore.SERVER_TIMESTAMP
+                })
+            except Exception as ne:
+                logger.warning(f"Failed to send success notification: {ne}")
+
         except Exception as e:
             logger.error(f"   ⚠️ Failed to publish globally: {e}")
             
@@ -516,6 +530,19 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
 
     except Exception as e:
         logger.error(f"❌ Critical Tutorial System Failure: {e}")
+        
+        # NOTIFICATION: FAILURE
+        try:
+            db.collection('users').document(user_id).collection('notifications').add({
+                "title": "Generation Failed",
+                "message": f"We couldn't generate '{topic}'. Our engineers have been alerted.",
+                "type": "error",
+                "is_read": False,
+                "created_at": firestore.SERVER_TIMESTAMP
+            })
+        except:
+            pass
+
         # Create CRITICAL ALERT
         try:
             db.collection('admin_tasks').add({

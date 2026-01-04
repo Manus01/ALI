@@ -135,7 +135,8 @@ routers_map = [
     ("/api", (assessments, ["Assessments"])), # Assessments shares prefix
     ("/api", (tutorials, ["Tutorials"])), # Tutorials shares prefix
     ("/api", (maintenance, ["Maintenance"])), # Maintenance shares prefix
-    ("/api/campaign", (campaigns, ["Campaigns"])) # Registered new Campaigns router
+    ("/api/campaign", (campaigns, ["Campaigns"])), # Registered new Campaigns router
+    ("/api/monitoring", (monitoring, ["Monitoring"]))
 ]
 
 for prefix, (module, tags) in routers_map:

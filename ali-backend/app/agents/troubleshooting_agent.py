@@ -49,62 +49,106 @@ class TroubleshootingAgent:
                 logger.warning("⚠️ Google Search Retrieval tool could not be initialized. Web research disabled.")
                 self.tools = []
         
-    def fetch_recent_errors(self, hours: int = 24, limit: int = 10) -> List[Any]:
-        """ Fetches errors from Cloud Logging AND 'admin_alerts' Firestore collection. """
-        combined_errors = []
+    def fetch_combined_telemetry(self, hours: int = 1, limit: int = 20) -> List[Any]:
+        """ 
+        The Watchdog Eye: Fetches Backend Logs, Frontend Logs, and Admin Alerts.
+        Defaults to last 1 hour for high-frequency monitoring.
+        """
+        combined = []
+        cutoff = datetime.datetime.utcnow() - datetime.timedelta(hours=hours)
         
-        # 1. Fetch from Firestore (admin_alerts) - FAST & RELIABLE for App Signals
+        # 1. Frontend Logs (client_logs)
         try:
-            cutoff = datetime.datetime.utcnow() - datetime.timedelta(hours=hours)
-            alerts_ref = db.collection("admin_alerts")\
-                           .where("created_at", ">=", cutoff.isoformat())\
-                           .stream()
-            
-            for doc in alerts_ref:
-                data = doc.to_dict()
-                payload = f"[{data.get('type', 'ALERT')}] {data.get('message')} (Context: {data.get('context')})"
-                sig = f"firestore_{doc.id}"
-                combined_errors.append({
-                    "timestamp": data.get("created_at"),
-                    "payload": payload,
-                    "resource": {"type": "firestore_alert"},
-                    "signature": sig
+            logs_ref = db.collection("client_logs")\
+                         .where("timestamp", ">=", cutoff.isoformat())\
+                         .where("level", "==", "error")\
+                         .limit(limit).stream()
+            for doc in logs_ref:
+                d = doc.to_dict()
+                combined.append({
+                    "timestamp": d.get("timestamp"),
+                    "payload": f"📱 [FRONTEND] {d.get('message')} @ {d.get('component')}\nStack: {d.get('stack_trace')[:200]}",
+                    "source": "frontend",
+                    "signature": f"client_{doc.id}"
                 })
         except Exception as e:
-            logger.warning(f"⚠️ Failed to fetch admin_alerts: {e}")
+            logger.warning(f"⚠️ Watchdog: Frontend log fetch failed: {e}")
 
-        # 2. Fetch from Cloud Logging (if available) - DEEP INFRA LOGS
+        # 2. Admin Alerts
+        try:
+             alerts_ref = db.collection("admin_alerts")\
+                           .where("created_at", ">=", cutoff.isoformat())\
+                           .stream()
+             for doc in alerts_ref:
+                d = doc.to_dict()
+                combined.append({
+                    "timestamp": d.get("created_at"),
+                    "payload": f"🚨 [ALERT] {d.get('message')} (Context: {d.get('context')})",
+                    "source": "admin_alert",
+                    "signature": f"alert_{doc.id}"
+                })
+        except Exception as e:
+            logger.warning(f"⚠️ Watchdog: Admin alerts fetch failed: {e}")
+
+        # 3. Cloud Logging (Backend)
         if self.logging_client:
             try:
-                logger.info(f"🔎 Fetching Cloud Logs for last {hours}h...")
                 time_threshold = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=hours)
+                # Filter for ERRORs
                 filter_str = f"severity>=ERROR AND timestamp>=\"{time_threshold.isoformat()}\""
+                entries = self.logging_client.list_entries(filter_=filter_str, order_by=DESCENDING, page_size=limit)
                 
-                entries = self.logging_client.list_entries(
-                    filter_=filter_str,
-                    order_by=DESCENDING,
-                    page_size=limit
-                )
-                
-                unique_sigs = set(e['signature'] for e in combined_errors)
-                
+                unique_back = set()
                 for entry in entries:
-                    payload = entry.payload
-                    sig = str(payload)[:200]
-                    
-                    if sig not in unique_sigs:
-                        combined_errors.append({
-                            "timestamp": entry.timestamp,
-                            "payload": payload,
-                            "resource": entry.resource.labels if entry.resource else {},
-                            "signature": sig
-                        })
-                        unique_sigs.add(sig)
-
+                     sig = str(entry.payload)[:200]
+                     if sig not in unique_back:
+                         combined.append({
+                             "timestamp": entry.timestamp,
+                             "payload": f"⚙️ [BACKEND] {entry.payload}",
+                             "source": "backend_infra",
+                             "signature": sig
+                         })
+                         unique_back.add(sig)
             except Exception as e:
-                logger.error(f"❌ Log Fetch Failed: {e}")
+                logger.error(f"⚠️ Watchdog: Backend log fetch failed: {e}")
+
+        return combined
+
+    def monitor_system_health(self):
+        """ The Watchdog Loop: Runs continuously (via scheduler) to analyze health. """
+        events = self.fetch_combined_telemetry(hours=1)
         
-        return combined_errors[:limit]
+        if not events:
+            # Silence is golden, but maybe log a heartbeat?
+            return {"status": "healthy", "scanned_events": 0}
+
+        tasks_created = 0
+        logger.info(f"🐕 Watchdog: Analyzing {len(events)} anomalous events...")
+        
+        for event in events:
+            # Check for existing pending task to dedupe
+            sig = event.get('signature')
+            exists = db.collection('admin_tasks').where('type', '==', 'error_report').where('error_signature', '==', sig).where('status', '==', 'pending').limit(1).get()
+            if len(exists) > 0: continue
+
+            # Analyze
+            analysis = self.analyze_error(event)
+            
+            # File Report
+            db.collection("admin_tasks").add({
+                 "type": "error_report",
+                 "status": "pending",
+                 "title": f"Watchdog: {analysis.get('root_cause', 'Unknown Issue')[:60]}",
+                 "description": analysis.get("suggested_fix"),
+                 "severity": analysis.get("severity", "MEDIUM"),
+                 "error_signature": sig,
+                 "raw_log": event.get("payload"),
+                 "sre_analysis": analysis,
+                 "created_at": datetime.datetime.utcnow().isoformat()
+            })
+            tasks_created += 1
+            
+        return {"status": "anomalies_detected", "new_reports": tasks_created}
 
     def analyze_error(self, error_entry: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -191,46 +235,6 @@ class TroubleshootingAgent:
                 "technical_details": str(e)
             }
 
+    # DEPRECATED: Old Manual Trigger (Refactored to monitor_system_health)
     def run_troubleshooter(self):
-        """ Main Orchestrator """
-        errors = self.fetch_recent_errors()
-        
-        if not errors:
-            logger.info("✅ No new errors found.")
-            return {"status": "clean", "count": 0}
-
-        tasks_created = 0
-        for err in errors:
-            # Check if we already have a pending task for this error signature
-            # to avoid spamming the admin
-            sig = err.get('signature')
-            existing = db.collection('admin_tasks').where('type', '==', 'error_report').where('error_signature', '==', sig).where('status', '==', 'pending').limit(1).stream()
-            if any(existing):
-                logger.info(f"⏭️ Skipping duplicate error: {sig[:20]}")
-                continue
-
-            # Analyze
-            analysis = self.analyze_error(err)
-            
-            # Report
-            task_data = {
-                "type": "error_report",
-                "status": "pending",
-                "title": f"Error: {analysis.get('root_cause', 'Unknown Error')[:50]}",
-                "description": analysis.get('suggested_fix'),
-                "severity": analysis.get('severity', 'MEDIUM'),
-                "error_signature": sig,
-                "full_log": str(err.get('payload')),
-                "analysis_details": analysis,
-                "created_at": firestore.SERVER_TIMESTAMP,
-                "source": "TroubleshootingAgent"
-            }
-            
-            try:
-                db.collection('admin_tasks').add(task_data)
-                tasks_created += 1
-                logger.info(f"🚨 Admin Task Created: {task_data['title']}")
-            except Exception as e:
-                logger.error(f"❌ Failed to save admin task: {e}")
-
-        return {"status": "success", "errors_found": len(errors), "reports_filed": tasks_created}
+        return self.monitor_system_health()
