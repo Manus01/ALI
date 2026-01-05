@@ -287,3 +287,25 @@ def trigger_troubleshooting_agent(admin: dict = Depends(verify_admin)):
     except Exception as e:
         logger.error(f"❌ Troubleshooter Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/tasks/reports")
+def get_admin_reports(limit: int = 50, admin: dict = Depends(verify_admin)):
+    """
+    Fetches AI Troubleshooting Reports from 'admin_tasks'.
+    """
+    try:
+        tasks_ref = db.collection("admin_tasks")\
+                      .where("type", "==", "error_report")\
+                      .order_by("created_at", direction=firestore.Query.DESCENDING)\
+                      .limit(limit)
+        
+        tasks = []
+        for doc in tasks_ref.stream():
+            t = doc.to_dict()
+            t["id"] = doc.id
+            tasks.append(t)
+            
+        return {"reports": tasks}
+    except Exception as e:
+        logger.error(f"❌ Fetch Reports Error: {e}")
+        return {"reports": [], "error": str(e)}

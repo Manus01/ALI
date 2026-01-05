@@ -8,6 +8,10 @@ from firebase_admin import credentials, firestore, auth
 # Configure logger
 logger = logging.getLogger("ali_platform.core.security")
 
+# Credential Constants
+DEFAULT_CREDENTIALS_PATH = "/app/secrets/service-account.json"
+SECRETS_DIR = "/app/secrets"
+
 def initialize_firebase():
     """
     Initializes the Firebase Admin SDK and returns a Firestore client.
@@ -19,16 +23,16 @@ def initialize_firebase():
         return firestore.client() # Correct: uses lowercase 'c' factory
 
     # 1. Get path from Env Var
-    cred_path = os.getenv('FIREBASE_CREDENTIALS_PATH', '/app/secrets/service-account.json')
+    cred_path = os.getenv('FIREBASE_CREDENTIALS_PATH', DEFAULT_CREDENTIALS_PATH)
     
     # 2. Safety Check: If folder exists but file name is different
     if not os.path.exists(cred_path):
-        logger.info("🔍 Credential path not found, scanning /app/secrets...")
-        if os.path.exists("/app/secrets"):
-            files = os.listdir("/app/secrets")
+        logger.info(f"🔍 Credential path not found, scanning {SECRETS_DIR}...")
+        if os.path.exists(SECRETS_DIR):
+            files = os.listdir(SECRETS_DIR)
             if files:
                 # If there's only one file, use it regardless of name
-                cred_path = os.path.join("/app/secrets", files[0])
+                cred_path = os.path.join(SECRETS_DIR, files[0])
                 logger.info(f"💡 Auto-detected secret file: {cred_path}")
 
     try:

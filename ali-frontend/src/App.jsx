@@ -46,7 +46,29 @@ const AdminRoute = ({ children }) => {
     return children;
 };
 
+import Logger from './services/Logger';
+
 function App() {
+    React.useEffect(() => {
+        // 1. Global Error Handler
+        const errorHandler = (message, source, lineno, colno, error) => {
+            Logger.error(message, "GlobalErrorBoundary", error?.stack || `${source}:${lineno}:${colno}`);
+        };
+
+        // 2. Unhandled Promise Rejection
+        const rejectionHandler = (event) => {
+            Logger.error(`Unhandled Promise: ${event.reason}`, "GlobalPromiseRejection", event.reason?.stack);
+        };
+
+        window.addEventListener('error', errorHandler);
+        window.addEventListener('unhandledrejection', rejectionHandler);
+
+        return () => {
+            window.removeEventListener('error', errorHandler);
+            window.removeEventListener('unhandledrejection', rejectionHandler);
+        };
+    }, []);
+
     return (
         <AuthProvider>
             <Router>

@@ -84,7 +84,14 @@ class AudioAgent:
         """
         if not self.client or not text: return None
         
-        logger.info(f"🎙️ Gemini 2.5 TTS Generating: {text[:50]}...")
+        request_id = str(uuid.uuid4())
+        
+        # Validation: Text length limit for TTS
+        if len(text) > 4096:
+            logger.warning(f"⚠️ Text too long for TTS ({len(text)} chars). Truncating.")
+            text = text[:4096]
+            
+        logger.info(f"🎙️ Gemini 2.5 TTS Generating (Req: {request_id}): {text[:50]}...")
         
         try:
             clean_text = re.sub(r'[*#`]', '', text) # Sanitize markdown

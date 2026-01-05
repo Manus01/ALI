@@ -55,7 +55,8 @@ class TroubleshootingAgent:
         Defaults to last 1 hour for high-frequency monitoring.
         """
         combined = []
-        cutoff = datetime.datetime.utcnow() - datetime.timedelta(hours=hours)
+        # Use timezone-aware UTC
+        cutoff = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=hours)
         
         # 1. Frontend Logs (client_logs)
         try:
@@ -144,7 +145,7 @@ class TroubleshootingAgent:
                  "error_signature": sig,
                  "raw_log": event.get("payload"),
                  "sre_analysis": analysis,
-                 "created_at": datetime.datetime.utcnow().isoformat()
+                 "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
             })
             tasks_created += 1
             

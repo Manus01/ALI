@@ -1,10 +1,13 @@
 import asyncio
+import logging
 from app.agents.base_agent import BaseAgent
 from app.agents.campaign_agent import CampaignAgent
 from app.services.video_agent import VideoAgent
 from app.services.image_agent import ImageAgent
 from app.core.security import db
 from firebase_admin import firestore
+
+logger = logging.getLogger("ali_platform.agents.orchestrator_agent")
 
 class OrchestratorAgent(BaseAgent):
     def __init__(self):

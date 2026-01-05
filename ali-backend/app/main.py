@@ -44,6 +44,7 @@ if not tutorials:
 
 maintenance = safe_import_router("maintenance")
 campaigns = safe_import_router("campaigns")
+monitoring = safe_import_router("monitoring")
 
 logger.info("✅ Router imports processed.")
 
@@ -83,6 +84,7 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         # Security Headers
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Content-Security-Policy"] = "frame-ancestors 'none';"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         
         # Disable deprecated headers
         if "X-XSS-Protection" in response.headers:

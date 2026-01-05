@@ -2,7 +2,8 @@
 import datetime
 import requests
 import logging
-from google.cloud import firestore
+from app.core.security import db
+from firebase_admin import firestore
 
 # SDK Imports
 try:
@@ -20,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 class DataEngine:
     def __init__(self, user_id):
-        self.db = firestore.Client()
+        self.db = db
         self.user_id = user_id
 
     def save_metrics(self, platform, metrics):

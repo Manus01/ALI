@@ -7,6 +7,7 @@ from typing import Optional
 from google import genai
 from google.genai import types
 from google.cloud import storage
+import traceback
 
 # Configure Logger
 logger = logging.getLogger("ali_platform.services.image_agent")
@@ -98,6 +99,8 @@ class ImageAgent:
         """
         if not self.client: return None
         
+        request_id = str(uuid.uuid4())
+        
         try:
              # 1. Pydantic Fix: String-Strict Validation
              clean_prompt = prompt
@@ -176,6 +179,11 @@ class ImageAgent:
              logger.warning("⚠️ No image bytes returned.")
              return None
 
+        except (ValueError, TypeError) as e:
+            logger.error(f"❌ Input Validation Error (Request ID: {request_id}): {e}")
+            return None
+            
         except Exception as e:
-            logger.error(f"❌ Image Generation Error: {e}")
+            logger.error(f"❌ Image Generation Error (Request ID: {request_id}): {e}")
+            traceback.print_exc()
             return None

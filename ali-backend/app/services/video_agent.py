@@ -14,10 +14,17 @@ logger = logging.getLogger("ali_platform.services.video_agent")
 # Configuration
 BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "ali-platform-prod-73019.firebasestorage.app")
 VIDEO_MODEL = "veo-3.1-generate-001"
+MAX_RETRIES = 3
+POLL_INTERVAL = 5
 
 class VideoAgent:
     def __init__(self):
-        """Initializes the VideoAgent with Vertex AI and Storage clients."""
+        """
+        Initializes the VideoAgent with Vertex AI and Storage clients.
+        
+        Raises:
+            Exception: If storage client initialization fails
+        """
         try:
             self.storage_client = storage.Client()
         except Exception as e:
@@ -48,7 +55,18 @@ class VideoAgent:
             logger.error(f"❌ VideoAgent Client Init Failed: {e}")
 
     def _upload_bytes(self, data: bytes, folder: str = "general", extension: str = "mp4", content_type: str = "video/mp4") -> str:
-        """Uploads raw bytes to GCS and returns a persistent Firebase Download URL."""
+        """
+        Uploads raw bytes to GCS and returns a persistent Firebase Download URL.
+        
+        Args:
+            data: Raw binary data
+            folder: Target folder path in bucket
+            extension: File extension (default: mp4)
+            content_type: MIME type of the file
+            
+        Returns:
+            str: Public Firebase URL or empty string on failure
+        """
         if not self.storage_client: return ""
         try:
             bucket = self.storage_client.bucket(BUCKET_NAME)
