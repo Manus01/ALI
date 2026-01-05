@@ -279,6 +279,12 @@ export default function BrandMonitoringSection({ brandName }) {
                                 key={mention.id || index}
                                 mention={mention}
                                 onCrisisResponse={handleGetCrisisResponse}
+                                onRemove={() => {
+                                    setMentionsData(prev => ({
+                                        ...prev,
+                                        mentions: prev.mentions.filter(m => (m.id || m.url) !== (mention.id || mention.url))
+                                    }));
+                                }}
                             />
                         ))
                     ) : (
@@ -403,21 +409,37 @@ export default function BrandMonitoringSection({ brandName }) {
 }
 
 // Individual Mention Card Component
-function MentionCard({ mention, onCrisisResponse }) {
+function MentionCard({ mention, onCrisisResponse, onRemove }) {
     const isNegative = mention.sentiment === 'negative';
     const sentimentConfig = SENTIMENT_CONFIG[mention.sentiment] || SENTIMENT_CONFIG.neutral;
     const [vote, setVote] = useState(null); // 'positive' | 'negative' | null
+    const [removalTimeout, setRemovalTimeout] = useState(null);
 
     // Reset vote if the mention object changes (fixes state leak with index keys)
     useEffect(() => {
         setVote(null);
+        if (removalTimeout) clearTimeout(removalTimeout);
     }, [mention]);
+
+    const handleUndo = () => {
+        if (removalTimeout) clearTimeout(removalTimeout);
+        setVote(null);
+    };
 
     const handleVote = async (type) => {
         if (vote) return; // Prevent double voting
 
         try {
             setVote(type); // Optimistic update
+
+            // If negative, schedule removal
+            if (type === 'negative' && onRemove) {
+                const timeout = setTimeout(() => {
+                    onRemove();
+                }, 1500); // 1.5s delay to allow undo
+                setRemovalTimeout(timeout);
+            }
+
             await api.post('/brand-monitoring/feedback', {
                 mention_id: mention.url || mention.title, // Use URL or Title as ID
                 title: mention.title,
@@ -428,6 +450,7 @@ function MentionCard({ mention, onCrisisResponse }) {
         } catch (err) {
             console.error("Feedback failed:", err);
             setVote(null); // Revert on error
+            if (removalTimeout) clearTimeout(removalTimeout);
         }
     };
 
@@ -447,13 +470,13 @@ function MentionCard({ mention, onCrisisResponse }) {
 
     // Render based on vote state
     return vote === 'negative' ? (
-        <div className="p-5 bg-slate-50/50 opacity-50">
+        <div className="p-5 bg-slate-50/50 opacity-50 animate-fade-out">
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                     <FaThumbsDown className="text-slate-400" />
                     <span className="text-xs text-slate-500 font-medium">Marked as irrelevant. We'll show fewer results like this.</span>
                 </div>
-                <button className="text-xs text-indigo-600 font-bold hover:underline" onClick={() => setVote(null)}>Undo</button>
+                <button className="text-xs text-indigo-600 font-bold hover:underline" onClick={handleUndo}>Undo</button>
             </div>
         </div>
     ) : (
