@@ -70,7 +70,52 @@ def start_tutorial_job(topic: str, background_tasks: BackgroundTasks, user: dict
             "created_at": firestore.SERVER_TIMESTAMP
         })
 
-        background_tasks.add_task(process_tutorial_job, job_id, user['uid'], topic.strip(), notification_ref.id)
+
+        # --- CLOUD RUN JOBS DISPATCH ---
+        # Instead of running locally (which crashes low-mem containers), we dispatch to a Heavy Worker.
+        
+        try:
+            from google.cloud import run_v2
+            
+            # Detect Project ID and Region (or fallback to defaults)
+            project_id = os.getenv("GOOGLE_CLOUD_PROJECT", user.get("project_id", "ali-platform-prod-73019")) 
+            location = os.getenv("GOOGLE_CLOUD_REGION", "us-central1")
+            job_name = "ali-worker"
+
+            client = run_v2.JobsClient()
+            name = client.job_path(project_id, location, job_name)
+            
+            # Prepare Environment Overrides
+            overrides = {
+                "container_overrides": [
+                    {
+                        "env": [
+                            {"name": "JOB_ID", "value": job_id},
+                            {"name": "USER_ID", "value": user['uid']},
+                            {"name": "TOPIC", "value": topic.strip()},
+                            {"name": "NOTIFICATION_ID", "value": notification_ref.id}
+                        ]
+                    }
+                ]
+            }
+
+            request = run_v2.RunJobRequest(
+                name=name,
+                overrides=overrides
+            )
+
+            operation = client.run_job(request=request)
+            logger.info(f"🚀 Dispatched Cloud Run Job: {operation.operation.name}")
+
+        except Exception as cloud_err:
+            logger.error(f"❌ Failed to trigger Cloud Run Job: {cloud_err}")
+            # FALBACK: Try local if cloud fails (e.g. during local dev)
+            if os.getenv("IS_LOCAL_DEV"):
+                 logger.warning("⚠️ Falling back to local background task.")
+                 background_tasks.add_task(process_tutorial_job, job_id, user['uid'], topic.strip(), notification_ref.id)
+            else:
+                 raise cloud_err
+
         return {"status": "queued", "job_id": job_id, "notification_id": notification_ref.id}
     except HTTPException:
         # Re-raise intentional HTTP responses without wrapping

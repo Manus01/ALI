@@ -56,6 +56,32 @@
       - '--port'
       - '80'
 
+  # --- 7. Deploy Heavy Worker to Cloud Run Jobs ---
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'jobs'
+      - 'deploy'
+      - 'ali-worker'
+      - '--image'
+      - 'gcr.io/$PROJECT_ID/ali-backend' # Reuses backend image, just different entrypoint
+      - '--region'
+      - 'us-central1'
+      - '--command'
+      - 'python'
+      - '--args'
+      - 'app/worker.py'
+      - '--memory'
+      - '4Gi'    # High Memory for Video Gen
+      - '--cpu'
+      - '2'      # Extra CPU
+      - '--tasks'
+      - '1'
+      - '--max-retries'
+      - '0'      # Don't retry automatically if it crashes heavily
+
+
 images:
   - 'gcr.io/$PROJECT_ID/ali-backend'
   - 'gcr.io/$PROJECT_ID/ali-frontend'
