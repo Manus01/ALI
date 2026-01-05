@@ -40,8 +40,11 @@ const Layout = () => {
 // --- 2. NEW: Admin Protection Wrapper ---
 const AdminRoute = ({ children }) => {
     const { currentUser } = useAuth();
-    // 🔐 Replace with your exact admin email
-    if (currentUser?.email !== "manoliszografos@gmail.com") {
+    // 🔐 Admin Access Control
+    // TODO: Move this to a backend claim or proper role-based access control (RBAC)
+    const ADMIN_EMAILS = ["manoliszografos@gmail.com"];
+
+    if (!currentUser?.email || !ADMIN_EMAILS.includes(currentUser.email)) {
         return <Navigate to="/dashboard" replace />;
     }
     return children;

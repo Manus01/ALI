@@ -70,7 +70,7 @@ class TestBrandMonitoringAgent:
     def test_init(self):
         """Test agent initialization."""
         agent = BrandMonitoringAgent()
-        assert agent.agent_name == "BrandMonitoringAgent"
+        assert agent.name == "BrandMonitoringAgent"
         assert agent.model is not None
     
     @pytest.mark.asyncio
@@ -100,7 +100,7 @@ class TestBrandMonitoringAgent:
         }]
         
         # Mock the model response
-        with patch.object(agent.model, 'generate_content_async') as mock_generate:
+        with patch.object(agent.model, 'generate_content_async', new_callable=AsyncMock) as mock_generate:
             mock_response = Mock()
             mock_response.text = '''[
                 {
@@ -137,7 +137,7 @@ class TestBrandMonitoringAgent:
         }
         
         # Mock the model response
-        with patch.object(agent.model, 'generate_content_async') as mock_generate:
+        with patch.object(agent.model, 'generate_content_async', new_callable=AsyncMock) as mock_generate:
             mock_response = Mock()
             mock_response.text = '''{
                 "executive_summary": "The company is facing criticism.",

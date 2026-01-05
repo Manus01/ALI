@@ -51,20 +51,28 @@ scheduler = safe_import_router("scheduler")
 logger.info("✅ Router imports processed.")
 
 # --- 3. APP INITIALIZATION ---
-app = FastAPI(
-    title="ALI Platform", 
-    version="4.0",
-    description="Unified Campaign Intelligence Engine"
-)
+# --- 3a. LIFESPAN (Replaces Startup Events) ---
+from contextlib import asynccontextmanager
 
-# --- 3a. STARTUP EVENTS ---
-@app.on_event("startup")
-async def startup_event():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup: Initialize services
     logger.info("🚀 Application Startup Initiated")
     if db is None:
         logger.warning("⚠️ Firestore DB is NOT initialized. Check credentials.")
     else:
         logger.info("✅ Firestore DB Connection Verified")
+    
+    yield
+    # Shutdown: Clean up resources if needed (e.g., db connections)
+    logger.info("🛑 Application Shutdown")
+
+app = FastAPI(
+    title="ALI Platform", 
+    version="4.0",
+    description="Unified Campaign Intelligence Engine",
+    lifespan=lifespan
+)
 
 # --- 3b. REQUEST SIZE LIMIT (5MB Guardrail) ---
 MAX_REQUEST_SIZE = int(os.getenv("MAX_REQUEST_SIZE_BYTES", 5 * 1024 * 1024))

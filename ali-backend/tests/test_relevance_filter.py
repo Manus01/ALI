@@ -67,7 +67,7 @@ class TestRelevanceFilterAgent:
         }
         
         # Mock the model response
-        with patch.object(agent.model, 'generate_content_async') as mock_generate:
+        with patch.object(agent.model, 'generate_content_async', new_callable=AsyncMock) as mock_generate:
             mock_response = Mock()
             mock_response.text = json.dumps([
                 {
@@ -135,7 +135,7 @@ class TestRelevanceFilterAgent:
             }
         ]
         
-        with patch.object(agent.model, 'generate_content_async') as mock_generate:
+        with patch.object(agent.model, 'generate_content_async', new_callable=AsyncMock) as mock_generate:
             mock_response = Mock()
             mock_response.text = json.dumps([{
                 "article_index": 0,
