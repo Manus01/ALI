@@ -24,7 +24,7 @@
       - '--port'
       - '8080'
       - '--timeout'
-      - '300'
+      - '900'  # 15 minutes for long video generation
       - '--memory'     # <--- NEW: Ensures heavy AI libs don't crash
       - '2Gi'          # <--- NEW: Increased from 512Mi
       - '--cpu'        # <--- NEW: Better processing for startup

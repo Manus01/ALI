@@ -615,7 +615,7 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
             pass
         raise e
 
-def fabricate_block(block, topic, video_agent, image_agent, audio_agent):
+def fabricate_block(block, topic, video_agent, image_agent, audio_agent, progress_callback=None):
     """ Helper to call Creative Agents safely. Handles Fallbacks and Alerts. """
     try:
         if block["type"] == "video_clip":
@@ -623,8 +623,8 @@ def fabricate_block(block, topic, video_agent, image_agent, audio_agent):
             safe_p = f"Cinematic, abstract, photorealistic, 4k shot of {p}. High quality. No text, no screens."
             logger.info(f"      🎥 VEO Generating: {p}")
             
-            # Use Video Agent
-            url = video_agent.generate_video(safe_p, folder="tutorials")
+            # Use Video Agent with progress callback
+            url = video_agent.generate_video(safe_p, folder="tutorials", progress_callback=progress_callback)
             
             # Fallback 1: Try Image if Video fails
             if not url or not url.startswith("http"):

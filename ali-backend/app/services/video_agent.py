@@ -3,7 +3,7 @@ import time
 import logging
 import uuid
 import urllib.parse
-from typing import Optional, Any
+from typing import Optional, Any, Callable
 from google import genai
 from google.genai import types
 from google.cloud import storage
@@ -122,13 +122,14 @@ class VideoAgent:
             logger.error(f"❌ Failed to process reference image: {e}")
             return None
 
-    def generate_video(self, prompt: str, reference_image_uri: Optional[str] = None, brand_dna: Optional[str] = None, folder: str = "general") -> Optional[str]:
+    def generate_video(self, prompt: str, reference_image_uri: Optional[str] = None, brand_dna: Optional[str] = None, folder: str = "general", progress_callback: Optional[Callable[[str], None]] = None) -> Optional[str]:
         """
         Generates a video using Veo 3.1.
         Supports:
         - Adaptive Inputs (Reference Image URI)
         - Contextual Prompts (Brand DNA)
         - Folder Organization
+        - Progress Callback for status broadcasting
         """
         if not self.client: return None
         
@@ -177,10 +178,11 @@ class VideoAgent:
                     )
                 )
 
-            # 5. Robust Polling with Timeout
+            # 5. Robust Polling with Extended Timeout
             if hasattr(job, "done"):
                 start_time = time.time()
-                timeout = 600  # 10 minutes max
+                timeout = 900  # 15 minutes max (matches Cloud Run timeout)
+                last_progress_log = 0
                 
                 is_done_func = job.done if callable(job.done) else lambda: job.done
                 
@@ -189,9 +191,18 @@ class VideoAgent:
                     if elapsed > timeout:
                         logger.error(f"❌ Video Generation Timed Out after {timeout}s")
                         return None
-                        
-                    if int(elapsed) % 30 == 0:
-                        logger.info(f"   ⏳ VEO Processing... ({int(elapsed)}s)")
+                    
+                    # Log and broadcast progress every 30 seconds
+                    elapsed_int = int(elapsed)
+                    if elapsed_int >= last_progress_log + 30:
+                        last_progress_log = elapsed_int
+                        progress_msg = f"Video processing... {elapsed_int}s elapsed"
+                        logger.info(f"   ⏳ VEO Processing... ({elapsed_int}s)")
+                        if progress_callback:
+                            try:
+                                progress_callback(progress_msg)
+                            except Exception:
+                                pass  # Don't let callback errors stop generation
                         
                     time.sleep(5)
             
