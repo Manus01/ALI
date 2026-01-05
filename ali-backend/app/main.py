@@ -45,6 +45,8 @@ if not tutorials:
 maintenance = safe_import_router("maintenance")
 campaigns = safe_import_router("campaigns")
 monitoring = safe_import_router("monitoring")
+brand_monitoring = safe_import_router("brand_monitoring")
+scheduler = safe_import_router("scheduler")
 
 logger.info("✅ Router imports processed.")
 
@@ -138,7 +140,9 @@ routers_map = [
     ("/api", (tutorials, ["Tutorials"])), # Tutorials shares prefix
     ("/api", (maintenance, ["Maintenance"])), # Maintenance shares prefix
     ("/api/campaign", (campaigns, ["Campaigns"])), # Registered new Campaigns router
-    ("/api/monitoring", (monitoring, ["Monitoring"]))
+    ("/api/monitoring", (monitoring, ["Monitoring"])),
+    ("/api/brand-monitoring", (brand_monitoring, ["Brand Monitoring"])),
+    ("/internal", (scheduler, ["Scheduler"]))
 ]
 
 for prefix, (module, tags) in routers_map:

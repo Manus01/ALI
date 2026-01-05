@@ -12,6 +12,7 @@ import {
 } from 'react-icons/fa';
 import api from '../api/axiosInterceptor';
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import BrandMonitoringSection from '../components/BrandMonitoringSection';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
@@ -370,6 +371,9 @@ export default function DashboardPage() {
                     <div className="h-80 w-full"><Line options={chartOptions} data={chartData} /></div>
                 </div>
             )}
+
+            {/* Brand Monitoring Section */}
+            <BrandMonitoringSection brandName={brandDna?.brand_name} />
 
             {/* Market Intelligence */}
             <div className="bg-slate-900 rounded-[2rem] p-10 text-white relative overflow-hidden shadow-2xl">

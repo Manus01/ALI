@@ -1,9 +1,13 @@
 ﻿from fastapi import APIRouter, Depends, HTTPException, Body
 from app.core.security import verify_token, db
 from app.services.metricool_client import MetricoolClient
+from app.services.performance_logger import run_nightly_performance_log
 from typing import Dict, Optional
 from datetime import datetime
 from google.cloud import firestore
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 

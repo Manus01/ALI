@@ -91,7 +91,40 @@ class TroubleshootingAgent:
         except Exception as e:
             logger.warning(f"⚠️ Watchdog: Admin alerts fetch failed: {e}")
 
-        # 3. Cloud Logging (Backend)
+        # 3. Admin Tasks (Tutorial Generation Failures)
+        # These are created by tutorial_agent.py when failures occur
+        try:
+            failure_types = ['system_failure', 'generation_blocked', 'content_alert']
+            for failure_type in failure_types:
+                tasks_ref = db.collection("admin_tasks")\
+                              .where("type", "==", failure_type)\
+                              .where("status", "==", "pending")\
+                              .limit(limit).stream()
+                for doc in tasks_ref:
+                    d = doc.to_dict()
+                    # Build informative payload based on type
+                    if failure_type == 'system_failure':
+                        payload = f"💥 [SYSTEM_FAILURE] Tutorial '{d.get('context', {}).get('topic', 'Unknown')}' failed: {d.get('error', 'Unknown error')}"
+                    elif failure_type == 'generation_blocked':
+                        failed_blocks = d.get('failed_blocks', [])
+                        block_summary = ', '.join([fb.get('original_type', 'unknown') for fb in failed_blocks[:3]])
+                        payload = f"🚫 [GENERATION_BLOCKED] Tutorial '{d.get('tutorial_topic', 'Unknown')}' blocked. Failed assets: {block_summary}"
+                    else:  # content_alert
+                        alerts_count = len(d.get('alerts', []))
+                        payload = f"⚠️ [CONTENT_ALERT] Tutorial '{d.get('tutorial_title', 'Unknown')}' has {alerts_count} generation warnings"
+                    
+                    combined.append({
+                        "timestamp": d.get("created_at"),
+                        "payload": payload,
+                        "source": "admin_task",
+                        "signature": f"task_{doc.id}",
+                        "task_id": doc.id,
+                        "severity": d.get("severity", "MEDIUM")
+                    })
+        except Exception as e:
+            logger.warning(f"⚠️ Watchdog: Admin tasks fetch failed: {e}")
+
+        # 4. Cloud Logging (Backend)
         if self.logging_client:
             try:
                 time_threshold = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=hours)

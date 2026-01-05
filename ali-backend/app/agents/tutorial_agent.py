@@ -587,7 +587,7 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
         except:
             pass
 
-        # Create CRITICAL ALERT
+        # Create CRITICAL ALERT (admin_tasks for workflow)
         try:
             db.collection('admin_tasks').add({
                 "type": "system_failure",
@@ -600,6 +600,19 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
             })
         except:
             pass # Last resort
+        
+        # ALSO write to admin_alerts for Troubleshooting Agent Watchdog visibility
+        try:
+            db.collection('admin_alerts').add({
+                "type": "tutorial_generation_failure",
+                "message": f"Tutorial '{topic}' generation failed: {str(e)[:200]}",
+                "context": "tutorial_agent",
+                "user_id": user_id,
+                "severity": "critical",
+                "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+            })
+        except:
+            pass
         raise e
 
 def fabricate_block(block, topic, video_agent, image_agent, audio_agent):

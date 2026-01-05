@@ -63,7 +63,7 @@ class TestTroubleshootingAgent(unittest.TestCase):
         mock_db.collection('admin_tasks').add.assert_called_once()
         print("   [OK] Created Admin Task")
         
-        self.assertEqual(result['reports_filed'], 1)
+        self.assertEqual(result['new_reports'], 1)
         print("[SUCCESS] End-to-End Flow Verified")
 
 if __name__ == '__main__':
