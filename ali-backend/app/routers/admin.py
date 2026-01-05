@@ -349,3 +349,25 @@ def get_metricool_brands(admin: dict = Depends(verify_admin)):
     except Exception as e:
         logger.error(f"❌ Fetch Brands Error: {e}")
         return {"brands": []}
+
+@router.get("/tasks/pending")
+def get_pending_tasks(admin: dict = Depends(verify_admin)):
+    """
+    Fetches pending Metricool connection requests.
+    """
+    try:
+        tasks_ref = db.collection("admin_tasks")\
+                      .where("type", "==", "METRICOOL_REQUEST")\
+                      .where("status", "==", "pending")\
+                      .limit(20)
+        
+        tasks = []
+        for doc in tasks_ref.stream():
+            t = doc.to_dict()
+            t["id"] = doc.id
+            tasks.append(t)
+            
+        return {"tasks": tasks}
+    except Exception as e:
+        logger.error(f"❌ Fetch Pending Tasks Error: {e}")
+        return {"tasks": []}

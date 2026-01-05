@@ -19,7 +19,7 @@ export default function AdminPage() {
     const [isAdmin, setIsAdmin] = useState(false);
     const [targetUid, setTargetUid] = useState("");
     const [blogId, setBlogId] = useState("");
-    const pendingTasks = [];
+    const [pendingTasks, setPendingTasks] = useState([]);
     const [verifiedChannels, setVerifiedChannels] = useState([]);
     const [logs, setLogs] = useState([]);
     const [integrationAlerts, setIntegrationAlerts] = useState([]);
@@ -44,6 +44,7 @@ export default function AdminPage() {
             fetchResearchUsers();
             fetchTutorials();
             fetchAiReports();
+            fetchPendingTasks();
         }
     }, [currentUser]);
 
@@ -109,6 +110,13 @@ export default function AdminPage() {
             const res = await api.get('/api/admin/tutorials');
             setTutorials(res.data.tutorials);
         } catch (err) { console.error("Failed to fetch tutorials", err); }
+    };
+
+    const fetchPendingTasks = async () => {
+        try {
+            const res = await api.get('/api/admin/tasks/pending');
+            setPendingTasks(res.data.tasks || []);
+        } catch (err) { console.error("Failed to fetch pending tasks", err); }
     };
 
     const handleDeleteTutorial = async (id) => {
