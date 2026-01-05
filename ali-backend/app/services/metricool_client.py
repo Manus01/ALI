@@ -34,24 +34,20 @@ class MetricoolClient:
 
     def _auth_params(self) -> Dict[str, Any]:
         """
-        Metricool's docs show examples using both snake_case and camelCase auth params.
-        To stay compatible, we include both when calling the public API endpoints.
+        Metricool API requires userId in the query params.
+        The userToken (X-Mc-Auth) is passed solely via headers to be secure and compliant.
         """
         return {
-            # As documented in https://help.metricool.com/en/article/basic-guide-for-api-integration-abukgf/
-            "user_token": METRICOOL_USER_TOKEN,
-            "user_id": self.user_id,
-            # Some SDK examples use camelCase
-            "userToken": METRICOOL_USER_TOKEN,
-            "userId": self.user_id,
+            "userId": self.user_id
         }
 
     def get_brand_status(self, blog_id: str) -> Dict[str, Any]:
         """
         Checks if a brand (blog) exists for the authenticated agency user.
-        Metricool's "user" endpoint returns the list of blogs with their connection info.
+        Uses the 'simpleProfiles' endpoint to list all brands.
         """
-        url = f"{BASE_URL}/v2/user"
+        # Endpoint found via search: lists all profiles for the user
+        url = f"{BASE_URL}/admin/simpleProfiles"
         params = self._auth_params()
         
         try:
@@ -59,11 +55,22 @@ class MetricoolClient:
             res.raise_for_status()
             data = res.json()
             
-            # Find the specific blog in the list
-            blogs = data.get('blogs', [])
-            found_blog = next((b for b in blogs if str(b.get('id')) == str(blog_id)), None)
+            # Identify the list of blogs. The endpoint usually returns a list directly, 
+            # but we handle a dict wrapper just in case.
+            blogs = []
+            if isinstance(data, list):
+                blogs = data
+            elif isinstance(data, dict):
+                # Try common keys if wrapped
+                blogs = data.get('blogs') or data.get('data') or data.get('profiles') or []
+            
+            found_blog = next((b for b in blogs if str(b.get('id')) == str(blog_id) or str(b.get('blogId')) == str(blog_id)), None)
             
             if not found_blog:
+                # If using simpleProfiles, it might use 'blogId' instead of 'id'. 
+                # Attempt to debug or just raise.
+                # Use a specific message to help debugging if it persists.
+                logger.warning(f"Available blogs: {[b.get('id', b.get('blogId')) for b in blogs]}")
                 raise ValueError(f"Blog ID {blog_id} not found for this Metricool User.")
                 
             return found_blog
