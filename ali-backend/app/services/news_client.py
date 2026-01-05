@@ -25,7 +25,8 @@ class NewsClient:
         self, 
         brand_name: str, 
         keywords: Optional[List[str]] = None,
-        language: str = "en",
+        language: Optional[str] = "en", # Default to English, but allow None/list
+        country: Optional[str] = None,   # Default to Worldwide
         max_results: int = 10
     ) -> List[Dict[str, Any]]:
         """
@@ -34,7 +35,8 @@ class NewsClient:
         Args:
             brand_name: The primary brand name to search for
             keywords: Additional keywords to include in search
-            language: Language code (default: en)
+            language: Language code (e.g., "en", "es") or None for all
+            country: Country code (e.g., "us", "gb") or None for worldwide
             max_results: Maximum number of articles to return
             
         Returns:
@@ -54,9 +56,14 @@ class NewsClient:
             params = {
                 "apikey": self.api_key,
                 "q": query,
-                "language": language,
                 "size": min(max_results, 10)  # API limit per request
             }
+            
+            if language:
+                params["language"] = language
+            
+            if country:
+                params["country"] = country
             
             async with aiohttp.ClientSession() as session:
                 async with session.get(self.base_url, params=params, timeout=15) as response:

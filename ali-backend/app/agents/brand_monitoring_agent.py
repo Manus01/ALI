@@ -27,7 +27,8 @@ class BrandMonitoringAgent(BaseAgent):
     async def analyze_mentions(
         self, 
         brand_name: str, 
-        articles: List[Dict[str, Any]]
+        articles: List[Dict[str, Any]],
+        negative_examples: List[Dict[str, str]] = []
     ) -> List[Dict[str, Any]]:
         """
         Analyze sentiment for each article mentioning the brand.
@@ -35,6 +36,7 @@ class BrandMonitoringAgent(BaseAgent):
         Args:
             brand_name: The brand being monitored
             articles: List of article dictionaries from news client
+            negative_examples: List of articles previously marked as irrelevant
             
         Returns:
             List of articles with added sentiment analysis fields:
@@ -54,11 +56,14 @@ class BrandMonitoringAgent(BaseAgent):
         batch_size = 5
         for i in range(0, len(articles), batch_size):
             batch = articles[i:i + batch_size]
-            batch_results = await self._analyze_batch(brand_name, batch)
+            batch_results = await self._analyze_batch(brand_name, batch, negative_examples)
             analyzed_articles.extend(batch_results)
+            
+        # Filter out irrelevant articles
+        relevant_articles = [a for a in analyzed_articles if a.get("is_relevant", True)]
         
         # Sort by severity (negative first) then by date
-        analyzed_articles.sort(
+        relevant_articles.sort(
             key=lambda x: (
                 0 if x.get("sentiment") == "negative" else 1,
                 -(x.get("severity") or 0),
@@ -67,13 +72,14 @@ class BrandMonitoringAgent(BaseAgent):
             reverse=False
         )
         
-        self.log_task(f"Analysis complete. Found {sum(1 for a in analyzed_articles if a.get('sentiment') == 'negative')} negative mentions.")
-        return analyzed_articles
+        self.log_task(f"Analysis complete. Found {sum(1 for a in relevant_articles if a.get('sentiment') == 'negative')} negative mentions out of {len(relevant_articles)} relevant articles.")
+        return relevant_articles
     
     async def _analyze_batch(
         self, 
         brand_name: str, 
-        articles: List[Dict[str, Any]]
+        articles: List[Dict[str, Any]],
+        negative_examples: List[Dict[str, str]] = []
     ) -> List[Dict[str, Any]]:
         """Analyze a batch of articles for sentiment."""
         
@@ -86,15 +92,31 @@ Title: {article.get('title', 'N/A')}
 Source: {article.get('source_name', 'Unknown')}
 Content: {article.get('content', article.get('description', 'N/A'))[:1000]}
 """)
+
+        # Prepare negative examples context
+        negative_context = ""
+        if negative_examples:
+            examples_list = "\n".join([f"- {ex.get('title', '')}: {ex.get('snippet', '')[:100]}" for ex in negative_examples])
+            negative_context = f"""
+IMPORTANT - RELEVANCE FILTERING:
+The following are examples of articles the user has marked as IRRELEVANT (wrong brand, wrong context). 
+If any of the articles below are similar to these or discuss a clearly different entity with the same name, mark "is_relevant": false.
+
+IRRELEVANT EXAMPLES:
+{examples_list}
+"""
         
         prompt = f"""You are a brand reputation analyst. Analyze the following articles about "{brand_name}" for sentiment.
 
+{negative_context}
+
 For EACH article, determine:
-1. sentiment: "positive", "neutral", or "negative"
-2. sentiment_score: float from -1.0 (very negative) to 1.0 (very positive)
-3. severity: integer 1-10 (only for negative sentiment, how damaging to brand reputation)
-4. key_concerns: list of 1-3 concerning phrases/issues (only for negative sentiment)
-5. summary: one-sentence summary of the article's stance on the brand
+1. is_relevant: boolean (true/false) - Is this article actually about the brand "{brand_name}"?
+2. sentiment: "positive", "neutral", or "negative"
+3. sentiment_score: float from -1.0 (very negative) to 1.0 (very positive)
+4. severity: integer 1-10 (only for negative sentiment, how damaging to brand reputation)
+5. key_concerns: list of 1-3 concerning phrases/issues (only for negative sentiment)
+6. summary: one-sentence summary of the article's stance on the brand
 
 ARTICLES TO ANALYZE:
 {"".join(articles_text)}
@@ -103,6 +125,7 @@ Return ONLY a valid JSON array with {len(articles)} objects in the same order as
 [
   {{
     "article_index": 0,
+    "is_relevant": true,
     "sentiment": "positive",
     "sentiment_score": 0.8,
     "severity": null,
@@ -124,6 +147,7 @@ Return ONLY a valid JSON array with {len(articles)} objects in the same order as
                 result = next((r for r in results if r.get("article_index") == idx), {})
                 analyzed.append({
                     **article,
+                    "is_relevant": result.get("is_relevant", True),
                     "sentiment": result.get("sentiment", "neutral"),
                     "sentiment_score": result.get("sentiment_score", 0.0),
                     "severity": result.get("severity"),
@@ -138,6 +162,7 @@ Return ONLY a valid JSON array with {len(articles)} objects in the same order as
             # Return articles with default neutral sentiment
             return [{
                 **article,
+                "is_relevant": True,
                 "sentiment": "neutral",
                 "sentiment_score": 0.0,
                 "severity": None,

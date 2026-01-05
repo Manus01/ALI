@@ -31,6 +31,11 @@ export default function AdminPage() {
     const [loadingAI, setLoadingAI] = useState(false);
     const [actionMsg, setActionMsg] = useState("");
 
+    // Moved these hooks from after the conditional return to fix React error #310
+    const [availableBrands, setAvailableBrands] = useState([]);
+    const [brandSearch, setBrandSearch] = useState("");
+    const [isBrandsLoading, setIsBrandsLoading] = useState(false);
+
     useEffect(() => {
         if (currentUser?.email === "manoliszografos@gmail.com") {
             setIsAdmin(true);
@@ -41,6 +46,20 @@ export default function AdminPage() {
             fetchAiReports();
         }
     }, [currentUser]);
+
+    // Moved this useEffect from after the conditional return to fix React error #310
+    useEffect(() => {
+        if (!isAdmin) return;
+        const fetchBrands = async () => {
+            setIsBrandsLoading(true);
+            try {
+                const res = await api.get('/api/admin/metricool/brands');
+                setAvailableBrands(res.data.brands || []);
+            } catch (err) { console.error("Brand fetch error:", err); }
+            finally { setIsBrandsLoading(false); }
+        };
+        fetchBrands();
+    }, [isAdmin]);
 
     const fetchLogs = async () => {
         try {
@@ -165,24 +184,6 @@ export default function AdminPage() {
     );
 
     if (!isAdmin) return <div className="p-10 text-center text-slate-400">🚫 Restricted Access</div>;
-
-    const [availableBrands, setAvailableBrands] = useState([]);
-    const [brandSearch, setBrandSearch] = useState("");
-    const [isBrandsLoading, setIsBrandsLoading] = useState(false);
-
-    // FETCH BRANDS ONCE
-    useEffect(() => {
-        if (!isAdmin) return;
-        const fetchBrands = async () => {
-            setIsBrandsLoading(true);
-            try {
-                const res = await api.get('/api/admin/metricool/brands');
-                setAvailableBrands(res.data.brands || []);
-            } catch (err) { console.error("Brand fetch error:", err); }
-            finally { setIsBrandsLoading(false); }
-        };
-        fetchBrands();
-    }, [isAdmin]);
 
     // AUTO-MATCH LOGIC
     const handlePasteAndMatch = (task) => {

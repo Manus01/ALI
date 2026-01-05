@@ -9,7 +9,9 @@ import logging
 
 from app.core.security import verify_token, db
 from app.services.news_client import NewsClient
+from app.services.web_search_client import WebSearchClient
 from app.agents.brand_monitoring_agent import BrandMonitoringAgent
+from app.agents.relevance_filter_agent import RelevanceFilterAgent
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -32,9 +34,48 @@ class MonitoringSettingsRequest(BaseModel):
     keywords: Optional[List[str]] = []
     auto_monitor: Optional[bool] = True
     alert_threshold: Optional[int] = 5  # Severity threshold for alerts
+    language: Optional[str] = "en"
+    country: Optional[str] = None
 
 
 # --- Endpoints ---
+
+@router.post("/feedback")
+async def submit_feedback(
+    request: dict,  # generic dict to avoid strict validation issues for now, or define model
+    user: dict = Depends(verify_token)
+):
+    """
+    Submit user feedback (thumbs up/down) for a mention.
+    This helps fine-tune future monitoring results.
+    """
+    user_id = user['uid']
+    
+    try:
+        feedback_data = {
+            "user_id": user_id,
+            "mention_id": request.get("mention_id"), # URL or unique ID
+            "title": request.get("title"),
+            "snippet": request.get("snippet", ""),
+            "feedback_type": request.get("feedback_type"), # 'positive' (relevant) or 'negative' (irrelevant)
+            "timestamp": db.transaction().id  # Use transaction ID or server server_timestamp if available, or just ignore for now
+        }
+        
+        # Store in a subcolumn for easy retrieval
+        # Using URL hash or similar as ID would be better to avoid duplicates, but auto-id is fine for log
+        import hashlib
+        doc_id = hashlib.md5(f"{request.get('mention_id')}".encode()).hexdigest()
+        
+        db.collection('user_integrations').document(f"{user_id}_brand_monitoring")\
+          .collection('feedback').document(doc_id).set(feedback_data)
+        
+        logger.info(f"✅ Feedback received from {user_id}: {request.get('feedback_type')}")
+        return {"status": "success"}
+        
+    except Exception as e:
+        logger.error(f"❌ Feedback submission error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.get("/mentions")
 async def get_brand_mentions(
@@ -49,13 +90,15 @@ async def get_brand_mentions(
     user_id = user['uid']
     
     try:
-        # Get brand name from request or user profile
+        # Fetch full brand profile for disambiguation context
+        brand_profile = {}
+        brand_doc = db.collection('users').document(user_id).collection('brand_profile').document('current').get()
+        if brand_doc.exists:
+            brand_profile = brand_doc.to_dict()
+        
+        # Get brand name from request, profile, or fallback
         if not brand_name:
-            # Try to get from brand profile
-            brand_doc = db.collection('users').document(user_id).collection('brand_profile').document('current').get()
-            if brand_doc.exists:
-                brand_data = brand_doc.to_dict()
-                brand_name = brand_data.get('brand_name')
+            brand_name = brand_profile.get('brand_name')
             
             # Fallback to user profile
             if not brand_name:
@@ -71,24 +114,91 @@ async def get_brand_mentions(
                 "mentions": []
             }
         
-        # Fetch stored settings for additional keywords
+        # Fetch stored settings for additional keywords and filters
         keywords = []
+        language = "en"
+        country = None
+        
         settings_doc = db.collection('user_integrations').document(f"{user_id}_brand_monitoring").get()
         if settings_doc.exists:
             settings = settings_doc.to_dict()
             keywords = settings.get('keywords', [])
+            language = settings.get('language', 'en')
+            country = settings.get('country', None)
+
+        # Fetch negative feedback (irrelevant articles) to filter out similar ones
+        negative_examples = []
+        feedback_docs = db.collection('user_integrations').document(f"{user_id}_brand_monitoring")\
+                          .collection('feedback').where('feedback_type', '==', 'negative').limit(20).get()
+        
+        for doc in feedback_docs:
+            data = doc.to_dict()
+            negative_examples.append({
+                "title": data.get("title"),
+                "snippet": data.get("snippet")
+            })
 
         # Fetch news mentions
         news_client = NewsClient()
-        articles = await news_client.search_brand_mentions(
+        news_coroutine = news_client.search_brand_mentions(
+            brand_name=brand_name,
+            keywords=keywords,
+            language=language,
+            country=country,
+            max_results=max_results
+        )
+        
+        # Fetch broad web mentions (if enabled or just always for now)
+        # We can perform these in parallel
+        web_client = WebSearchClient()
+        web_coroutine = web_client.search_web_mentions(
             brand_name=brand_name,
             keywords=keywords,
             max_results=max_results
         )
         
-        # Analyze sentiment
+        # Execute parallel fetches
+        import asyncio
+        news_results, web_results = await asyncio.gather(news_coroutine, web_coroutine, return_exceptions=True)
+        
+        # Handle potential errors in results
+        articles = []
+        if isinstance(news_results, list):
+            articles.extend(news_results)
+        else:
+            logger.error(f"News fetch failed: {news_results}")
+            
+        if isinstance(web_results, list):
+            articles.extend(web_results)
+        else:
+            logger.error(f"Web fetch failed: {web_results}")
+        
+        # Deduplicate by URL
+        seen_urls = set()
+        unique_articles = []
+        for a in articles:
+            if a['url'] not in seen_urls:
+                seen_urls.add(a['url'])
+                unique_articles.append(a)
+        
+        # === AI RELEVANCE FILTERING (Entity Disambiguation) ===
+        # Filter out articles that mention brand name but are about different entities
+        filter_agent = RelevanceFilterAgent()
+        relevant_articles, filter_stats = await filter_agent.filter_articles(
+            brand_profile=brand_profile,
+            articles=unique_articles,
+            feedback_patterns=negative_examples  # Use negative feedback as disambiguation patterns
+        )
+        
+        logger.info(f"📊 Relevance filter: {filter_stats['relevant']}/{filter_stats['total']} articles kept ({filter_stats['filter_rate']}% filtered)")
+        
+        # Analyze sentiment only on relevant (filtered) articles
         monitoring_agent = BrandMonitoringAgent()
-        analyzed_mentions = await monitoring_agent.analyze_mentions(brand_name, articles)
+        analyzed_mentions = await monitoring_agent.analyze_mentions(
+            brand_name=brand_name, 
+            articles=relevant_articles,
+            negative_examples=[]  # Already filtered, no need to pass again
+        )
         
         # Calculate summary stats
         negative_count = sum(1 for m in analyzed_mentions if m.get('sentiment') == 'negative')
@@ -111,7 +221,8 @@ async def get_brand_mentions(
             "total_mentions": len(analyzed_mentions),
             "summary": summary,
             "mentions": analyzed_mentions,
-            "has_critical": any((a.get("severity") or 0) >= 8 for a in analyzed_mentions)
+            "has_critical": any((a.get("severity") or 0) >= 8 for a in analyzed_mentions),
+            "filter_stats": filter_stats  # NEW: Show how many were filtered out
         }
         
     except Exception as e:
@@ -170,7 +281,9 @@ async def get_monitoring_settings(user: dict = Depends(verify_token)):
                 "brand_name": "",
                 "keywords": [],
                 "auto_monitor": True,
-                "alert_threshold": 5
+                "alert_threshold": 5,
+                "language": "en",
+                "country": None
             }
         }
         
@@ -195,6 +308,8 @@ async def update_monitoring_settings(
             "keywords": request.keywords or [],
             "auto_monitor": request.auto_monitor,
             "alert_threshold": request.alert_threshold,
+            "language": request.language,
+            "country": request.country,
             "user_id": user_id
         }
         

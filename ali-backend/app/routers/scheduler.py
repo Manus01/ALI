@@ -13,7 +13,14 @@ router = APIRouter()
 
 # Expected audience for OIDC token verification
 # This should match your Cloud Run service URL
-EXPECTED_AUDIENCE = os.getenv("CLOUD_RUN_SERVICE_URL", "")
+# Fallback to the known production URL if env var is missing
+FALLBACK_AUDIENCE = "https://ali-backend-ibayai5n2q-uc.a.run.app"
+EXPECTED_AUDIENCE = os.getenv("CLOUD_RUN_SERVICE_URL", FALLBACK_AUDIENCE)
+
+if not EXPECTED_AUDIENCE:
+    logger.warning("⚠️ No CLOUD_RUN_SERVICE_URL set and no fallback used. Scheduler verification may fail.")
+else:
+    logger.info(f"✅ Scheduler configured with EXPECTED_AUDIENCE: {EXPECTED_AUDIENCE}")
 
 def verify_scheduler_token(authorization: Optional[str] = Header(None)) -> bool:
     """

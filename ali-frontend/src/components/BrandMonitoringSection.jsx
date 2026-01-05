@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
     FaShieldAlt, FaExclamationTriangle, FaCheckCircle, FaMinusCircle,
     FaNewspaper, FaExternalLinkAlt, FaRobot, FaTimes, FaSpinner,
-    FaArrowRight, FaFireAlt, FaLightbulb, FaClock, FaCog, FaPlus, FaTrash
+    FaArrowRight, FaFireAlt, FaLightbulb, FaClock, FaCog, FaPlus, FaTrash,
+    FaThumbsUp, FaThumbsDown
 } from 'react-icons/fa';
 import api from '../api/axiosInterceptor';
 
@@ -405,6 +406,30 @@ export default function BrandMonitoringSection({ brandName }) {
 function MentionCard({ mention, onCrisisResponse }) {
     const isNegative = mention.sentiment === 'negative';
     const sentimentConfig = SENTIMENT_CONFIG[mention.sentiment] || SENTIMENT_CONFIG.neutral;
+    const [vote, setVote] = useState(null); // 'positive' | 'negative' | null
+
+    // Reset vote if the mention object changes (fixes state leak with index keys)
+    useEffect(() => {
+        setVote(null);
+    }, [mention]);
+
+    const handleVote = async (type) => {
+        if (vote) return; // Prevent double voting
+
+        try {
+            setVote(type); // Optimistic update
+            await api.post('/brand-monitoring/feedback', {
+                mention_id: mention.url || mention.title, // Use URL or Title as ID
+                title: mention.title,
+                snippet: mention.description || mention.content,
+                feedback_type: type
+            });
+            console.log(`Vote ${type} submitted for ${mention.title}`);
+        } catch (err) {
+            console.error("Feedback failed:", err);
+            setVote(null); // Revert on error
+        }
+    };
 
     const formatDate = (dateStr) => {
         if (!dateStr) return '';
@@ -420,8 +445,19 @@ function MentionCard({ mention, onCrisisResponse }) {
         }
     };
 
-    return (
-        <div className={`p-5 transition-all hover:bg-slate-50/50
+    // Render based on vote state
+    return vote === 'negative' ? (
+        <div className="p-5 bg-slate-50/50 opacity-50">
+            <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                    <FaThumbsDown className="text-slate-400" />
+                    <span className="text-xs text-slate-500 font-medium">Marked as irrelevant. We'll show fewer results like this.</span>
+                </div>
+                <button className="text-xs text-indigo-600 font-bold hover:underline" onClick={() => setVote(null)}>Undo</button>
+            </div>
+        </div>
+    ) : (
+        <div className={`p-5 transition-all hover:bg-slate-50/50 group
             ${isNegative ? 'bg-red-50/30 border-l-4 border-l-red-500' : ''}`}
         >
             <div className="flex flex-col lg:flex-row gap-4">
@@ -479,6 +515,24 @@ function MentionCard({ mention, onCrisisResponse }) {
 
                 {/* Actions */}
                 <div className="flex lg:flex-col items-center gap-2 lg:border-l lg:border-slate-100 lg:pl-4">
+                    {/* Feedback Buttons */}
+                    <div className="flex gap-1 mb-2 lg:mb-0">
+                        <button
+                            onClick={() => handleVote('positive')}
+                            className={`p-1.5 rounded-lg transition-all ${vote === 'positive' ? 'text-emerald-600 bg-emerald-50' : 'text-slate-300 hover:text-emerald-500 hover:bg-emerald-50'}`}
+                            title="Relevant match"
+                        >
+                            <FaThumbsUp className="text-xs" />
+                        </button>
+                        <button
+                            onClick={() => handleVote('negative')}
+                            className={`p-1.5 rounded-lg transition-all ${vote === 'negative' ? 'text-red-600 bg-red-50' : 'text-slate-300 hover:text-red-500 hover:bg-red-50'}`}
+                            title="Irrelevant / Poor match"
+                        >
+                            <FaThumbsDown className="text-xs" />
+                        </button>
+                    </div>
+
                     {mention.url && (
                         <a
                             href={mention.url}
