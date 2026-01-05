@@ -162,8 +162,9 @@ class VideoAgent:
                     prompt=clean_prompt,
                     config=types.GenerateVideosConfig(
                         aspect_ratio="16:9",
-                        person_generation="allow",
-                        output_gcs_uri=output_gcs_uri 
+                        person_generation="allow_adult",  # More explicit per Veo 3.1 docs
+                        output_gcs_uri=output_gcs_uri,
+                        number_of_videos=1
                     )
                 )
             else:

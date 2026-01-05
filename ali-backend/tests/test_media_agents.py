@@ -171,7 +171,7 @@ class TestVideoAgent:
 
 
 class TestImageAgent:
-    """Tests for ImageAgent (Imagen 3.0)"""
+    """Tests for ImageAgent (Imagen 4.0)"""
     
     @patch('app.services.image_agent.storage.Client')
     @patch('app.services.image_agent.genai.Client')
@@ -224,8 +224,14 @@ class TestImageAgent:
         
         mock_client = mock_genai.return_value
         
-        mock_image = MagicMock()
-        mock_image.image_bytes = None
+        # Create a mock image object that explicitly returns None for all byte attributes
+        # Use a simple class instead of MagicMock to avoid auto-creation of attributes
+        class MockImageNoBytes:
+            image_bytes = None
+            _image_bytes = None
+            image = None
+        
+        mock_image = MockImageNoBytes()
         
         mock_response = MagicMock()
         mock_response.generated_images = [mock_image]

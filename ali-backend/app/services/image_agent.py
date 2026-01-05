@@ -15,7 +15,7 @@ logger = logging.getLogger("ali_platform.services.image_agent")
 
 # Configuration
 BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "ali-platform-prod-73019.firebasestorage.app")
-IMAGE_MODEL = "imagen-3.0-generate-001"
+IMAGE_MODEL = "imagen-4.0-generate-001"  # Upgraded to Imagen 4.0 GA (Jan 2025)
 
 class ImageAgent:
     def __init__(self):
@@ -145,10 +145,11 @@ class ImageAgent:
                  except Exception as ref_e:
                      logger.warning(f"⚠️ Failed to configure Reference Image: {ref_e}. Proceeding with text only.")
 
-             # 4. Generate
-             job_config = types.GenerateImageConfig(
+             # 4. Generate with Imagen 4.0 config
+             job_config = types.GenerateImagesConfig(
                  number_of_images=1,
-                 aspect_ratio="16:9"
+                 aspect_ratio="16:9",
+                 output_mime_type="image/png"
              )
              
              # Inject reference images if valid
@@ -169,10 +170,16 @@ class ImageAgent:
 
              if response.generated_images:
                 img = response.generated_images[0]
-                if img.image_bytes:
-                    return self._upload_bytes(img.image_bytes, folder=folder)
+                # Robust bytes extraction (SDK 2025 standard: .image.image_bytes)
+                image_obj = getattr(img, 'image', img)
+                img_bytes = getattr(image_obj, 'image_bytes', None) or getattr(image_obj, '_image_bytes', None)
+                if not img_bytes:
+                    # Fallback: try direct bytes attribute
+                    img_bytes = getattr(img, 'image_bytes', None)
+                if img_bytes:
+                    return self._upload_bytes(img_bytes, folder=folder)
             
-             logger.warning("⚠️ No image bytes returned.")
+             logger.warning("⚠️ No image bytes returned from Imagen 4.0.")
              return None
 
         except (ValueError, TypeError) as e:
