@@ -3,6 +3,8 @@ import { useNavigate } from "react-router-dom";
 import { createUserWithEmailAndPassword } from "firebase/auth";
 import { doc, setDoc } from "firebase/firestore";
 import { auth, db } from "../firebase";
+import { useTheme } from "../context/ThemeContext";
+import { FaSun, FaMoon } from "react-icons/fa";
 
 export default function RegisterPage() {
   const navigate = useNavigate();
@@ -14,6 +16,7 @@ export default function RegisterPage() {
   const [role, setRole] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const { isDarkMode, toggleTheme } = useTheme();
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -53,7 +56,13 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="min-h-screen flex">
+    <div className="min-h-screen flex bg-slate-50 dark:bg-slate-900 transition-colors duration-300 relative">
+      <button
+        onClick={toggleTheme}
+        className="absolute top-4 right-4 z-50 p-2 bg-white dark:bg-slate-800 rounded-full shadow-lg text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 transition"
+      >
+        {isDarkMode ? <FaSun className="text-amber-400" /> : <FaMoon />}
+      </button>
       {/* Left - Branding */}
       <div className="hidden lg:flex w-1/2 bg-gradient-to-br from-blue-700 to-indigo-600 items-center justify-center p-12">
         <div className="max-w-md text-white">
@@ -62,7 +71,7 @@ export default function RegisterPage() {
             <p className="mt-4 text-lg opacity-90">AI-driven insights to accelerate your product decisions and growth.</p>
           </div>
 
-          <div className="glass-panel p-6 rounded-xl shadow-lg bg-white/5">
+          <div className="glass-panel p-6 rounded-xl shadow-lg bg-white/10 backdrop-blur-md border border-white/20">
             <h2 className="text-2xl font-semibold mb-2">Hidden Figures Test</h2>
             <p className="text-sm opacity-90">Quick diagnostic to personalize your onboarding and give targeted recommendations.</p>
           </div>
@@ -77,8 +86,8 @@ export default function RegisterPage() {
       <div className="flex-1 flex items-center justify-center p-8">
         <div className="w-full max-w-lg">
           <div className="glass-panel p-8 rounded-2xl shadow-md">
-            <h2 className="text-2xl font-bold mb-1">Create your account</h2>
-            <p className="text-sm text-gray-500 mb-6">Start your free trial and take the Hidden Figures Test to get tailored insights.</p>
+            <h2 className="text-2xl font-bold mb-1 dark:text-white">Create your account</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">Start your free trial and take the Hidden Figures Test to get tailored insights.</p>
 
             {error && (
               <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded">{error}</div>
@@ -86,50 +95,49 @@ export default function RegisterPage() {
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700">Name &amp; Surname</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Name &amp; Surname</label>
                 <input
                   type="text"
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
-                  className="mt-1 block w-full rounded-md border-gray-200 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                  className="mt-1 block w-full rounded-md border-gray-200 dark:border-slate-700 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
                   placeholder="Jane Doe"
                   required
                 />
               </div>
-
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Email</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Email</label>
                   <input
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="mt-1 block w-full rounded-md border-gray-200 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                    className="mt-1 block w-full rounded-md border-gray-200 dark:border-slate-700 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
                     placeholder="you@company.com"
                     required
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Password</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Password</label>
                   <input
                     type="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="mt-1 block w-full rounded-md border-gray-200 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                    className="mt-1 block w-full rounded-md border-gray-200 dark:border-slate-700 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
                     placeholder="Choose a strong password"
                     required
                   />
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Company Size</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Company Size</label>
                   <select
                     value={companySize}
                     onChange={(e) => setCompanySize(e.target.value)}
-                    className="mt-1 block w-full rounded-md border-gray-200 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                    className="mt-1 block w-full rounded-md border-gray-200 dark:border-slate-700 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
                   >
                     <option value="1-10">1-10</option>
                     <option value="11-50">11-50</option>
@@ -138,11 +146,11 @@ export default function RegisterPage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700">Industry</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Industry</label>
                   <select
                     value={industry}
                     onChange={(e) => setIndustry(e.target.value)}
-                    className="mt-1 block w-full rounded-md border-gray-200 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                    className="mt-1 block w-full rounded-md border-gray-200 dark:border-slate-700 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
                   >
                     <option value="E-commerce">E-commerce</option>
                     <option value="SaaS">SaaS</option>
@@ -153,12 +161,12 @@ export default function RegisterPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700">Role</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Role</label>
                 <input
                   type="text"
                   value={role}
                   onChange={(e) => setRole(e.target.value)}
-                  className="mt-1 block w-full rounded-md border-gray-200 shadow-sm focus:ring-indigo-500 focus:border-indigo-500"
+                  className="mt-1 block w-full rounded-md border-gray-200 dark:border-slate-700 shadow-sm focus:ring-indigo-500 focus:border-indigo-500 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
                   placeholder="e.g. Head of Product"
                   required
                 />

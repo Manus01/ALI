@@ -100,10 +100,41 @@ class MetricoolClient:
 
         # Normalize and deduplicate
         normalized = []
+        
+        # Mappings for Metricool specific provider names
+        # Based on observed API responses (e.g., facebookPage, instagramBusiness)
+        PROVIDER_MAPPING = {
+            "facebookpage": "facebook",
+            "facebookads": "facebook",
+            "instagrambusiness": "instagram",
+            "linkedinpage": "linkedin",
+            "linkedincompany": "linkedin",
+            "tiktokbusiness": "tiktok",
+            "tiktokads": "tiktok", 
+            "googleads": "google",
+            "twitter": "twitter",
+            "x": "twitter",
+            "pinterest": "pinterest",
+            "youtube": "youtube"
+        }
+
         for p in connected:
             if not p:
                 continue
             val = str(p).lower()
+            
+            # 1. Direct Map Check
+            if val in PROVIDER_MAPPING:
+                val = PROVIDER_MAPPING[val]
+            # 2. Heuristic: If it ends with "page" or "business", strip it? 
+            # Safer to trust the mapping first, but fallback if needed.
+            else:
+                # If provider starts with known keys, map it
+                for key in ["facebook", "instagram", "linkedin", "tiktok", "google", "youtube"]:
+                    if val.startswith(key):
+                        val = key
+                        break
+            
             if val not in normalized:
                 normalized.append(val)
         return normalized

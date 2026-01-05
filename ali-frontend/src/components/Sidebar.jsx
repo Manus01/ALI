@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+﻿import React, { useState } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import {
     FaHome,
@@ -12,31 +12,20 @@ import {
     FaCheckCircle,
     FaClipboardList,
     FaUserCog,
-    FaRocket,
-    FaPalette,
-    FaExclamationCircle
+    FaRocket
 } from 'react-icons/fa';
 import { useAuth } from '../hooks/useAuth';
+import { useTheme } from '../context/ThemeContext';
 
 export default function Sidebar() {
     const { logout, userProfile, currentUser } = useAuth();
+    const { isDarkMode, toggleTheme } = useTheme();
     const navigate = useNavigate();
-    const [darkMode, setDarkMode] = useState(() => localStorage.getItem('theme') === 'dark');
     const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
     // 🔐 ADMIN CHECK
     const isAdmin = currentUser?.email === "manoliszografos@gmail.com";
     const isOnboardingComplete = userProfile?.onboarding_completed;
-
-    useEffect(() => {
-        if (darkMode) {
-            document.documentElement.classList.add('dark');
-            localStorage.setItem('theme', 'dark');
-        } else {
-            document.documentElement.classList.remove('dark');
-            localStorage.setItem('theme', 'light');
-        }
-    }, [darkMode]);
 
     const handleSignOut = async () => {
         await logout();
@@ -156,11 +145,11 @@ export default function Sidebar() {
                 {/* Footer */}
                 <div className="p-4 border-t border-slate-200 dark:border-slate-800 space-y-2">
                     <button
-                        onClick={() => setDarkMode(!darkMode)}
+                        onClick={toggleTheme}
                         className="w-full flex items-center gap-3 px-4 py-2 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800 rounded-lg transition-colors"
                     >
-                        {darkMode ? <FaSun className="text-amber-400" /> : <FaMoon />}
-                        <span>{darkMode ? 'Light Mode' : 'Dark Mode'}</span>
+                        {isDarkMode ? <FaSun className="text-amber-400" /> : <FaMoon />}
+                        <span>{isDarkMode ? 'Light Mode' : 'Dark Mode'}</span>
                     </button>
 
                     <button

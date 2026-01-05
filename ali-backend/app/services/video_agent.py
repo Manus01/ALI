@@ -37,13 +37,8 @@ class VideoAgent:
     def _init_genai_client(self):
         """Initializes the Google GenAI client with integer Project ID."""
         try:
-            project_id_str = os.getenv("GENAI_PROJECT_ID", os.getenv("PROJECT_ID", "776425171266"))
-            try:
-                project_id = int(project_id_str)
-            except (ValueError, TypeError):
-                logger.error(f"❌ Invalid Project ID: {project_id_str}. Must be integer.")
-                return
-
+            project_id = os.getenv("GENAI_PROJECT_ID", os.getenv("PROJECT_ID", "776425171266"))
+            
             location = os.getenv("AI_STUDIO_LOCATION", "us-central1")
             self.client = genai.Client(
                 vertexai=True,

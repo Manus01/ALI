@@ -240,11 +240,11 @@ export default function DashboardPage() {
 
     if (error) return (
         <div className="p-10 flex flex-col items-center justify-center h-screen">
-            <div className="bg-red-50 p-6 rounded-lg border border-red-100 text-center">
+            <div className="bg-red-50 dark:bg-red-900/20 p-6 rounded-lg border border-red-100 dark:border-red-900/50 text-center">
                 <FaExclamationTriangle className="text-3xl mb-2 mx-auto text-red-500" />
-                <p className="font-bold text-lg text-red-700">System Error</p>
-                <p className="text-sm opacity-80 text-red-600">{error}</p>
-                <button onClick={fetchDashboardData} className="mt-4 px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition">Retry Connection</button>
+                <p className="font-bold text-lg text-red-700 dark:text-red-400">System Error</p>
+                <p className="text-sm opacity-80 text-red-600 dark:text-red-300">{error}</p>
+                <button onClick={fetchDashboardData} className="mt-4 px-4 py-2 bg-red-100 dark:bg-red-900/40 text-red-700 dark:text-red-300 rounded-lg hover:bg-red-200 dark:hover:bg-red-900/60 transition">Retry Connection</button>
             </div>
         </div>
     );
@@ -263,14 +263,14 @@ export default function DashboardPage() {
             <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-6">
                 <div
                     onClick={() => setEditModalOpen(true)}
-                    className="group flex items-center gap-6 bg-white p-6 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-md hover:border-primary/20 transition-all cursor-pointer relative overflow-hidden flex-1"
+                    className="group flex items-center gap-6 bg-white dark:bg-slate-800 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-700 shadow-sm hover:shadow-md hover:border-primary/20 transition-all cursor-pointer relative overflow-hidden flex-1"
                 >
                     <div className="absolute top-4 right-4 text-slate-300 group-hover:text-primary transition-colors">
                         <FaEdit size={14} title="Edit Brand Identity" />
                     </div>
 
                     {brandDna.logo_url ? (
-                        <div className="w-20 h-20 bg-slate-50 rounded-2xl flex items-center justify-center p-3 border border-slate-100 group-hover:bg-white transition-colors">
+                        <div className="w-20 h-20 bg-slate-50 dark:bg-slate-700 rounded-2xl flex items-center justify-center p-3 border border-slate-100 dark:border-slate-600 group-hover:bg-white dark:group-hover:bg-slate-600 transition-colors">
                             <img src={brandDna.logo_url} alt="Brand Logo" className="max-h-full max-w-full object-contain" />
                         </div>
                     ) : (
@@ -281,12 +281,12 @@ export default function DashboardPage() {
 
                     <div>
                         <div className="flex items-center gap-2 mb-1">
-                            <h1 className="text-2xl font-black text-slate-800 tracking-tight">
+                            <h1 className="text-2xl font-black text-slate-800 dark:text-white tracking-tight">
                                 {brandDna.brand_name || "Define Brand Identity"}
                             </h1>
                             {isOnboardingComplete && <FaCheckCircle className="text-green-500 text-sm" />}
                         </div>
-                        <p className="text-slate-500 font-medium text-sm">
+                        <p className="text-slate-500 dark:text-slate-400 font-medium text-sm">
                             {isOnboardingComplete ? "Brand DNA is active. Click to manage in Campaign Center." : "Identity setup pending. Click to initialize."}
                         </p>
                     </div>
@@ -305,17 +305,17 @@ export default function DashboardPage() {
 
             {/* --- PERFORMANCE OVERVIEW (METRICOOL) --- */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700">
                     <h3 className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">Total Spend</h3>
-                    <p className="text-3xl font-black text-slate-800">${analyticsData.spend?.toLocaleString() || '0'}</p>
+                    <p className="text-3xl font-black text-slate-800 dark:text-white">${analyticsData.spend?.toLocaleString() || '0'}</p>
                 </div>
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700">
                     <h3 className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">Total Clicks</h3>
-                    <p className="text-3xl font-black text-slate-800">{analyticsData.clicks?.toLocaleString() || '0'}</p>
+                    <p className="text-3xl font-black text-slate-800 dark:text-white">{analyticsData.clicks?.toLocaleString() || '0'}</p>
                 </div>
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+                <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700">
                     <h3 className="text-slate-400 text-xs font-bold uppercase tracking-wider mb-2">Average CTR</h3>
-                    <p className="text-3xl font-black text-slate-800">{analyticsData.ctr}%</p>
+                    <p className="text-3xl font-black text-slate-800 dark:text-white">{analyticsData.ctr}%</p>
                 </div>
             </div>
 
@@ -323,9 +323,9 @@ export default function DashboardPage() {
             {(data.metrics && data.metrics.length > 0 && data.metrics[0].label) && (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                     {data.metrics.map((m, i) => (
-                        <div key={i} className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+                        <div key={i} className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm">
                             <div className="text-slate-400 text-[10px] font-black uppercase tracking-widest mb-2">{m.label}</div>
-                            <div className={`text-3xl font-black mb-1 ${m.alert ? 'text-red-500' : 'text-slate-800'}`}>{m.value}</div>
+                            <div className={`text-3xl font-black mb-1 ${m.alert ? 'text-red-500' : 'text-slate-800 dark:text-white'}`}>{m.value}</div>
                             <div className="text-xs text-slate-400 font-bold">{m.trend}</div>
                         </div>
                     ))}
@@ -336,12 +336,12 @@ export default function DashboardPage() {
             {(data.recommendations && data.recommendations.length > 0) && (
                 <div className="space-y-4">
                     {data.recommendations.map((rec, i) => (
-                        <div key={i} className="p-4 bg-white border border-l-4 border-l-amber-500 border-slate-100 rounded-xl shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div key={i} className="p-4 bg-white dark:bg-slate-800 border border-l-4 border-l-amber-500 border-slate-100 dark:border-slate-700 rounded-xl shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                             <div className="flex items-center gap-4">
-                                <div className="p-3 bg-amber-50 text-amber-600 rounded-full">{rec.type === 'strategy' ? <FaLightbulb /> : <FaVideo />}</div>
-                                <div><h3 className="font-bold text-slate-800 text-sm">Opportunity Detected</h3><p className="text-xs text-slate-500">{rec.text}</p></div>
+                                <div className="p-3 bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-500 rounded-full">{rec.type === 'strategy' ? <FaLightbulb /> : <FaVideo />}</div>
+                                <div><h3 className="font-bold text-slate-800 dark:text-white text-sm">Opportunity Detected</h3><p className="text-xs text-slate-500 dark:text-slate-400">{rec.text}</p></div>
                             </div>
-                            <Link to={rec.link} className="px-4 py-2 text-xs font-black text-indigo-600 bg-indigo-50 hover:bg-indigo-100 rounded-lg flex items-center gap-2">Take Action <FaArrowRight /></Link>
+                            <Link to={rec.link} className="px-4 py-2 text-xs font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 rounded-lg flex items-center gap-2">Take Action <FaArrowRight /></Link>
                         </div>
                     ))}
                 </div>
@@ -349,9 +349,9 @@ export default function DashboardPage() {
 
             {/* Charts */}
             {chartData && (
-                <div className="bg-white p-8 rounded-[2rem] border border-slate-100 shadow-sm">
+                <div className="bg-white dark:bg-slate-800 p-8 rounded-[2rem] border border-slate-100 dark:border-slate-700 shadow-sm">
                     <div className="flex flex-col md:flex-row justify-between items-center mb-8 gap-4">
-                        <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight">Intelligence Feed</h3>
+                        <h3 className="text-lg font-black text-slate-800 dark:text-white uppercase tracking-tight">Intelligence Feed</h3>
                         {data.chart_history && (
                             <div className="flex flex-wrap gap-1 bg-slate-50 p-1.5 rounded-xl">
                                 {Object.keys(CHANNEL_CONFIG).map((key) => {
@@ -359,7 +359,7 @@ export default function DashboardPage() {
                                     const isActive = activeFilter === key;
                                     return (
                                         <button key={key} onClick={() => setActiveFilter(key)}
-                                            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${isActive ? 'bg-white text-slate-800 shadow-sm ring-1 ring-slate-200' : 'text-slate-400 hover:text-slate-600'}`}>
+                                            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold transition-all ${isActive ? 'bg-white dark:bg-slate-700 text-slate-800 dark:text-white shadow-sm ring-1 ring-slate-200 dark:ring-slate-600' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}>
                                             {CHANNEL_CONFIG[key].icon}
                                             <span className="hidden sm:inline">{CHANNEL_CONFIG[key].label}</span>
                                         </button>

@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './hooks/useAuth';
 import ProtectedRoute from './components/ProtectedRoute';
 import Sidebar from './components/Sidebar'; // <--- Import Sidebar
 import NotificationCenter from './components/NotificationCenter';
+import { ThemeProvider } from './context/ThemeContext';
 
 // Page Imports
 import RegisterPage from './pages/RegisterPage';
@@ -70,48 +71,50 @@ function App() {
     }, []);
 
     return (
-        <AuthProvider>
-            <Router>
-                <Routes>
-                    {/* --- Public Routes (No Sidebar) --- */}
-                    <Route path="/register" element={<RegisterPage />} />
-                    <Route path="/login" element={<LoginPage />} />
+        <ThemeProvider>
+            <AuthProvider>
+                <Router>
+                    <Routes>
+                        {/* --- Public Routes (No Sidebar) --- */}
+                        <Route path="/register" element={<RegisterPage />} />
+                        <Route path="/login" element={<LoginPage />} />
 
-                    {/* --- Protected App Layout (Has Sidebar) --- */}
-                    <Route element={
-                        <ProtectedRoute>
-                            <Layout />
-                        </ProtectedRoute>
-                    }>
-                        <Route path="/dashboard" element={<DashboardPage />} />
-                        <Route path="/onboarding" element={<BrandOnboarding />} />
-                        <Route path="/integrations" element={<IntegrationsPage />} />
-                        <Route path="/campaign-center" element={<CampaignCenter />} />
+                        {/* --- Protected App Layout (Has Sidebar) --- */}
+                        <Route element={
+                            <ProtectedRoute>
+                                <Layout />
+                            </ProtectedRoute>
+                        }>
+                            <Route path="/dashboard" element={<DashboardPage />} />
+                            <Route path="/onboarding" element={<BrandOnboarding />} />
+                            <Route path="/integrations" element={<IntegrationsPage />} />
+                            <Route path="/campaign-center" element={<CampaignCenter />} />
 
-                        {/* 🔐 The Admin Route (Now inside Layout!) */}
-                        <Route path="/admin" element={
-                            <AdminRoute>
-                                <AdminPage />
-                            </AdminRoute>
-                        } />
+                            {/* 🔐 The Admin Route (Now inside Layout!) */}
+                            <Route path="/admin" element={
+                                <AdminRoute>
+                                    <AdminPage />
+                                </AdminRoute>
+                            } />
 
-                        {/* Assessments */}
-                        <Route path="/quiz/hft" element={<HFTPage />} />
-                        <Route path="/quiz/marketing" element={<MarketingTestPage />} />
-                        <Route path="/quiz/eq" element={<EQTestPage />} />
+                            {/* Assessments */}
+                            <Route path="/quiz/hft" element={<HFTPage />} />
+                            <Route path="/quiz/marketing" element={<MarketingTestPage />} />
+                            <Route path="/quiz/eq" element={<EQTestPage />} />
 
-                        {/* Tutorials */}
-                        <Route path="/tutorials" element={<TutorialsPage />} />
-                        <Route path="/tutorials/:id" element={<TutorialDetailsPage />} />
-                    </Route>
+                            {/* Tutorials */}
+                            <Route path="/tutorials" element={<TutorialsPage />} />
+                            <Route path="/tutorials/:id" element={<TutorialDetailsPage />} />
+                        </Route>
 
-                    {/* Default Redirect */}
-                    <Route path="/" element={<Navigate to="/register" replace />} />
-                </Routes>
+                        {/* Default Redirect */}
+                        <Route path="/" element={<Navigate to="/register" replace />} />
+                    </Routes>
 
-                <NotificationCenter />
-            </Router>
-        </AuthProvider>
+                    <NotificationCenter />
+                </Router>
+            </AuthProvider>
+        </ThemeProvider>
     );
 }
 

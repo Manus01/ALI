@@ -272,14 +272,14 @@ export default function CampaignCenter() {
             <div className="p-8 max-w-4xl mx-auto animate-fade-in pb-20">
                 {/* STEP 1: INPUT */}
                 {dnaStep === 'input' && (
-                    <div className="glass-panel p-10 bg-white rounded-3xl shadow-xl border border-slate-100">
-                        <div className="w-20 h-20 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-6">
+                    <div className="glass-panel p-10 bg-white dark:bg-slate-800 rounded-3xl shadow-xl border border-slate-100 dark:border-slate-700">
+                        <div className="w-20 h-20 bg-blue-50 dark:bg-slate-700 rounded-full flex items-center justify-center mx-auto mb-6">
                             <FaRocket className="text-4xl text-primary" />
                         </div>
-                        <h2 className="text-3xl font-bold text-slate-800 mb-2 text-center tracking-tight">
+                        <h2 className="text-3xl font-bold text-slate-800 dark:text-white mb-2 text-center tracking-tight">
                             {forceEditDna ? "Update Brand Identity" : "Establish Your Identity"}
                         </h2>
-                        <p className="text-slate-500 mb-10 max-w-lg mx-auto text-center font-medium">
+                        <p className="text-slate-500 dark:text-slate-400 mb-10 max-w-lg mx-auto text-center font-medium">
                             {forceEditDna
                                 ? "Refine your brand's core essence. This will update all future campaigns."
                                 : "Before launching campaigns, we need to extract your Brand DNA."}
@@ -299,7 +299,7 @@ export default function CampaignCenter() {
                                             id="brandUrl"
                                             aria-label="Website URL"
                                             placeholder="https://your-business.com"
-                                            className="w-full p-5 rounded-2xl border border-slate-200 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none text-lg text-center transition-all text-slate-800"
+                                            className="w-full p-5 rounded-2xl border border-slate-200 dark:border-slate-700 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none text-lg text-center transition-all text-slate-800 dark:text-white bg-white dark:bg-slate-900"
                                             value={url}
                                             onChange={(e) => setUrl(e.target.value)}
                                         />
@@ -314,7 +314,7 @@ export default function CampaignCenter() {
                                             id="brandDescription"
                                             aria-label="Business Description"
                                             placeholder="Describe your products and 'vibe'..."
-                                            className="w-full p-5 rounded-2xl border border-slate-200 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none text-lg min-h-[140px] transition-all text-slate-800"
+                                            className="w-full p-5 rounded-2xl border border-slate-200 dark:border-slate-700 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none text-lg min-h-[140px] transition-all text-slate-800 dark:text-white bg-white dark:bg-slate-900"
                                             value={description}
                                             onChange={(e) => setDescription(e.target.value)}
                                         />
@@ -331,7 +331,7 @@ export default function CampaignCenter() {
                                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Brand Logo</label>
                                     <span className="flex items-center gap-1 text-[10px] text-blue-500 font-bold"><FaInfoCircle /> High-Res PNG or SVG</span>
                                 </div>
-                                <div className="relative group border-2 border-dashed border-slate-200 rounded-2xl p-6 hover:border-primary transition-all bg-slate-50/50">
+                                <div className="relative group border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-2xl p-6 hover:border-primary transition-all bg-slate-50/50 dark:bg-slate-900/50">
                                     <input
                                         type="file"
                                         name="brandLogo"
@@ -343,8 +343,8 @@ export default function CampaignCenter() {
                                     />
                                     {logoPreview ? (
                                         <div className="flex items-center gap-4 animate-scale-up">
-                                            <img src={logoPreview} alt="Preview" className="h-12 w-12 object-contain bg-white p-2 rounded-lg shadow-sm" />
-                                            <p className="text-sm font-bold text-slate-700 truncate max-w-[200px]">{logoFile.name}</p>
+                                            <img src={logoPreview} alt="Preview" className="h-12 w-12 object-contain bg-white rounded-lg shadow-sm" />
+                                            <p className="text-sm font-bold text-slate-700 dark:text-slate-300 truncate max-w-[200px]">{logoFile.name}</p>
                                         </div>
                                     ) : (
                                         <div className="text-center py-2">
@@ -361,16 +361,16 @@ export default function CampaignCenter() {
                                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">Target Markets</label>
                                     <span className="text-[10px] font-bold text-primary">{countries.length} selected</span>
                                 </div>
-                                <div className="h-40 overflow-y-auto border border-slate-200 rounded-2xl p-4 bg-slate-50/50 custom-scrollbar grid grid-cols-2 gap-2">
+                                <div className="h-40 overflow-y-auto border border-slate-200 dark:border-slate-700 rounded-2xl p-4 bg-slate-50/50 dark:bg-slate-900/50 custom-scrollbar grid grid-cols-2 gap-2">
                                     {allCountries.map(c => (
                                         <button
                                             key={c}
                                             type="button"
                                             onClick={() => setCountries(prev => prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c])}
                                             className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold transition-all border
-                                                ${countries.includes(c) ? 'bg-primary text-white border-primary shadow-sm' : 'bg-white text-slate-500 border-slate-100 hover:border-slate-300'}`}
+                                                ${countries.includes(c) ? 'bg-primary text-white border-primary shadow-sm' : 'bg-white dark:bg-slate-800 text-slate-500 dark:text-slate-400 border-slate-100 dark:border-slate-700 hover:border-slate-300'}`}
                                         >
-                                            <div className={`w-2 h-2 rounded-full ${countries.includes(c) ? 'bg-white' : 'bg-slate-200'}`} />
+                                            <div className={`w-2 h-2 rounded-full ${countries.includes(c) ? 'bg-white' : 'bg-slate-200 dark:bg-slate-600'}`} />
                                             {c}
                                         </button>
                                     ))}
@@ -398,7 +398,7 @@ export default function CampaignCenter() {
                             <div className="absolute inset-0 border-8 border-primary border-t-transparent rounded-full animate-spin"></div>
                             <FaRocket className="absolute inset-0 m-auto text-4xl text-primary animate-pulse" />
                         </div>
-                        <h3 className="text-3xl font-black text-slate-800 mb-3 tracking-tight">Processing Strategy...</h3>
+                        <h3 className="text-3xl font-black text-slate-800 dark:text-white mb-3 tracking-tight">Processing Strategy...</h3>
                         <p className="text-slate-400 max-w-md mx-auto leading-relaxed">
                             Comparing your identity with cultural trends in {countries.length > 0 ? countries.join(', ') : 'Global Markets'}.
                         </p>
@@ -409,22 +409,22 @@ export default function CampaignCenter() {
                 {dnaStep === 'results' && dna && (
                     <div className="space-y-10 animate-slide-up">
                         <div className="text-center">
-                            <div className="inline-flex items-center gap-2 px-5 py-2.5 bg-green-50 text-green-700 rounded-full text-xs font-black mb-6 border border-green-200 uppercase tracking-widest">
+                            <div className="inline-flex items-center gap-2 px-5 py-2.5 bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-full text-xs font-black mb-6 border border-green-200 dark:border-green-800 uppercase tracking-widest">
                                 <FaCheckCircle /> Analysis Complete
                             </div>
-                            <h2 className="text-4xl font-black text-slate-800 mb-3 tracking-tighter">Your Creative North Star</h2>
-                            <p className="text-slate-500 font-medium">Select the aesthetic logic our AI agents should follow.</p>
+                            <h2 className="text-4xl font-black text-slate-800 dark:text-white mb-3 tracking-tighter">Your Creative North Star</h2>
+                            <p className="text-slate-500 dark:text-slate-400 font-medium">Select the aesthetic logic our AI agents should follow.</p>
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
                             {dna.visual_styles?.map((style, idx) => (
-                                <button key={style.id || idx} onClick={() => handleSelectDnaStyle(style)} disabled={isSavingDna} className="group relative p-10 bg-white border-2 border-slate-100 rounded-[2rem] hover:border-primary hover:shadow-2xl hover:-translate-y-2 transition-all text-left flex flex-col h-full overflow-hidden">
-                                    <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center mb-8 group-hover:bg-blue-50 transition-colors">
-                                        <FaPalette className="text-2xl text-slate-300 group-hover:text-primary" />
+                                <button key={style.id || idx} onClick={() => handleSelectDnaStyle(style)} disabled={isSavingDna} className="group relative p-10 bg-white dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-700 rounded-[2rem] hover:border-primary hover:shadow-2xl hover:-translate-y-2 transition-all text-left flex flex-col h-full overflow-hidden">
+                                    <div className="w-16 h-16 bg-slate-50 dark:bg-slate-700 rounded-2xl flex items-center justify-center mb-8 group-hover:bg-blue-50 dark:group-hover:bg-slate-600 transition-colors">
+                                        <FaPalette className="text-2xl text-slate-300 dark:text-slate-400 group-hover:text-primary" />
                                     </div>
-                                    <h4 className="text-2xl font-black text-slate-800 mb-3">{style.label}</h4>
-                                    <p className="text-slate-500 leading-relaxed mb-10 flex-1 font-medium">{style.desc}</p>
-                                    <div className="w-full py-4 rounded-2xl bg-slate-50 text-slate-600 font-black text-center text-xs uppercase tracking-widest group-hover:bg-primary group-hover:text-white transition-all">
+                                    <h4 className="text-2xl font-black text-slate-800 dark:text-white mb-3">{style.label}</h4>
+                                    <p className="text-slate-500 dark:text-slate-400 leading-relaxed mb-10 flex-1 font-medium">{style.desc}</p>
+                                    <div className="w-full py-4 rounded-2xl bg-slate-50 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-black text-center text-xs uppercase tracking-widest group-hover:bg-primary group-hover:text-white transition-all">
                                         {isSavingDna ? "Locking identity..." : "Apply This DNA"}
                                     </div>
                                 </button>
@@ -443,7 +443,7 @@ export default function CampaignCenter() {
         <div className="p-8 max-w-5xl mx-auto space-y-8 animate-fade-in pb-20">
             <header className="flex justify-between items-end">
                 <div>
-                    <h1 className="text-3xl font-black text-slate-800 tracking-tight uppercase">Orchestrator</h1>
+                    <h1 className="text-3xl font-black text-slate-800 dark:text-white tracking-tight uppercase">Orchestrator</h1>
                     <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1">Goal: {goal || "Unassigned"}</p>
                 </div>
             </header>
@@ -452,13 +452,13 @@ export default function CampaignCenter() {
             {stage === 'loading' && (
                 <div className="flex flex-col items-center justify-center py-32 space-y-4">
                     <FaSpinner className="text-4xl text-primary animate-spin" style={{ color: primaryColor }} />
-                    <p className="font-bold text-slate-600">Consulting with your Brand DNA...</p>
+                    <p className="font-bold text-slate-600 dark:text-slate-400">Consulting with your Brand DNA...</p>
                 </div>
             )}
 
             {/* STAGE 1: INPUT */}
             {stage === 'input' && (
-                <div className="bg-white p-12 text-center border border-slate-100 shadow-xl rounded-[3rem]">
+                <div className="bg-white dark:bg-slate-800 p-12 text-center border border-slate-100 dark:border-slate-700 shadow-xl rounded-[3rem]">
                     <FaMagic className="text-5xl text-primary mx-auto mb-6 opacity-10" style={{ color: primaryColor }} />
 
                     {/* Active Integrations Badge */}
@@ -472,12 +472,12 @@ export default function CampaignCenter() {
                         </div>
                     )}
 
-                    <h2 className="text-2xl font-black mb-6 text-slate-800 tracking-tight">What is your objective today?</h2>
+                    <h2 className="text-2xl font-black mb-6 text-slate-800 dark:text-white tracking-tight">What is your objective today?</h2>
                     <textarea
                         name="campaignGoal"
                         id="campaignGoal"
                         aria-label="Campaign Goal"
-                        className="w-full p-8 rounded-3xl border-2 border-slate-50 bg-slate-50 text-xl focus:border-primary focus:bg-white outline-none transition-all mb-8 min-h-[200px] text-slate-800"
+                        className="w-full p-8 rounded-3xl border-2 border-slate-50 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-xl focus:border-primary focus:bg-white dark:focus:bg-slate-800 outline-none transition-all mb-8 min-h-[200px] text-slate-800 dark:text-white"
                         placeholder="e.g., 'Launch a luxury holiday campaign for our Cyprus resort...'"
                         value={goal} onChange={(e) => setGoal(e.target.value)}
                     />
