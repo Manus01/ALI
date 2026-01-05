@@ -152,23 +152,21 @@ def test_tutorial_logic():
         else:
             print("   [FAIL] Fallback Logic Failed")
 
-        # 5. RUN TEST CASE 3: TOTAL FAILURE (Video & Image Fail -> Alert)
-        print("\n[TEST 3]: Total Failure (Alerts)...")
+        # 5. RUN TEST CASE 3: TOTAL FAILURE (Video & Image Fail -> Blocked)
+        print("\n[TEST 3]: Total Failure (Strict Validation Blocks Save)...")
         mock_video_agent.generate_video.return_value = None
         mock_image_agent.generate_image.return_value = None
         
-        result_fail = generate_tutorial("user_123", "Digital Marketing")
-        
-        alerts = result_fail.get('generation_alerts', [])
-        if len(alerts) > 0:
-            print(f"   [OK] Generation Alerts Created: {len(alerts)}")
-            # Verify Admin Task creation
-            # We look at mock_db.collection('admin_tasks').add
-            if mock_db.collection.return_value.document.return_value.collection.return_value.add.call_count > 0 \
-               or mock_db.collection('admin_tasks').add.call_count > 0:
-                 print("   [OK] Admin Task Mock Called")
-        else:
-            print("   [FAIL] Generation Alerts Missing")
+        # New behavior: Should raise RuntimeError and NOT save tutorial
+        try:
+            result_fail = generate_tutorial("user_123", "Digital Marketing")
+            print("   [FAIL] Expected RuntimeError was NOT raised - tutorial saved incorrectly")
+        except RuntimeError as e:
+            if "Tutorial generation blocked" in str(e):
+                print(f"   [OK] Strict Validation: RuntimeError raised correctly")
+                print(f"   [OK] Message: {str(e)[:80]}...")
+            else:
+                print(f"   [FAIL] Unexpected RuntimeError: {e}")
 
 if __name__ == "__main__":
     test_tutorial_logic()

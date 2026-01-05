@@ -435,6 +435,50 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
         if not all(final_sections):
              raise RuntimeError("One or more sections failed to generate.")
 
+        # STRICT MEDIA VALIDATION: Prevent tutorial save if any media failed
+        # User requirement: "No tutorial should be created without the necessary media"
+        failed_media_blocks = []
+        for sec_idx, sec in enumerate(final_sections):
+            if not sec:
+                continue
+            for block_idx, block in enumerate(sec.get('blocks', [])):
+                if block.get('status') == 'failed':
+                    failed_media_blocks.append({
+                        "section_index": sec_idx,
+                        "section_title": sec.get('title', f'Section {sec_idx + 1}'),
+                        "block_index": block_idx,
+                        "original_type": block.get('original_type', block.get('type', 'unknown')),
+                        "prompt": block.get('prompt') or block.get('script', 'N/A'),
+                        "error": block.get('error') or block.get('info', 'Unknown failure')
+                    })
+        
+        if failed_media_blocks:
+            failure_details = "; ".join([
+                f"{fb['section_title']}:{fb['original_type']}" 
+                for fb in failed_media_blocks
+            ])
+            logger.error(f"❌ STRICT VALIDATION: {len(failed_media_blocks)} media block(s) failed: {failure_details}")
+            
+            # Create admin alert for failed generation attempt
+            try:
+                db.collection('admin_tasks').add({
+                    "type": "generation_blocked",
+                    "severity": "high",
+                    "status": "pending",
+                    "user_id": user_id,
+                    "tutorial_topic": topic,
+                    "failed_blocks": failed_media_blocks,
+                    "reason": "Strict media validation prevented tutorial creation",
+                    "created_at": firestore.SERVER_TIMESTAMP
+                })
+            except Exception as admin_e:
+                logger.warning(f"Failed to create admin alert: {admin_e}")
+            
+            raise RuntimeError(
+                f"Tutorial generation blocked: {len(failed_media_blocks)} required media asset(s) failed to generate. "
+                f"Failed: {failure_details}. No tutorial saved."
+            )
+
         # PHASE 3: FINAL AUDIO SUMMARY
         try:
             logger.info("   🎙️ Generating Course Summary Audio...")
