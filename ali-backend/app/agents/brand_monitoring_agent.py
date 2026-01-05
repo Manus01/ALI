@@ -61,7 +61,7 @@ class BrandMonitoringAgent(BaseAgent):
         analyzed_articles.sort(
             key=lambda x: (
                 0 if x.get("sentiment") == "negative" else 1,
-                -x.get("severity", 0),
+                -(x.get("severity") or 0),
                 x.get("published_at", "")
             ),
             reverse=False

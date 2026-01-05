@@ -220,9 +220,17 @@ export default function BrandMonitoringSection({ brandName }) {
                             </div>
                             <div>
                                 <h3 className="text-lg font-black text-slate-800 uppercase tracking-tight">Brand Monitoring</h3>
-                                <p className="text-xs text-slate-400 font-medium">
-                                    {mentionsData?.brand_name ? `Tracking: ${mentionsData.brand_name}` : 'Real-time reputation tracking'}
-                                </p>
+                                <div className="flex flex-wrap items-center gap-2 mt-1">
+                                    <span className="text-xs text-slate-400 font-medium">Tracking:</span>
+                                    <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded text-[10px] font-bold">
+                                        {mentionsData?.brand_name || "Brand"}
+                                    </span>
+                                    {mentionsData?.keywords && mentionsData.keywords.map(k => (
+                                        <span key={k} className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded text-[10px] font-bold">
+                                            {k}
+                                        </span>
+                                    ))}
+                                </div>
                             </div>
                         </div>
 

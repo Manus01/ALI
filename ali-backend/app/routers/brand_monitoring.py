@@ -98,17 +98,21 @@ async def get_brand_mentions(
         critical_alerts = [m for m in analyzed_mentions if m.get('severity', 0) >= 7]
         
         return {
-            "status": "success",
+        summary = {
+            "total": len(analyzed_mentions),
+            "positive": positive_count,
+            "neutral": len(analyzed_mentions) - positive_count - negative_count,
+            "negative": negative_count,
+            "critical_alerts": len(critical_alerts)
+        }
+        
+        return {
             "brand_name": brand_name,
-            "summary": {
-                "total": len(analyzed_mentions),
-                "positive": positive_count,
-                "neutral": len(analyzed_mentions) - positive_count - negative_count,
-                "negative": negative_count,
-                "critical_alerts": len(critical_alerts)
-            },
+            "keywords": keywords,
+            "total_mentions": len(analyzed_mentions),
+            "summary": summary,
             "mentions": analyzed_mentions,
-            "has_critical": len(critical_alerts) > 0
+            "has_critical": any((a.get("severity") or 0) >= 8 for a in analyzed_mentions)
         }
         
     except Exception as e:
