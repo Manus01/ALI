@@ -251,7 +251,7 @@ export default function AdminPage() {
                 <div className="mb-10 space-y-4">
                     <h3 className="text-[10px] font-black text-amber-600 flex items-center gap-2 uppercase tracking-[0.2em]"><FaBell className="animate-pulse" /> Pending Integration Requests</h3>
                     {pendingTasks.map(task => {
-                        // Smart Match Logic Calculation PER CARD
+                        // Smart Match Logic Calculation PER CARD (v2)
                         let bestMatch = null;
                         if (availableBrands.length > 0) {
                             const rawName = (task.user_email || "").split('@')[0].toLowerCase();
