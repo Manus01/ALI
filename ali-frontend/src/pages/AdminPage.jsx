@@ -130,6 +130,18 @@ export default function AdminPage() {
         }
     };
 
+    const handleDeleteReport = async (id) => {
+        if (!window.confirm("Delete this report?")) return;
+        try {
+            await api.delete(`/api/admin/tasks/${id}`);
+            setAiReports(prev => prev.filter(r => r.id !== id));
+            setActionMsg("✅ Report Deleted.");
+        } catch (err) {
+            console.error(err);
+            alert("Failed to delete report");
+        }
+    };
+
     const handleRunJob = async () => {
         setLoadingJob(true);
         try {
@@ -238,13 +250,63 @@ export default function AdminPage() {
             {pendingTasks.length > 0 && (
                 <div className="mb-10 space-y-4">
                     <h3 className="text-[10px] font-black text-amber-600 flex items-center gap-2 uppercase tracking-[0.2em]"><FaBell className="animate-pulse" /> Pending Integration Requests</h3>
-                    {pendingTasks.map(task => (
-                        <div key={task.id} className="bg-amber-50 border border-amber-200 p-6 rounded-[2rem] flex justify-between items-center">
-                            <div><p className="text-sm font-black text-slate-800">{task.user_email}</p><p className="text-[10px] font-mono text-slate-400 mt-1 uppercase">UID: {task.user_id}</p></div>
-                            {/* UPDATED BUTTON: Calls smart match logic */}
-                            <button onClick={() => handlePasteAndMatch(task)} className="bg-white px-5 py-2.5 rounded-xl text-xs font-black border border-amber-200 hover:shadow-md transition-all flex items-center gap-2"><FaLink /> Auto-Match & Paste</button>
-                        </div>
-                    ))}
+                    {pendingTasks.map(task => {
+                        // Smart Match Logic Calculation PER CARD
+                        let bestMatch = null;
+                        if (availableBrands.length > 0) {
+                            const rawName = (task.user_email || "").split('@')[0].toLowerCase();
+                            // 1. Exact/Partial Include Match
+                            bestMatch = availableBrands.find(b =>
+                                b.name.toLowerCase().includes(rawName) ||
+                                rawName.includes(b.name.toLowerCase())
+                            );
+
+                            // 2. Fallback: Levenshtein-ish (Simple string similarity if no direct include)
+                            if (!bestMatch) {
+                                // Simple char overlap just to find something if "include" fails
+                                // (For now keeping strictly to the strong "includes" signal to avoid bad false positives)
+                            }
+                        }
+
+                        return (
+                            <div key={task.id} className="bg-amber-50 border border-amber-200 p-6 rounded-[2rem] flex flex-col md:flex-row gap-4 justify-between items-center">
+                                <div>
+                                    <p className="text-sm font-black text-slate-800">{task.user_email}</p>
+                                    <p className="text-[10px] font-mono text-slate-400 mt-1 uppercase">UID: {task.user_id}</p>
+                                    {bestMatch && (
+                                        <div className="mt-2 flex items-center gap-2 text-xs bg-white/50 px-3 py-1.5 rounded-lg border border-amber-100">
+                                            <span className="text-amber-600 font-bold">✨ Suggestion:</span>
+                                            <span className="font-mono text-slate-700">{bestMatch.name}</span>
+                                            <span className="text-slate-400 text-[10px]">({bestMatch.id})</span>
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="flex gap-2">
+                                    {bestMatch && (
+                                        <button
+                                            onClick={() => {
+                                                setTargetUid(task.user_id);
+                                                setBlogId(bestMatch.id);
+                                                // Immediate Trigger
+                                                api.post('/api/admin/users/link-metricool', { target_user_id: task.user_id, metricool_blog_id: bestMatch.id })
+                                                    .then(() => {
+                                                        setActionMsg(`✅ Linked to ${bestMatch.name}`);
+                                                        setPendingTasks(prev => prev.filter(p => p.id !== task.id));
+                                                    })
+                                                    .catch(err => alert(err.message));
+                                            }}
+                                            className="bg-green-600 text-white px-5 py-2.5 rounded-xl text-xs font-black shadow-lg hover:bg-green-700 hover:scale-105 transition-all flex items-center gap-2"
+                                        >
+                                            <FaLink /> Confirm Match
+                                        </button>
+                                    )}
+                                    <button onClick={() => handlePasteAndMatch(task)} className="bg-white px-5 py-2.5 rounded-xl text-xs font-black border border-amber-200 hover:shadow-md transition-all flex items-center gap-2">
+                                        <FaSearch /> Manual
+                                    </button>
+                                </div>
+                            </div>
+                        );
+                    })}
                 </div>
             )}
 
@@ -469,8 +531,15 @@ export default function AdminPage() {
                         <div className="col-span-2 text-center p-8 text-slate-400 text-xs italic">No anomalies detected recently.</div>
                     ) : (
                         aiReports.map(report => (
-                            <div key={report.id} className="p-6 rounded-[2rem] border border-indigo-50 bg-indigo-50/20 hover:shadow-md transition-all">
-                                <div className="flex justify-between items-start mb-3">
+                            <div key={report.id} className="p-6 rounded-[2rem] border border-indigo-50 bg-indigo-50/20 hover:shadow-md transition-all relative group">
+                                <button
+                                    onClick={() => handleDeleteReport(report.id)}
+                                    className="absolute top-4 right-4 text-slate-300 hover:text-red-500 transition-colors"
+                                    title="Dismiss Report"
+                                >
+                                    <FaExclamationTriangle className="transform rotate-180" />
+                                </button>
+                                <div className="flex justify-between items-start mb-3 pr-8">
                                     <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${report.severity === 'CRITICAL' ? 'bg-red-500 text-white' :
                                         report.severity === 'HIGH' ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'
                                         }`}>

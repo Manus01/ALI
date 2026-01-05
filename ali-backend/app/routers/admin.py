@@ -371,3 +371,15 @@ def get_pending_tasks(admin: dict = Depends(verify_admin)):
     except Exception as e:
         logger.error(f"❌ Fetch Pending Tasks Error: {e}")
         return {"tasks": []}
+
+@router.delete("/tasks/{task_id}")
+def delete_admin_task(task_id: str, admin: dict = Depends(verify_admin)):
+    """
+    Deletes an admin task (e.g., Error Report) from the 'admin_tasks' collection.
+    """
+    try:
+        db.collection("admin_tasks").document(task_id).delete()
+        return {"status": "success", "message": "Task deleted."}
+    except Exception as e:
+        logger.error(f"❌ Delete Task Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
