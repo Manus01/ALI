@@ -97,7 +97,6 @@ async def get_brand_mentions(
         # Check if there are critical alerts (severity >= 7)
         critical_alerts = [m for m in analyzed_mentions if m.get('severity', 0) >= 7]
         
-        return {
         summary = {
             "total": len(analyzed_mentions),
             "positive": positive_count,
