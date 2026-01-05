@@ -304,18 +304,25 @@ def trigger_troubleshooting_agent(admin: dict = Depends(verify_admin)):
 def get_admin_reports(limit: int = 50, admin: dict = Depends(verify_admin)):
     """
     Fetches AI Troubleshooting Reports from 'admin_tasks'.
+    Uses single-field sort on 'created_at' to avoid composite index requirements.
     """
     try:
+        # WORKAROUND: Query by created_at only (Single Field Index) then filter by type in memory.
+        # This avoids the strict composite index requirement (type + created_at) which causes 400s.
+        # We fetch 5x the limit to ensure we find enough error reports mingled with other tasks.
         tasks_ref = db.collection("admin_tasks")\
-                      .where("type", "==", "error_report")\
                       .order_by("created_at", direction=firestore.Query.DESCENDING)\
-                      .limit(limit)
+                      .limit(limit * 5)
         
         tasks = []
         for doc in tasks_ref.stream():
             t = doc.to_dict()
-            t["id"] = doc.id
-            tasks.append(t)
+            # In-memory Filter
+            if t.get("type") == "error_report":
+                t["id"] = doc.id
+                tasks.append(t)
+                if len(tasks) >= limit:
+                    break
             
         return {"reports": tasks}
     except Exception as e:
