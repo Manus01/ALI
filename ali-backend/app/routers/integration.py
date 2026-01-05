@@ -18,7 +18,8 @@ def get_integrations(user: dict = Depends(verify_token)):
         d = doc.to_dict()
         platform = d.get("platform")
         if platform == 'metricool':
-            statuses[platform] = "active" if d.get("metricool_blog_id") else "pending"
+            # Trust the status field explicitly
+            statuses[platform] = d.get("status", "pending")
         else:
             statuses[platform] = d.get("status")
     return statuses
@@ -29,16 +30,39 @@ def request_metricool_access(user: dict = Depends(verify_token)):
     user_email = user.get("email")
     doc_ref = db.collection("users").document(user_id).collection("user_integrations").document("metricool")
     
-    if doc_ref.get().exists and doc_ref.get().to_dict().get("metricool_blog_id"):
-        return {"status": "already_active", "message": "Already connected."}
+    doc_snapshot = doc_ref.get()
+    if doc_snapshot.exists:
+        data = doc_snapshot.to_dict()
+        # 1. Check if already active
+        if data.get("status") == "active":
+            return {"status": "already_active", "message": "Already connected."}
 
-    # 1. Update User's private folder
+        # 2. Smart Reconnect: If we have a blog_id, try to re-validate it
+        existing_blog_id = data.get("metricool_blog_id")
+        if existing_blog_id:
+            try:
+                # Validate with Metricool
+                client = MetricoolClient(blog_id=existing_blog_id)
+                status = client.get_brand_status(existing_blog_id)
+                if status:
+                    # ✅ VALID: Instant Reconnect
+                    doc_ref.set({
+                        "status": "active",
+                        "connected_providers": [], # Will be re-fetched by next status call
+                        "reconnected_at": datetime.utcnow().isoformat()
+                    }, merge=True)
+                    return {"status": "restored", "message": "Access restored successfully."}
+            except Exception as e:
+                logger.warning(f"Smart reconnect failed for {user_id}: {e}")
+                # Fall through to normal request flow if validation fails
+
+    # 3. Standard Flow: Create/Update User's private folder
     doc_ref.set({
         "user_id": user_id, "platform": "metricool", "status": "pending", 
-        "metricool_blog_id": None, "requested_at": datetime.utcnow().isoformat()
-    })
+        "requested_at": datetime.utcnow().isoformat()
+    }, merge=True)
     
-    # 2. 🔔 SIGNAL ADMIN: Create task in global collection
+    # 4. 🔔 SIGNAL ADMIN: Create task in global collection
     db.collection("admin_tasks").document(f"connect_{user_id}").set({
         "type": "METRICOOL_REQUEST",
         "user_id": user_id,
@@ -50,7 +74,10 @@ def request_metricool_access(user: dict = Depends(verify_token)):
 
 @router.delete("/connect/{platform}")
 def disconnect_platform(platform: str, user: dict = Depends(verify_token)):
-    db.collection("users").document(user['uid']).collection("user_integrations").document(platform).delete()
+    # Soft Disconnect: Keep the ID so we can re-connect easily later without Admin intervention
+    db.collection("users").document(user['uid']).collection("user_integrations").document(platform).update({
+        "status": "disconnected"
+    })
     return {"status": "disconnected"}
 
 @router.get("/connect/metricool/status")
@@ -75,15 +102,20 @@ def get_metricool_status(user: dict = Depends(verify_token)):
         try:
             client = MetricoolClient(blog_id=blog_id)
             info = client.get_account_info()
+            connected = info.get("connected", [])
+            
+            # CACHE UPDATE: Sync to Firestore for Admin Visibility
+            doc.reference.update({"connected_providers": connected})
+            
             return {
                 "status": "active", 
-                "connected_providers": info.get("connected", []),
+                "connected_providers": connected,
                 "blog_id": blog_id
             }
         except Exception as e:
             logger.warning(f"⚠️ Metricool Status Fetch Error: {e}")
             # Return active but with error note, so UI doesn't break
-            return {"status": "active", "connected_providers": [], "error": "Could not fetch live providers"}
+            return {"status": "active", "connected_providers": data.get("connected_providers", []), "error": "Could not fetch live providers"}
             
     except Exception as e:
         logger.error(f"❌ Metricool Status Error: {e}")

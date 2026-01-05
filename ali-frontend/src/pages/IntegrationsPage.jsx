@@ -68,8 +68,11 @@ export default function IntegrationsPage() {
             snapshot.docs.forEach(doc => {
                 const d = doc.data();
                 if (d.platform === 'metricool') {
-                    if (d.metricool_blog_id) foundStatus = 'active';
-                    else foundStatus = 'pending';
+                    // FIX: Respect explicit status (active, pending, disconnected)
+                    if (d.status === 'active' || d.status === 'pending') {
+                        foundStatus = d.status;
+                    }
+                    // 'disconnected' or undefined -> foundStatus remains null
                 }
             });
             setStatus(foundStatus);

@@ -18,6 +18,27 @@ class MetricoolClient:
     Client for Metricool Agency API.
     Treats every SaaS user as a 'Brand' (blogId).
     """
+    def get_all_brands(self) -> List[Dict[str, Any]]:
+        """
+        Fetches ALL lists of brands (blogs) under this Agency account.
+        Useful for Admin Provisioning.
+        """
+        url = f"{BASE_URL}/admin/simpleProfiles"
+        params = self._auth_params()
+        try:
+            res = requests.get(url, headers=self.headers, params=params)
+            res.raise_for_status()
+            data = res.json()
+            
+            blogs = []
+            if isinstance(data, list): blogs = data
+            elif isinstance(data, dict):
+                blogs = data.get('blogs') or data.get('data') or data.get('profiles') or []
+            return blogs
+        except Exception as e:
+            logger.error(f"Failed to fetch all brands: {e}")
+            return []
+
     def __init__(self, blog_id: Optional[str] = None):
         if not METRICOOL_USER_TOKEN or not METRICOOL_USER_ID:
             logger.warning("⚠️ Metricool Env Vars missing. Client strictly disabled.")

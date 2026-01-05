@@ -59,6 +59,13 @@ def verify_user_channels(target_uid: str, admin: dict = Depends(verify_admin)):
         try:
             client = MetricoolClient(blog_id=blog_id)
             info = client.get_account_info()
+            
+            # CACHE UPDATE: Sync to Firestore
+            if info.get("connected"):
+                db.collection("users").document(target_uid).collection("user_integrations").document("metricool").update({
+                    "connected_providers": info.get("connected")
+                })
+            
             # Handle case where get_account_info returns None or error dict
             if not info or "error" in info:
                 logger.error(f"?? Metricool API Error for {target_uid}: {info}")
@@ -121,21 +128,22 @@ def get_research_users(admin: dict = Depends(verify_admin)):
         total_spend = 0.0
         total_clicks = 0
         count = 0
+        
+        # New: Get Active Channels directly from Integration Status if available
         active_channels = set()
+        
+        # Check metricool integration doc for cached connection data
+        metricool_doc = db.collection("users").document(uid).collection("user_integrations").document("metricool").get()
+        if metricool_doc.exists:
+            m_data = metricool_doc.to_dict()
+            if m_data.get("status") == "active":
+                for provider in m_data.get("connected_providers", []):
+                    active_channels.add(provider)
         
         for p in perf_docs:
             p_data = p.to_dict()
             total_spend += float(p_data.get("spend", 0))
             total_clicks += int(p_data.get("clicks", 0))
-            
-            # Extract channel/platform from log
-            # Could be 'platform' (e.g. 'tiktok') or 'source' or inferred from ID
-            if p_data.get("platform"):
-                active_channels.add(p_data.get("platform").lower())
-            elif "tiktok" in p.id.lower(): active_channels.add("tiktok")
-            elif "meta" in p.id.lower() or "facebook" in p.id.lower(): active_channels.add("meta")
-            elif "google" in p.id.lower(): active_channels.add("google")
-            
             count += 1
             
         avg_ctr = 0
@@ -313,3 +321,24 @@ def get_admin_reports(limit: int = 50, admin: dict = Depends(verify_admin)):
     except Exception as e:
         logger.error(f"❌ Fetch Reports Error: {e}")
         return {"reports": [], "error": str(e)}
+
+@router.get("/metricool/brands")
+def get_metricool_brands(admin: dict = Depends(verify_admin)):
+    """
+    Fetches all available Metricool Brands for the dropdown selector.
+    """
+    try:
+        client = MetricoolClient()
+        brands = client.get_all_brands()
+        # Simplify for frontend
+        results = []
+        for b in brands:
+            results.append({
+                "id": b.get("id") or b.get("blogId"),
+                "name": b.get("name") or "Unnamed Brand",
+                "provider": b.get("mainProvider", "unknown")
+            })
+        return {"brands": results}
+    except Exception as e:
+        logger.error(f"❌ Fetch Brands Error: {e}")
+        return {"brands": []}

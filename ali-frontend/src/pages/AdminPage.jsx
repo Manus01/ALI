@@ -166,6 +166,48 @@ export default function AdminPage() {
 
     if (!isAdmin) return <div className="p-10 text-center text-slate-400">🚫 Restricted Access</div>;
 
+    const [availableBrands, setAvailableBrands] = useState([]);
+    const [brandSearch, setBrandSearch] = useState("");
+    const [isBrandsLoading, setIsBrandsLoading] = useState(false);
+
+    // FETCH BRANDS ONCE
+    useEffect(() => {
+        if (!isAdmin) return;
+        const fetchBrands = async () => {
+            setIsBrandsLoading(true);
+            try {
+                const res = await api.get('/api/admin/metricool/brands');
+                setAvailableBrands(res.data.brands || []);
+            } catch (err) { console.error("Brand fetch error:", err); }
+            finally { setIsBrandsLoading(false); }
+        };
+        fetchBrands();
+    }, [isAdmin]);
+
+    // AUTO-MATCH LOGIC
+    const handlePasteAndMatch = (task) => {
+        setTargetUid(task.user_id);
+
+        // Find best match based on email partial or known name
+        if (availableBrands.length > 0) {
+            const rawName = (task.user_email || "").split('@')[0].toLowerCase();
+            const match = availableBrands.find(b =>
+                b.name.toLowerCase().includes(rawName) ||
+                rawName.includes(b.name.toLowerCase())
+            );
+
+            if (match) {
+                setBlogId(match.id);
+                setBrandSearch(match.name);
+                setActionMsg("✨ Auto-matched: " + match.name);
+            } else {
+                setBlogId("");
+                setBrandSearch("");
+                setActionMsg("⚠️ No obvious brand match found. Please search.");
+            }
+        }
+    };
+
     return (
         <div className="p-8 max-w-7xl mx-auto animate-fade-in text-slate-800 pb-20">
             <header className="mb-10 flex justify-between items-center">
@@ -190,7 +232,8 @@ export default function AdminPage() {
                     {pendingTasks.map(task => (
                         <div key={task.id} className="bg-amber-50 border border-amber-200 p-6 rounded-[2rem] flex justify-between items-center">
                             <div><p className="text-sm font-black text-slate-800">{task.user_email}</p><p className="text-[10px] font-mono text-slate-400 mt-1 uppercase">UID: {task.user_id}</p></div>
-                            <button onClick={() => setTargetUid(task.user_id)} className="bg-white px-5 py-2.5 rounded-xl text-xs font-black border border-amber-200 hover:shadow-md transition-all flex items-center gap-2"><FaLink /> Paste to Form</button>
+                            {/* UPDATED BUTTON: Calls smart match logic */}
+                            <button onClick={() => handlePasteAndMatch(task)} className="bg-white px-5 py-2.5 rounded-xl text-xs font-black border border-amber-200 hover:shadow-md transition-all flex items-center gap-2"><FaLink /> Auto-Match & Paste</button>
                         </div>
                     ))}
                 </div>
@@ -277,17 +320,51 @@ export default function AdminPage() {
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
                 <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-6">
-                    <h2 className="text-xl font-black">Provisioning</h2>
+                    <div className="flex justify-between items-center">
+                        <h2 className="text-xl font-black">Provisioning</h2>
+                        {isBrandsLoading && <FaSpinner className="animate-spin text-slate-400" />}
+                    </div>
                     <div className="space-y-4">
                         <div>
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Target UID</label>
                             <input className="w-full p-4 bg-slate-50 rounded-2xl border-none text-xs font-mono mt-2" value={targetUid} onChange={(e) => setTargetUid(e.target.value)} />
                         </div>
                         <div>
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Metricool Blog ID</label>
-                            <input className="w-full p-4 bg-slate-50 rounded-2xl border-none text-xs font-mono mt-2" value={blogId} onChange={(e) => setBlogId(e.target.value)} />
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Metricool Blog (Search)</label>
+                            <div className="relative mt-2">
+                                <input
+                                    className="w-full p-4 bg-slate-50 rounded-2xl border-none text-xs font-bold"
+                                    value={brandSearch}
+                                    placeholder="Type to search brands..."
+                                    onChange={(e) => {
+                                        setBrandSearch(e.target.value);
+                                        // Clear ID if searching so we don't submit stale ID
+                                        if (e.target.value !== brandSearch) setBlogId("");
+                                    }}
+                                />
+                                {brandSearch && !blogId && (
+                                    <div className="absolute top-full left-0 w-full bg-white border border-slate-100 rounded-xl shadow-lg mt-1 z-10 max-h-40 overflow-y-auto">
+                                        {availableBrands.filter(b => b.name.toLowerCase().includes(brandSearch.toLowerCase())).map(b => (
+                                            <div
+                                                key={b.id}
+                                                className="p-3 hover:bg-slate-50 cursor-pointer text-xs"
+                                                onClick={() => {
+                                                    setBlogId(b.id);
+                                                    setBrandSearch(b.name);
+                                                }}
+                                            >
+                                                <strong>{b.name}</strong> <span className="text-slate-400 ml-2">({b.id})</span>
+                                            </div>
+                                        ))}
+                                        {availableBrands.filter(b => b.name.toLowerCase().includes(brandSearch.toLowerCase())).length === 0 && (
+                                            <div className="p-3 text-slate-400 text-xs text-center">No matching brands</div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                            {blogId && <div className="text-[10px] text-green-600 font-mono mt-1 text-right">Selected ID: {blogId}</div>}
                         </div>
-                        <button onClick={handleLinkAndVerify} className="w-full py-4 bg-slate-900 text-white rounded-2xl font-black shadow-lg">Link Account & Verify</button>
+                        <button onClick={handleLinkAndVerify} disabled={!blogId || !targetUid} className={`w-full py-4 rounded-2xl font-black shadow-lg transition-all ${(!blogId || !targetUid) ? "bg-slate-200 text-slate-400 cursor-not-allowed" : "bg-slate-900 text-white hover:bg-slate-800"}`}>Link Account & Verify</button>
                     </div>
                     {verifiedChannels.length > 0 && (
                         <div className="pt-6 border-t"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Live Channels</p>
