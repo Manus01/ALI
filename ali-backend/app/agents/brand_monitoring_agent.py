@@ -245,3 +245,27 @@ Generate a comprehensive crisis response plan. Return ONLY valid JSON:
                     }
                 ]
             }
+
+    async def suggest_keywords(
+        self,
+        brand_name: str,
+        description: str = ""
+    ) -> List[str]:
+        """
+        Generate distinct keyword suggestions for brand monitoring.
+        """
+        prompt = f"""You are a brand monitoring expert.
+Brand: {brand_name}
+Description: {description}
+
+Suggest 5-8 distinct, high-value keywords or phrases to monitor for this brand to catch reputation issues or trends.
+Exclude the brand name itself. Focus on products, key executives (if known), industry terms specific to them, or common misspellings if relevant.
+Return ONLY a valid JSON array of strings: ["keyword1", "keyword2"]"""
+
+        try:
+            response = await self.model.generate_content_async(prompt)
+            clean_json = response.text.strip().replace('```json', '').replace('```', '')
+            return json.loads(clean_json)
+        except Exception as e:
+            logger.error(f"❌ Keyword suggestion failed: {e}")
+            return [f"{brand_name} reviews", f"{brand_name} scam", f"{brand_name} support"]

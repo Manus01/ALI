@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
     FaShieldAlt, FaExclamationTriangle, FaCheckCircle, FaMinusCircle,
     FaNewspaper, FaExternalLinkAlt, FaRobot, FaTimes, FaSpinner,
-    FaArrowRight, FaFireAlt, FaLightbulb, FaClock
+    FaArrowRight, FaFireAlt, FaLightbulb, FaClock, FaCog, FaPlus, FaTrash
 } from 'react-icons/fa';
 import api from '../api/axiosInterceptor';
 
@@ -18,6 +18,14 @@ export default function BrandMonitoringSection({ brandName }) {
     const [error, setError] = useState(null);
     const [mentionsData, setMentionsData] = useState(null);
 
+    // Settings Modal State
+    const [settingsModalOpen, setSettingsModalOpen] = useState(false);
+    const [currentKeywords, setCurrentKeywords] = useState([]);
+    const [newKeyword, setNewKeyword] = useState("");
+    const [suggestedKeywords, setSuggestedKeywords] = useState([]);
+    const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+    const [settingsSaving, setSettingsSaving] = useState(false);
+
     // Crisis Response Modal State
     const [crisisModalOpen, setCrisisModalOpen] = useState(false);
     const [selectedMention, setSelectedMention] = useState(null);
@@ -31,6 +39,9 @@ export default function BrandMonitoringSection({ brandName }) {
             const params = brandName ? { brand_name: brandName } : {};
             const response = await api.get('/brand-monitoring/mentions', { params });
             setMentionsData(response.data);
+
+            // Also fetch current settings to populate keyword cache if needed
+            // But we can do this lazily when opening settings
         } catch (err) {
             console.error('❌ Failed to fetch brand mentions:', err);
             setError(err.response?.data?.detail || 'Failed to fetch brand mentions');
@@ -42,6 +53,73 @@ export default function BrandMonitoringSection({ brandName }) {
     useEffect(() => {
         fetchMentions();
     }, [fetchMentions]);
+
+    // --- SETTINGS HANDLERS ---
+
+    const openSettings = async () => {
+        setSettingsModalOpen(true);
+        try {
+            const res = await api.get('/brand-monitoring/settings');
+            if (res.data.status === 'success') {
+                setCurrentKeywords(res.data.settings.keywords || []);
+            }
+        } catch (err) {
+            console.error("Failed to fetch settings:", err);
+        }
+    };
+
+    const fetchSuggestions = async () => {
+        setSuggestionsLoading(true);
+        try {
+            const res = await api.post('/brand-monitoring/keywords/suggest');
+            if (res.data.status === 'success') {
+                // Filter out keywords already in use
+                const newSuggestions = res.data.suggestions.filter(
+                    s => !currentKeywords.includes(s)
+                );
+                setSuggestedKeywords(newSuggestions);
+            }
+        } catch (err) {
+            console.error("Failed to fetch suggestions:", err);
+        } finally {
+            setSuggestionsLoading(false);
+        }
+    };
+
+    const addKeyword = (keyword) => {
+        if (!keyword.trim()) return;
+        if (!currentKeywords.includes(keyword)) {
+            setCurrentKeywords([...currentKeywords, keyword]);
+        }
+        setNewKeyword("");
+        // Remove from suggestions if present
+        setSuggestedKeywords(prev => prev.filter(k => k !== keyword));
+    };
+
+    const removeKeyword = (keyword) => {
+        setCurrentKeywords(currentKeywords.filter(k => k !== keyword));
+    };
+
+    const saveSettings = async () => {
+        setSettingsSaving(true);
+        try {
+            await api.put('/brand-monitoring/settings', {
+                brand_name: brandName || "", // Keep existing brand name
+                keywords: currentKeywords,
+                auto_monitor: true,
+                alert_threshold: 5
+            });
+            setSettingsModalOpen(false);
+            fetchMentions(); // Refresh mentions to reflect changes
+        } catch (err) {
+            console.error("Failed to save settings:", err);
+            alert("Failed to save settings");
+        } finally {
+            setSettingsSaving(false);
+        }
+    };
+
+    // --- CRISIS HANDLERS ---
 
     const handleGetCrisisResponse = async (mention) => {
         setSelectedMention(mention);
@@ -148,19 +226,26 @@ export default function BrandMonitoringSection({ brandName }) {
                             </div>
                         </div>
 
-                        {/* Summary Stats */}
-                        <div className="flex gap-2">
-                            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-full text-xs font-bold">
-                                <FaCheckCircle className="text-[10px]" />
-                                {summary?.positive || 0}
-                            </div>
-                            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-full text-xs font-bold">
-                                <FaMinusCircle className="text-[10px]" />
-                                {summary?.neutral || 0}
-                            </div>
-                            <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold ${summary?.negative > 0 ? 'bg-red-50 text-red-700' : 'bg-slate-100 text-slate-400'}`}>
-                                <FaExclamationTriangle className="text-[10px]" />
-                                {summary?.negative || 0}
+                        <div className="flex items-center gap-4">
+                            {/* Settings Button */}
+                            <button onClick={openSettings} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all" title="Manage Keywords">
+                                <FaCog className="text-lg" />
+                            </button>
+
+                            {/* Summary Stats */}
+                            <div className="flex gap-2">
+                                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 text-emerald-700 rounded-full text-xs font-bold">
+                                    <FaCheckCircle className="text-[10px]" />
+                                    {summary?.positive || 0}
+                                </div>
+                                <div className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 text-slate-600 rounded-full text-xs font-bold">
+                                    <FaMinusCircle className="text-[10px]" />
+                                    {summary?.neutral || 0}
+                                </div>
+                                <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold ${summary?.negative > 0 ? 'bg-red-50 text-red-700' : 'bg-slate-100 text-slate-400'}`}>
+                                    <FaExclamationTriangle className="text-[10px]" />
+                                    {summary?.negative || 0}
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -203,6 +288,97 @@ export default function BrandMonitoringSection({ brandName }) {
                     </button>
                 </div>
             </div>
+
+            {/* Settings Modal */}
+            {settingsModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
+                    <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden animate-scale-up">
+                        <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                            <h3 className="text-lg font-black text-slate-800 tracking-tight">Monitoring Settings</h3>
+                            <button onClick={() => setSettingsModalOpen(false)} className="text-slate-400 hover:text-slate-600 transition-colors">
+                                <FaTimes size={20} />
+                            </button>
+                        </div>
+
+                        <div className="p-6 space-y-6">
+                            <div>
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1 mb-2 block">Active Keywords</label>
+                                <div className="flex flex-wrap gap-2 mb-3">
+                                    <div className="px-3 py-1.5 bg-indigo-50 text-indigo-700 rounded-full text-xs font-bold border border-indigo-100">
+                                        {brandName || "Brand Name"} (Default)
+                                    </div>
+                                    {currentKeywords.map(k => (
+                                        <div key={k} className="px-3 py-1.5 bg-white text-slate-600 rounded-full text-xs font-bold border border-slate-200 flex items-center gap-2">
+                                            {k}
+                                            <button onClick={() => removeKeyword(k)} className="text-slate-400 hover:text-red-500">
+                                                <FaTimes />
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                <div className="flex gap-2">
+                                    <input
+                                        type="text"
+                                        value={newKeyword}
+                                        onChange={(e) => setNewKeyword(e.target.value)}
+                                        onKeyDown={(e) => e.key === 'Enter' && addKeyword(newKeyword)}
+                                        placeholder="Add keyword..."
+                                        className="flex-1 px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                                    />
+                                    <button
+                                        onClick={() => addKeyword(newKeyword)}
+                                        className="px-4 py-2 bg-slate-800 text-white rounded-xl hover:bg-slate-900 transition-colors"
+                                    >
+                                        <FaPlus />
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div>
+                                <div className="flex justify-between items-center mb-2">
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1 block">AI Suggestions</label>
+                                    <button
+                                        onClick={fetchSuggestions}
+                                        disabled={suggestionsLoading}
+                                        className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+                                    >
+                                        {suggestionsLoading ? <FaSpinner className="animate-spin" /> : <FaRobot />} Refresh
+                                    </button>
+                                </div>
+
+                                <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 min-h-[100px]">
+                                    {suggestedKeywords.length > 0 ? (
+                                        <div className="flex flex-wrap gap-2">
+                                            {suggestedKeywords.map(s => (
+                                                <button
+                                                    key={s}
+                                                    onClick={() => addKeyword(s)}
+                                                    className="px-3 py-1.5 bg-white text-indigo-600 hover:bg-indigo-50 hover:border-indigo-200 border border-slate-200 rounded-full text-xs font-medium transition-all flex items-center gap-1"
+                                                >
+                                                    <FaPlus size={8} /> {s}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div className="text-center text-slate-400 text-xs py-4">
+                                            {suggestionsLoading ? "Analyzing brand profile..." : "Click refresh for AI suggestions"}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            <button
+                                onClick={saveSettings}
+                                disabled={settingsSaving}
+                                className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-all shadow-lg shadow-indigo-500/20 disabled:opacity-50"
+                            >
+                                {settingsSaving ? "Saving..." : "Save Configuration"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Crisis Response Modal */}
             {crisisModalOpen && (

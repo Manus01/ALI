@@ -71,10 +71,18 @@ async def get_brand_mentions(
                 "mentions": []
             }
         
+        # Fetch stored settings for additional keywords
+        keywords = []
+        settings_doc = db.collection('user_integrations').document(f"{user_id}_brand_monitoring").get()
+        if settings_doc.exists:
+            settings = settings_doc.to_dict()
+            keywords = settings.get('keywords', [])
+
         # Fetch news mentions
         news_client = NewsClient()
         articles = await news_client.search_brand_mentions(
             brand_name=brand_name,
+            keywords=keywords,
             max_results=max_results
         )
         
@@ -194,4 +202,42 @@ async def update_monitoring_settings(
         
     except Exception as e:
         logger.error(f"❌ Settings update error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/keywords/suggest")
+async def suggest_keywords(
+    user: dict = Depends(verify_token)
+):
+    """
+    Generate AI suggestions for monitoring keywords.
+    """
+    user_id = user['uid']
+    
+    try:
+        # Get brand profile
+        brand_name = ""
+        description = ""
+        
+        brand_doc = db.collection('users').document(user_id).collection('brand_profile').document('current').get()
+        if brand_doc.exists:
+            data = brand_doc.to_dict()
+            brand_name = data.get('brand_name', '')
+            description = data.get('description', '')
+        
+        if not brand_name:
+            user_doc = db.collection('users').document(user_id).get()
+            if user_doc.exists:
+                brand_name = user_doc.to_dict().get('profile', {}).get('company_name', '')
+
+        if not brand_name:
+            raise HTTPException(status_code=400, detail="Brand name required for suggestions")
+        
+        agent = BrandMonitoringAgent()
+        suggestions = await agent.suggest_keywords(brand_name, description)
+        
+        return {"status": "success", "suggestions": suggestions}
+        
+    except Exception as e:
+        logger.error(f"❌ Keyword suggestion error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
