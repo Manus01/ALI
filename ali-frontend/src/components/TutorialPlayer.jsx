@@ -1,5 +1,16 @@
 ﻿import React, { useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkBreaks from 'remark-breaks';
 import { FaPlay, FaHeadphones, FaChartBar, FaCheck, FaRedo, FaTrophy, FaChevronRight, FaChevronLeft } from 'react-icons/fa';
+
+const MarkdownComponents = {
+    h2: ({ node, ...props }) => <h2 className="text-lg font-bold text-slate-800 mt-4 mb-2 border-b pb-1" {...props} />,
+    h3: ({ node, ...props }) => <h3 className="text-md font-bold text-slate-800 mt-3 mb-2" {...props} />,
+    strong: ({ node, ...props }) => <strong className="font-bold text-slate-900" {...props} />,
+    em: ({ node, ...props }) => <em className="italic text-slate-600" {...props} />,
+    li: ({ node, ...props }) => <li className="ml-4 list-disc text-slate-700 text-sm" {...props} />,
+    p: ({ node, ...props }) => <p className="mb-3 text-sm" {...props} />
+};
 
 export default function TutorialPlayer({ tutorial }) {
     const [activeSectionIndex, setActiveSectionIndex] = useState(0);
@@ -19,13 +30,19 @@ export default function TutorialPlayer({ tutorial }) {
                 return <h2 key={idx} className="text-xl font-bold text-slate-800 mt-6 mb-3 border-b pb-1">{block.content}</h2>;
 
             case 'text':
-                return <div key={idx} className="mb-4 prose prose-slate max-w-none text-slate-700" dangerouslySetInnerHTML={{ __html: block.content.replace(/\n/g, '<br/>') }} />;
+                return (
+                    <div key={idx} className="mb-4 text-slate-700">
+                        <ReactMarkdown components={MarkdownComponents} remarkPlugins={[remarkBreaks]}>
+                            {block.content}
+                        </ReactMarkdown>
+                    </div>
+                );
 
             case 'image':
                 return (
                     <div key={idx} className="mb-6">
                         <div className="rounded-lg overflow-hidden shadow border border-slate-200">
-                            <img src={block.url} alt="Visual" className="w-full h-auto object-cover max-h-[300px]" />
+                            <img src={block.url} alt="Visual" loading="lazy" className="w-full h-auto object-cover max-h-[300px]" />
                         </div>
                         <p className="text-center text-xs text-slate-400 mt-1 italic">{block.prompt}</p>
                     </div>

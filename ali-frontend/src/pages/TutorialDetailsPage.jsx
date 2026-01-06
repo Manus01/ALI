@@ -3,19 +3,17 @@ import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import api from '../api/axiosInterceptor';
 import { useAuth } from '../hooks/useAuth';
+import ReactMarkdown from 'react-markdown';
+import remarkBreaks from 'remark-breaks';
 import { FaArrowLeft, FaHeadphones, FaCheck, FaTrophy, FaChevronRight, FaChevronLeft, FaTimes, FaSearchPlus, FaExclamationTriangle, FaRedo, FaInfoCircle } from 'react-icons/fa';
 
-// Improved Parser
-const parseMarkdown = (text) => {
-    if (!text) return "";
-    let html = text
-        .replace(/^### (.*$)/gim, '<h3 class="text-lg font-bold text-slate-800 mt-6 mb-3">$1</h3>')
-        .replace(/^## (.*$)/gim, '<h2 class="text-xl font-bold text-slate-800 mt-8 mb-4">$1</h2>')
-        .replace(/\*\*(.*?)\*\*/gim, '<strong class="font-bold text-slate-900">$1</strong>')
-        .replace(/\*(.*?)\*/gim, '<em class="italic text-slate-600">$1</em>')
-        .replace(/^\* (.*$)/gim, '<li class="ml-4 list-disc text-slate-700">$1</li>')
-        .replace(/\n/g, '<br/>');
-    return { __html: html };
+// Secure Markdown Styling
+const MarkdownComponents = {
+    h2: ({ node, ...props }) => <h2 className="text-xl font-bold text-slate-800 mt-8 mb-4" {...props} />,
+    h3: ({ node, ...props }) => <h3 className="text-lg font-bold text-slate-800 mt-6 mb-3" {...props} />,
+    strong: ({ node, ...props }) => <strong className="font-bold text-slate-900" {...props} />,
+    em: ({ node, ...props }) => <em className="italic text-slate-600" {...props} />,
+    li: ({ node, ...props }) => <li className="ml-4 list-disc text-slate-700" {...props} />
 };
 
 export default function TutorialDetailsPage() {
@@ -126,14 +124,20 @@ export default function TutorialDetailsPage() {
             case 'text':
                 {
                     const safeContent = typeof block.content === 'string' ? block.content : String(block.content || "");
-                    return <div key={idx} className="mb-6 prose prose-slate max-w-none text-slate-700 leading-relaxed" dangerouslySetInnerHTML={parseMarkdown(safeContent)} />;
+                    return (
+                        <div key={idx} className="mb-6 prose prose-slate max-w-none text-slate-700 leading-relaxed">
+                            <ReactMarkdown components={MarkdownComponents} remarkPlugins={[remarkBreaks]}>
+                                {safeContent}
+                            </ReactMarkdown>
+                        </div>
+                    );
                 }
 
             case 'image':
                 return (
                     <div key={idx} className="mb-8 group relative cursor-pointer" onClick={() => setSelectedImage(block.url)}>
                         <div className="rounded-xl overflow-hidden shadow-lg border border-slate-200 bg-slate-50">
-                            <img src={block.url} alt="Diagram" className="w-full h-auto object-cover max-h-[400px] transition-transform group-hover:scale-105 duration-500" />
+                            <img src={block.url} alt="Diagram" loading="lazy" className="w-full h-auto object-cover max-h-[400px] transition-transform group-hover:scale-105 duration-500" />
                             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
                                 <span className="bg-white/90 px-3 py-1 rounded-full text-xs font-bold shadow flex items-center gap-2"><FaSearchPlus /> Zoom</span>
                             </div>
@@ -150,15 +154,35 @@ export default function TutorialDetailsPage() {
                 );
 
             case 'audio':
-                return (
-                    <div key={idx} className="mb-8 p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-center gap-4">
-                        <div className="bg-amber-100 p-3 rounded-full text-amber-600 flex-shrink-0"><FaHeadphones /></div>
-                        <div className="flex-1 min-w-0">
-                            <p className="text-xs font-bold text-amber-800 uppercase mb-1">Mentor Insight</p>
-                            <audio src={block.url} controls className="w-full h-8" />
+                {
+                    const [showTranscript, setShowTranscript] = useState(false);
+                    return (
+                        <div key={idx} className="mb-8 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                            <div className="flex items-center gap-4 mb-3">
+                                <div className="bg-amber-100 p-3 rounded-full text-amber-600 flex-shrink-0"><FaHeadphones /></div>
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-xs font-bold text-amber-800 uppercase mb-1">Mentor Insight</p>
+                                    <audio src={block.url} controls className="w-full h-8" />
+                                </div>
+                            </div>
+                            {block.transcript && (
+                                <div className="mt-2">
+                                    <button
+                                        onClick={() => setShowTranscript(!showTranscript)}
+                                        className="text-xs font-bold text-amber-700 hover:text-amber-900 flex items-center gap-1 ml-auto"
+                                    >
+                                        <FaInfoCircle /> {showTranscript ? "Hide Transcript" : "Read Transcript"}
+                                    </button>
+                                    {showTranscript && (
+                                        <div className="mt-2 p-3 bg-white/60 rounded-lg text-sm text-slate-700 border border-amber-100 italic">
+                                            "{block.transcript}"
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
-                    </div>
-                );
+                    );
+                }
 
             case 'callout_myth':
                 {

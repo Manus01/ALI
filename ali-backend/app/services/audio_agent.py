@@ -14,7 +14,7 @@ logger = logging.getLogger("ali_platform.services.audio_agent")
 
 # Configuration
 BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "ali-platform-prod-73019.firebasestorage.app")
-TTS_MODEL = "gemini-2.5-pro" 
+TTS_MODEL = "gemini-1.5-pro" 
 
 class AudioAgent:
     def __init__(self):

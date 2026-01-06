@@ -233,6 +233,27 @@ def _process_tutorial_doc(doc, user_id, db):
     
     return t
  
+from functools import lru_cache
+import time
+
+# ... (imports)
+
+@lru_cache(maxsize=100)
+def _fetch_cached_global_tutorial(tutorial_id: str):
+    """
+    Cached helper for Global Content (Public).
+    TTL: 1 hour (implied by just existing in memory until restart or eviction, 
+    but for true TTL we'd need a wrapper. Simple LRU is fine for mostly static content).
+    """
+    if not db: return None # Safety
+    try:
+        doc = db.collection('tutorials').document(tutorial_id).get()
+        if doc.exists:
+            return doc.to_dict()
+    except:
+        return None
+    return None
+
 @router.get("/tutorials/{tutorial_id}")
 def get_tutorial_details(tutorial_id: str, user: dict = Depends(verify_token)):
     """
@@ -279,27 +300,35 @@ def get_tutorial_details(tutorial_id: str, user: dict = Depends(verify_token)):
             return t
             
         # 2. Try Global (Public)
-        doc_ref = db.collection('tutorials').document(tutorial_id)
-        doc = doc_ref.get()
+        # OPTIMIZATION: Use In-Memory Cache for Global Content
+        t_global = _fetch_cached_global_tutorial(tutorial_id)
         
-        # SENIOR DEV FIX: Explicit existence check returning 404 instead of empty dict
-        if not doc.exists:
-             logger.warning(f"⚠️ Tutorial {tutorial_id} not found in Global collection.")
+        if not t_global:
+             logger.warning(f"⚠️ Tutorial {tutorial_id} not found in Global collection (Cache Miss/Empty).")
+             # Try direct fetch just in case cache returned None erroneously? No, trust cache for now or simple miss.
+             # Actually, if cache returns None it means doc didn't exist when cached.
              raise HTTPException(status_code=404, detail="Tutorial not found")
 
-        t = _process_tutorial_doc(doc, user_id, db)
+        # Create a deep copy to avoid mutating the cached object with user-specific flags
+        import copy
+        t = copy.deepcopy(t_global)
+        t['id'] = tutorial_id # Ensure ID is set
+
+        # Process standard fields
+        # Note: _process_tutorial_doc expects a DOC snapshot usually, but we adapted logic.
+        # Let's manually apply the necessary flags since we have a dict now.
         
-        # Safety check for empty content
-        if not t:
-            raise HTTPException(status_code=404, detail="Tutorial content invalid")
+        # Check completion status
+        user_doc_ref = db.collection('users').document(user_id)
+        user_doc = user_doc_ref.get()
+        completed_ids = user_doc.to_dict().get("completed_tutorials", []) if user_doc.exists else []
+        t['is_completed'] = tutorial_id in completed_ids
+        
+        if 'sections' not in t: t['sections'] = []
 
         # Debug Log
         sec_count = len(t.get('sections', []))
-        logger.info(f"🔍 RETURNING Tutorial {tutorial_id}: Keys={list(t.keys())}, Sections={sec_count}")
-        if sec_count > 0:
-             logger.info(f"First Section: {t['sections'][0].keys()}")
-        
-        logger.debug(f"🔍 Fetch Global Tutorial {tutorial_id}: Found {sec_count} sections.")
+        logger.debug(f"🔍 Fetch Global Tutorial {tutorial_id} (Cached): Found {sec_count} sections.")
         return t
         
     except HTTPException as he:

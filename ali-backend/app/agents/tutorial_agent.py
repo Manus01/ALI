@@ -382,7 +382,8 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
                         processed_audios = []
 
                         # We use a context manager for the inner execution to ensure clean-up
-                        with ThreadPoolExecutor(max_workers=3) as inner_executor:
+                        max_asset_workers = int(os.getenv("TUTORIAL_ASSET_WORKERS", 3))
+                        with ThreadPoolExecutor(max_workers=max_asset_workers) as inner_executor:
                              fab_task = lambda b: fabricate_block(b, topic, video_agent, image_agent, audio_agent)
                              processed_visuals = list(inner_executor.map(fab_task, visuals))
                              processed_audios = list(inner_executor.map(fab_task, audios))
@@ -422,7 +423,8 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
         if progress_callback:
             progress_callback(f"Generating {len(blueprint['sections'])} sections simultaneously...")
 
-        with ThreadPoolExecutor(max_workers=5) as executor:
+        max_sec_workers = int(os.getenv("TUTORIAL_SECTION_WORKERS", 5))
+        with ThreadPoolExecutor(max_workers=max_sec_workers) as executor:
             futures = []
             for i, sec in enumerate(blueprint.get('sections', [])):
                 futures.append(executor.submit(process_section, i, sec))

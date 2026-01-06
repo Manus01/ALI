@@ -18,6 +18,7 @@ export default function AdminPage() {
     const { currentUser } = useAuth();
     const [isAdmin, setIsAdmin] = useState(false);
     const [targetUid, setTargetUid] = useState("");
+    const [userSearch, setUserSearch] = useState("");
     const [blogId, setBlogId] = useState("");
     const [pendingTasks, setPendingTasks] = useState([]);
     const [verifiedChannels, setVerifiedChannels] = useState([]);
@@ -208,6 +209,7 @@ export default function AdminPage() {
     // AUTO-MATCH LOGIC
     const handlePasteAndMatch = (task) => {
         setTargetUid(task.user_id);
+        setUserSearch(task.user_email || task.user_id);
 
         // Find best match based on email partial or known name
         if (availableBrands.length > 0) {
@@ -286,6 +288,7 @@ export default function AdminPage() {
                                         <button
                                             onClick={() => {
                                                 setTargetUid(task.user_id);
+                                                setUserSearch(task.user_email || task.user_id);
                                                 setBlogId(bestMatch.id);
                                                 // Immediate Trigger
                                                 api.post('/api/admin/users/link-metricool', { target_user_id: task.user_id, metricool_blog_id: bestMatch.id })
@@ -397,8 +400,46 @@ export default function AdminPage() {
                     </div>
                     <div className="space-y-4">
                         <div>
-                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Target UID</label>
-                            <input className="w-full p-4 bg-slate-50 rounded-2xl border-none text-xs font-mono mt-2" value={targetUid} onChange={(e) => setTargetUid(e.target.value)} />
+                            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Target User (Search)</label>
+                            <div className="relative mt-2">
+                                <input
+                                    className="w-full p-4 bg-slate-50 rounded-2xl border-none text-xs font-bold"
+                                    value={userSearch}
+                                    placeholder="Type name or email..."
+                                    onChange={(e) => {
+                                        setUserSearch(e.target.value);
+                                        // Clear ID if searching so we don't submit stale ID
+                                        if (e.target.value !== userSearch) setTargetUid("");
+                                    }}
+                                />
+                                {userSearch && !targetUid && (
+                                    <div className="absolute top-full left-0 w-full bg-white border border-slate-100 rounded-xl shadow-lg mt-1 z-10 max-h-40 overflow-y-auto">
+                                        {researchUsers.filter(u =>
+                                            (u.name || "").toLowerCase().includes(userSearch.toLowerCase()) ||
+                                            (u.email || "").toLowerCase().includes(userSearch.toLowerCase())
+                                        ).map(u => (
+                                            <div
+                                                key={u.uid}
+                                                className="p-3 hover:bg-slate-50 cursor-pointer text-xs"
+                                                onClick={() => {
+                                                    setTargetUid(u.uid);
+                                                    setUserSearch(`${u.name || 'Unknown'} (${u.email})`);
+                                                }}
+                                            >
+                                                <strong>{u.name || "Unknown"}</strong>
+                                                <div className="text-slate-400 text-[10px]">{u.email}</div>
+                                            </div>
+                                        ))}
+                                        {researchUsers.filter(u =>
+                                            (u.name || "").toLowerCase().includes(userSearch.toLowerCase()) ||
+                                            (u.email || "").toLowerCase().includes(userSearch.toLowerCase())
+                                        ).length === 0 && (
+                                                <div className="p-3 text-slate-400 text-xs text-center">No matching users</div>
+                                            )}
+                                    </div>
+                                )}
+                            </div>
+                            {targetUid && <div className="text-[10px] text-indigo-600 font-mono mt-1 text-right">Selected UID: {targetUid}</div>}
                         </div>
                         <div>
                             <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Metricool Blog (Search)</label>
