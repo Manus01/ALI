@@ -16,22 +16,25 @@ def run_nightly_performance_log():
     logger.info("📉 Starting Nightly Performance Log...")
     
     # 1. Find all active Metricool integrations
-    # We query the 'user_integrations' collection
-    integrations = db.collection("user_integrations")\
-                     .where("platform", "==", "metricool")\
-                     .stream()
+    # Iterate through all users and check their sub-collection
+    users = db.collection("users").stream()
+    
+    integrations = []
+    for user_doc in users:
+        user_id = user_doc.id
+        metricool_doc = db.collection("users").document(user_id).collection("user_integrations").document("metricool").get()
+        if metricool_doc.exists:
+            data = metricool_doc.to_dict()
+            if data.get("status") == "active" and data.get("metricool_blog_id"):
+                data["user_id"] = user_id  # Ensure user_id is in the data
+                integrations.append(data)
     
     client = MetricoolClient()
     count = 0
 
-    for doc in integrations:
-        data = doc.to_dict()
+    for data in integrations:
         user_id = data.get("user_id")
         blog_id = data.get("metricool_blog_id")
-        
-        # Only process if fully linked
-        if not blog_id:
-            continue
             
         try:
             # 2. Fetch Stats (Yesterday)

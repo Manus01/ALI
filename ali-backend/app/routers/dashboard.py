@@ -39,7 +39,7 @@ def get_dashboard_overview(user: dict = Depends(verify_token)):
         integration_status = "offline"
         
         # 2. Check for Metricool Connection
-        metricool_doc = db.collection("user_integrations").document(f"{user_id}_metricool").get()
+        metricool_doc = db.collection("users").document(user_id).collection("user_integrations").document("metricool").get()
         
         if metricool_doc.exists:
             m_data = metricool_doc.to_dict()

@@ -75,21 +75,8 @@ class TroubleshootingAgent:
         except Exception as e:
             logger.warning(f"⚠️ Watchdog: Frontend log fetch failed: {e}")
 
-        # 2. Admin Alerts
-        try:
-             alerts_ref = db.collection("admin_alerts")\
-                           .where("created_at", ">=", cutoff.isoformat())\
-                           .stream()
-             for doc in alerts_ref:
-                d = doc.to_dict()
-                combined.append({
-                    "timestamp": d.get("created_at"),
-                    "payload": f"🚨 [ALERT] {d.get('message')} (Context: {d.get('context')})",
-                    "source": "admin_alert",
-                    "signature": f"alert_{doc.id}"
-                })
-        except Exception as e:
-            logger.warning(f"⚠️ Watchdog: Admin alerts fetch failed: {e}")
+        # 2. Admin Alerts - DEPRECATED / REMOVED
+        # Integration errors are now logged to standard backend logs and picked up there.
 
         # 3. Admin Tasks (Tutorial Generation Failures)
         # These are created by tutorial_agent.py when failures occur
@@ -206,33 +193,30 @@ class TroubleshootingAgent:
              search_tool = self.tools[0] if self.tools else None
         
         prompt = f"""
-        You are a **Senior Google Cloud Site Reliability Engineer (SRE)**.
-        Your expertise lies in distributed systems, Cloud Run, Firestore, Vertex AI, and Python web services.
+        You are a **Principal Debugging Engineer** at a tech company, specializing in both Google Cloud infrastructure (Cloud Run, Firestore, Vertex AI) and React/Python full-stack development.
         
-        ### MISSION
-        Analyze the following application log error with the depth of a Principal Engineer.
-        You must determine if this is a Code, Configuration (IAM/Quota), or Infrastructure issue.
+        Your sole purpose is to analyze application errors and provide the simplest, most actionable fix.
+        You prioritize **copy-pasteable code snippets** and **shell commands** over lengthy explanations.
+        Keep your analysis concise. If you can fix it in one line, do so.
+        
+        Use the attached Google Search tool to validate error codes, library issues, or GCP outages.
 
         ### ERROR CONTEXT
         - **Timestamp**: {timestamp}
         - **Raw Log**: {payload}
 
-        ### ANALYSIS PROTOCOL
-        1.  **Categorize**: Is this Transient (retryable) or Permanent?
-        2.  **Google Cloud Diagnostics**:
-            - Could this be an **IAM Permission** issue? (e.g., 403, permission denied)
-            - Could this be a **Quota/Limit** issue? (e.g., 429, resource exhausted)
-            - Could this be a **Cloud Run** lifecycle issue? (e.g., SIGTERM, memory limit, cold start timeout)
-        3.  **Research (Mandatory)**: Use the attached Google Search tool to validate specific error codes or recent GCP outages.
-        
+        ### YOUR TASK
+        1.  Identify WHAT failed.
+        2.  Determine if it is **Transient** (retry will fix) or **Permanent** (code/config change needed).
+        3.  Provide the **exact fix**. This is the most important part.
+
         ### OUTPUT FORMAT (JSON)
         {{
-            "root_cause": "Technical explanation of WHY it happened (e.g., 'Service Account missing roles/storage.objectCreator')",
-            "sre_assessment": "Assessment of impact (e.g., 'Critical failure in asset pipeline').",
-            "suggested_fix": "Exact gcloud command, IAM change, or code fix required.",
+            "root_cause": "One-sentence explanation of the failure.",
+            "impact": "Who/what is blocked by this error?",
+            "suggested_fix": "THE MOST IMPORTANT FIELD. Provide the exact code change or shell command. Example: 'In AdminPage.jsx line 45, change `data.id` to `data?.id`'.",
             "is_transient": true/false,
-            "severity": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW",
-            "relevant_gcp_doc": "Link to official Google Cloud documentation."
+            "severity": "CRITICAL" | "HIGH" | "MEDIUM" | "LOW"
         }}
         """
         

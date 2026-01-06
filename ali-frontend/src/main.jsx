@@ -4,8 +4,26 @@ import './index.css'
 import App from './App.jsx'
 import './api/axiosInterceptor'
 
+import Logger from './services/Logger'
+import ErrorBoundary from './components/ErrorBoundary.jsx'
+
+// Global Error Listeners for Unhandled Exceptions
+window.onerror = function (message, source, lineno, colno, error) {
+  Logger.error(message, "GlobalWindowError", error ? error.stack : null, { source, lineno, colno });
+};
+
+window.onunhandledrejection = function (event) {
+  Logger.error(
+    "Unhandled Promise Rejection: " + (event.reason ? (event.reason.message || event.reason) : "Unknown"),
+    "GlobalPromiseRejection",
+    event.reason ? event.reason.stack : null
+  );
+};
+
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <App />
+    <ErrorBoundary>
+      <App />
+    </ErrorBoundary>
   </StrictMode>,
 )

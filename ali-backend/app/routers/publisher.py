@@ -18,7 +18,7 @@ async def publish_video(payload: Dict[str, Any] = Body(...), user: dict = Depend
     user_id = user['uid']
     
     # 1. Check Integration Status
-    doc = db.collection("user_integrations").document(f"{user_id}_metricool").get()
+    doc = db.collection("users").document(user_id).collection("user_integrations").document("metricool").get()
     
     if not doc.exists:
         raise HTTPException(status_code=400, detail="Social integration not requested.")

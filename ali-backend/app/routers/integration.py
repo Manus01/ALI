@@ -128,13 +128,9 @@ def report_integration_error(payload: dict = Body(...), user: dict = Depends(ver
     message = payload.get("message", "Unknown integration error")
     context = payload.get("context", "metricool")
 
-    db.collection("admin_alerts").add({
-        "type": "integration_error",
-        "context": context,
-        "message": message,
-        "user_id": user.get("uid"),
-        "user_email": user.get("email"),
-        "created_at": datetime.utcnow().isoformat()
-    })
+    logger.error(f"🚨 [INTEGRATION_ERROR] {context}: {message} (User: {user.get('email')})")
+    
+    # We no longer save to 'admin_alerts'. 
+    # The TroubleshootingAgent will pick this up from Cloud Logging (backend logs).
 
     return {"status": "recorded"}

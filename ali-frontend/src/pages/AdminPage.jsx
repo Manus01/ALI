@@ -23,7 +23,7 @@ export default function AdminPage() {
     const [pendingTasks, setPendingTasks] = useState([]);
     const [verifiedChannels, setVerifiedChannels] = useState([]);
     const [logs, setLogs] = useState([]);
-    const [integrationAlerts, setIntegrationAlerts] = useState([]);
+    // integrationAlerts removed
     const [researchUsers, setResearchUsers] = useState([]);
     const [tutorials, setTutorials] = useState([]);
     const [aiReports, setAiReports] = useState([]);
@@ -42,7 +42,7 @@ export default function AdminPage() {
         if (currentUser?.email === "manoliszografos@gmail.com") {
             setIsAdmin(true);
             fetchLogs();
-            fetchIntegrationAlerts();
+            // fetchIntegrationAlerts removed
             fetchResearchUsers();
             fetchTutorials();
             fetchAiReports();
@@ -94,12 +94,7 @@ export default function AdminPage() {
         }
     };
 
-    const fetchIntegrationAlerts = async () => {
-        try {
-            const res = await api.get('/api/admin/integration-alerts');
-            setIntegrationAlerts(res.data.alerts || []);
-        } catch (err) { console.error("Failed to fetch integration alerts", err); }
-    };
+    // fetchIntegrationAlerts removed
 
     const fetchConnections = async () => {
         try {
@@ -542,32 +537,7 @@ export default function AdminPage() {
                     )}
                 </div>
 
-                <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-4">
-                    <div className="flex items-center justify-between">
-                        <h2 className="text-xl font-black flex items-center gap-2"><FaExclamationTriangle className="text-amber-500" /> Integration Alerts</h2>
-                        <button onClick={fetchIntegrationAlerts} className="text-xs font-bold text-amber-600 hover:bg-amber-50 px-3 py-2 rounded-xl transition-all flex items-center gap-1">
-                            <FaSync /> Refresh
-                        </button>
-                    </div>
-                    <div className="space-y-3 max-h-80 overflow-y-auto pr-2">
-                        {integrationAlerts.length === 0 ? (
-                            <p className="text-xs text-slate-400">No integration alerts.</p>
-                        ) : (
-                            integrationAlerts.map((alert) => (
-                                <div key={alert.id} className="p-3 rounded-xl border border-amber-100 bg-amber-50/50">
-                                    <div className="text-xs font-bold text-amber-700 flex items-center gap-2">
-                                        <FaExclamationTriangle /> {alert.context}
-                                    </div>
-                                    <p className="text-sm text-slate-700 mt-1 font-semibold">{alert.message}</p>
-                                    <div className="text-[10px] text-slate-400 mt-1 font-mono flex gap-2 flex-wrap">
-                                        {alert.user_email && <span>{alert.user_email}</span>}
-                                        {alert.created_at && <span>{new Date(alert.created_at).toLocaleString()}</span>}
-                                    </div>
-                                </div>
-                            ))
-                        )}
-                    </div>
-                </div>
+                {/* INTEGRATION ALERTS SECTION REMOVED */}
 
                 <div className="lg:col-span-2 bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm">
                     <h2 className="text-xl font-black mb-6 flex items-center gap-2"><FaDatabase size={18} /> Research Stream</h2>
