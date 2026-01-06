@@ -334,10 +334,15 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
             logger.warning(f"⚠️ Failed to fetch study history: {e}")
 
         logger.info(f"🎓 Agent: Blueprinting '{topic}' (Struggles: {len(struggles)})...")
+        if progress_callback:
+            progress_callback(f"Step 1/5: Creating curriculum blueprint for '{topic}'...")
 
         # PHASE 1: BLUEPRINT
         blueprint = generate_curriculum_blueprint(topic, profile, campaign_context, struggles, struggle_topics, connected_channels)
         metaphor = blueprint.get('pedagogical_metaphor', 'Abstract Concept')
+        
+        if progress_callback:
+            progress_callback(f"Step 2/5: Blueprint complete! Found {len(blueprint.get('sections', []))} sections to generate...")
         
         final_sections = []
 
@@ -498,6 +503,8 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
             logger.warning(f"⚠️ Summary Audio Failed: {e}")
 
         # PHASE 4: QA AUDIT
+        if progress_callback:
+            progress_callback(f"Step 4/5: Running quality assurance audit...")
         audit_report = review_tutorial_quality({ "title": blueprint.get("title", topic), "sections": final_sections }, blueprint)
         logger.info(f"   🧐 QA Score: {audit_report.get('score')}/100 - {audit_report.get('status')}")
 
@@ -545,6 +552,10 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
                 logger.warning(f"   ⚠️ Created Admin Task for {len(alerts)} generation failures.")
             except Exception as e:
                 logger.error(f"Failed to create admin task: {e}")
+        
+        # Step 5: Save to database
+        if progress_callback:
+            progress_callback(f"Step 5/5: Saving your tutorial to the database...")
         
         # Save to User's Private Collection
         doc_ref = db.collection("users").document(user_id).collection("tutorials").add(tutorial_data)

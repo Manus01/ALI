@@ -71,9 +71,28 @@ def process_tutorial_job(job_id: str, user_id: str, topic: str, notification_id:
                     "updated_at": firestore.SERVER_TIMESTAMP
                 })
 
-        # 3. Run the Heavy AI Generation (Takes 60s+)
-        # Now uses the locally imported function
-        tutorial_data = generate_tutorial(user_id, topic, progress_callback=update_progress)
+        # ⚡ CLOUD RUN KEEP-ALIVE: Heartbeat Thread ⚡
+        # This prevents CPU throttling by generating periodic log output
+        import threading
+        heartbeat_active = [True]  # Use list for mutable reference in closure
+        
+        def heartbeat_worker():
+            iteration = 0
+            while heartbeat_active[0]:
+                iteration += 1
+                logger.info(f"💓 Heartbeat #{iteration} - Job {job_id} still processing...")
+                time.sleep(30)  # Log every 30 seconds
+        
+        heartbeat_thread = threading.Thread(target=heartbeat_worker, daemon=True)
+        heartbeat_thread.start()
+        
+        try:
+            # 3. Run the Heavy AI Generation (Takes 60s+)
+            tutorial_data = generate_tutorial(user_id, topic, progress_callback=update_progress)
+        finally:
+            # Stop heartbeat regardless of success/failure
+            heartbeat_active[0] = False
+            logger.info(f"💓 Heartbeat stopped for Job {job_id}")
 
         # 4. UPDATE the Existing Notification to "Ready"
         # This replaces the "Started" spinner with the "Success" state!
@@ -110,3 +129,4 @@ def process_tutorial_job(job_id: str, user_id: str, topic: str, notification_id:
                 "read": False,
                 "updated_at": firestore.SERVER_TIMESTAMP
             })
+
