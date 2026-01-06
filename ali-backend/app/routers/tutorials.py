@@ -89,55 +89,64 @@ def start_tutorial_job(topic: str, background_tasks: BackgroundTasks, user: dict
             "created_at": firestore.SERVER_TIMESTAMP
         })
 
-
-        # --- CLOUD RUN JOBS DISPATCH ---
-        # Instead of running locally (which crashes low-mem containers), we dispatch to a Heavy Worker.
+        # --- WORKER DISPATCH STRATEGY ---
+        # Option 1: Use Cloud Run Job (if explicitly configured)
+        # Option 2: Use local BackgroundTasks (default fallback)
         
-        try:
-            from google.cloud import run_v2
+        use_cloud_worker = os.getenv("USE_CLOUD_RUN_WORKER", "false").lower() == "true"
+        worker_dispatched = False
+        
+        if use_cloud_worker:
+            try:
+                from google.cloud import run_v2
+                
+                project_id = os.getenv("GOOGLE_CLOUD_PROJECT", "ali-platform-prod-73019") 
+                location = os.getenv("GOOGLE_CLOUD_REGION", "us-central1")
+                job_name = os.getenv("CLOUD_RUN_WORKER_JOB", "ali-worker")
+
+                client = run_v2.JobsClient()
+                name = client.job_path(project_id, location, job_name)
+                
+                # Validate job exists BEFORE dispatching
+                try:
+                    client.get_job(name=name)
+                    logger.info(f"✅ Cloud Run Job '{job_name}' validated.")
+                except Exception as get_err:
+                    logger.warning(f"⚠️ Cloud Run Job '{job_name}' not found: {get_err}")
+                    raise Exception(f"Job not found: {job_name}")
+                
+                overrides = {
+                    "container_overrides": [
+                        {
+                            "env": [
+                                {"name": "JOB_ID", "value": job_id},
+                                {"name": "USER_ID", "value": user['uid']},
+                                {"name": "TOPIC", "value": topic.strip()},
+                                {"name": "NOTIFICATION_ID", "value": notification_ref.id}
+                            ]
+                        }
+                    ]
+                }
+
+                request = run_v2.RunJobRequest(name=name, overrides=overrides)
+                operation = client.run_job(request=request)
+                logger.info(f"🚀 Dispatched Cloud Run Job: {operation.operation.name}")
+                worker_dispatched = True
+
+            except Exception as cloud_err:
+                logger.error(f"❌ Cloud Run Job dispatch failed: {cloud_err}")
+                logger.warning("⚠️ Falling back to local background worker...")
+        
+        # LOCAL FALLBACK (Default path when USE_CLOUD_RUN_WORKER is not set)
+        if not worker_dispatched:
+            logger.info(f"🏠 Using LOCAL background worker for job {job_id}")
             
-            # Detect Project ID and Region (or fallback to defaults)
-            project_id = os.getenv("GOOGLE_CLOUD_PROJECT", user.get("project_id", "ali-platform-prod-73019")) 
-            location = os.getenv("GOOGLE_CLOUD_REGION", "us-central1")
-            job_name = "ali-worker"
-
-            client = run_v2.JobsClient()
-            name = client.job_path(project_id, location, job_name)
-            
-            # Prepare Environment Overrides
-            overrides = {
-                "container_overrides": [
-                    {
-                        "env": [
-                            {"name": "JOB_ID", "value": job_id},
-                            {"name": "USER_ID", "value": user['uid']},
-                            {"name": "TOPIC", "value": topic.strip()},
-                            {"name": "NOTIFICATION_ID", "value": notification_ref.id}
-                        ]
-                    }
-                ]
-            }
-
-            request = run_v2.RunJobRequest(
-                name=name,
-                overrides=overrides
-            )
-
-            operation = client.run_job(request=request)
-            logger.info(f"🚀 Dispatched Cloud Run Job: {operation.operation.name}")
-
-        except Exception as cloud_err:
-            logger.error(f"❌ Failed to trigger Cloud Run Job: {cloud_err}")
-            # ROBUST FALLBACK: Always try local execution if cloud dispatch fails
-            # This handles cases where the Cloud Run Job "ali-worker" doesn't exist
-            logger.warning("⚠️ Falling back to local background worker (Cloud Run Job failed/missing).")
-            
-            # Ensure the function is imported (double check to be safe)
             if process_tutorial_job is None:
                 from app.services.job_runner import process_tutorial_job as _process
                 process_tutorial_job = _process
                 
             background_tasks.add_task(process_tutorial_job, job_id, user['uid'], topic.strip(), notification_ref.id)
+            logger.info(f"✅ Background task scheduled for job {job_id}")
 
         return {"status": "queued", "job_id": job_id, "notification_id": notification_ref.id}
     except HTTPException:
