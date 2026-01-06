@@ -128,12 +128,16 @@ def start_tutorial_job(topic: str, background_tasks: BackgroundTasks, user: dict
 
         except Exception as cloud_err:
             logger.error(f"❌ Failed to trigger Cloud Run Job: {cloud_err}")
-            # FALBACK: Try local if cloud fails (e.g. during local dev)
-            if os.getenv("IS_LOCAL_DEV"):
-                 logger.warning("⚠️ Falling back to local background task.")
-                 background_tasks.add_task(process_tutorial_job, job_id, user['uid'], topic.strip(), notification_ref.id)
-            else:
-                 raise cloud_err
+            # ROBUST FALLBACK: Always try local execution if cloud dispatch fails
+            # This handles cases where the Cloud Run Job "ali-worker" doesn't exist
+            logger.warning("⚠️ Falling back to local background worker (Cloud Run Job failed/missing).")
+            
+            # Ensure the function is imported (double check to be safe)
+            if process_tutorial_job is None:
+                from app.services.job_runner import process_tutorial_job as _process
+                process_tutorial_job = _process
+                
+            background_tasks.add_task(process_tutorial_job, job_id, user['uid'], topic.strip(), notification_ref.id)
 
         return {"status": "queued", "job_id": job_id, "notification_id": notification_ref.id}
     except HTTPException:
