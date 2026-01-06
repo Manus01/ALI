@@ -25,7 +25,6 @@ export function AuthProvider({ children }) {
     };
 
     useEffect(() => {
-        /*
         const unsubscribe = onAuthStateChanged(auth, (user) => {
             setCurrentUser(user);
             if (!user) {
@@ -33,17 +32,6 @@ export function AuthProvider({ children }) {
             }
         });
         return unsubscribe;
-        */
-        // TEST MODE: MOCK USER
-        console.log("⚠️ TEST MODE: Using mock user");
-        const mockUser = {
-            uid: "test-automated-user",
-            email: "automated@test.com",
-            getIdToken: async () => "test-token-123"
-        };
-        setCurrentUser(mockUser);
-        setLoading(false);
-        return () => { };
     }, []);
 
     // Fetch full user profile when user logs in
