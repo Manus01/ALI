@@ -21,30 +21,41 @@ def admin_link_metricool(payload: Dict[str, str] = Body(...), admin: dict = Depe
     target_uid = payload.get("target_user_id")
     blog_id = payload.get("metricool_blog_id")
     
-    # 1. Update the integration record in the private user folder
-    doc_ref = db.collection("users").document(target_uid).collection("user_integrations").document("metricool")
-    doc_ref.set({
-        "user_id": target_uid,
-        "platform": "metricool",
-        "status": "active",
-        "metricool_blog_id": blog_id,
-        "linked_at": datetime.utcnow().isoformat()
-    }, merge=True)
-
-    # 2. 🔔 Send "Success" Notification to the User's secure feed
-    notification_ref = db.collection("users").document(target_uid).collection("notifications").document("integration_success")
-    notification_ref.set({
-        "title": "Platform Linked! 🚀",
-        "message": "Your Social Media Suite is now active. You can now create campaigns.",
-        "type": "success",
-        "read": False,
-        "created_at": datetime.utcnow()
-    })
-
-    # 3. Mark the admin task as completed
-    db.collection("admin_tasks").document(f"connect_{target_uid}").update({"status": "completed"})
+    if not target_uid or not blog_id:
+        raise HTTPException(status_code=400, detail="Missing target_user_id or metricool_blog_id")
     
-    return {"status": "success", "message": "User linked and notified."}
+    try:
+        # 1. Update the integration record in the private user folder
+        doc_ref = db.collection("users").document(target_uid).collection("user_integrations").document("metricool")
+        doc_ref.set({
+            "user_id": target_uid,
+            "platform": "metricool",
+            "status": "active",
+            "metricool_blog_id": blog_id,
+            "linked_at": datetime.utcnow().isoformat()
+        }, merge=True)
+
+        # 2. 🔔 Send "Success" Notification to the User's secure feed
+        notification_ref = db.collection("users").document(target_uid).collection("notifications").document("integration_success")
+        notification_ref.set({
+            "title": "Platform Linked! 🚀",
+            "message": "Your Social Media Suite is now active. You can now create campaigns.",
+            "type": "success",
+            "read": False,
+            "created_at": datetime.utcnow()
+        })
+
+        # 3. Mark the admin task as completed (use set with merge to avoid error if doc doesn't exist)
+        db.collection("admin_tasks").document(f"connect_{target_uid}").set({
+            "status": "completed",
+            "completed_at": datetime.utcnow().isoformat()
+        }, merge=True)
+        
+        return {"status": "success", "message": "User linked and notified."}
+    
+    except Exception as e:
+        logger.error(f"❌ Link Metricool Error for {target_uid}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to link user: {str(e)}")
 
 @router.get("/users/{target_uid}/verify-channels")
 def verify_user_channels(target_uid: str, admin: dict = Depends(verify_admin)):

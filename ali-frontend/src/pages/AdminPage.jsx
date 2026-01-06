@@ -165,7 +165,18 @@ export default function AdminPage() {
             setTargetUid(""); setBlogId("");
         } catch (err) {
             console.error("Link/Verify Error:", err);
-            alert(`Linking failed: ${err.response?.data?.detail || err.message}`);
+            // Properly serialize error message - handle object responses
+            let errorMsg = "Unknown error";
+            if (err.response?.data?.detail) {
+                errorMsg = typeof err.response.data.detail === 'string'
+                    ? err.response.data.detail
+                    : JSON.stringify(err.response.data.detail);
+            } else if (err.message) {
+                errorMsg = typeof err.message === 'string'
+                    ? err.message
+                    : JSON.stringify(err.message);
+            }
+            alert(`Linking failed: ${errorMsg}`);
         }
     };
 
@@ -296,7 +307,12 @@ export default function AdminPage() {
                                                         setActionMsg(`✅ Linked to ${bestMatch.name}`);
                                                         setPendingTasks(prev => prev.filter(p => p.id !== task.id));
                                                     })
-                                                    .catch(err => alert(err.message));
+                                                    .catch(err => {
+                                                        const errorMsg = err.response?.data?.detail
+                                                            ? (typeof err.response.data.detail === 'string' ? err.response.data.detail : JSON.stringify(err.response.data.detail))
+                                                            : (typeof err.message === 'string' ? err.message : JSON.stringify(err.message));
+                                                        alert(`Linking failed: ${errorMsg}`);
+                                                    });
                                             }}
                                             className="bg-green-600 text-white px-5 py-2.5 rounded-xl text-xs font-black shadow-lg hover:bg-green-700 hover:scale-105 transition-all flex items-center gap-2"
                                         >
