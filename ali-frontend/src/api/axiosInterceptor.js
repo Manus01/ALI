@@ -22,4 +22,24 @@ api.interceptors.request.use(async (config) => {
     return config;
 });
 
+// 3. Self-Healing: Auto-logout on 401 (Unauthorized) from backend
+api.interceptors.response.use(
+    (response) => response,
+    async (error) => {
+        if (error.response && error.response.status === 401) {
+            console.warn("⚠️ 401 Unauthorized detected - Logging out user to clear stale session.");
+            try {
+                await auth.signOut();
+                // Optional: Redirect to login if not already there
+                if (!window.location.pathname.includes('/login')) {
+                    window.location.href = '/login';
+                }
+            } catch (signOutError) {
+                console.error("Error signing out:", signOutError);
+            }
+        }
+        return Promise.reject(error);
+    }
+);
+
 export default api;
