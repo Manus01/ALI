@@ -38,33 +38,31 @@ export default function BrandMonitoringSection({ brandName }) {
         setLoading(true);
         setError(null);
         try {
-            try {
-                const params = {};
-                if (activeTab !== 'main') {
-                    params.topic = activeTab;
-                } else if (brandName) {
-                    params.brand_name = brandName;
-                }
-
-                const response = await api.get('/brand-monitoring/mentions', { params });
-                setMentionsData(response.data);
-
-                // Fetch settings if we haven't yet (to populate tabs)
-                if (currentKeywords.length === 0) {
-                    api.get('/brand-monitoring/settings').then(res => {
-                        if (res.data.status === 'success') {
-                            setCurrentKeywords(res.data.settings.keywords || []);
-                        }
-                    }).catch(e => console.error(e));
-                }
-                // But we can do this lazily when opening settings
-            } catch (err) {
-                console.error('❌ Failed to fetch brand mentions:', err);
-                setError(err.response?.data?.detail || 'Failed to fetch brand mentions');
-            } finally {
-                setLoading(false);
+            const params = {};
+            if (activeTab !== 'main') {
+                params.topic = activeTab;
+            } else if (brandName) {
+                params.brand_name = brandName;
             }
-        }, [brandName, activeTab]);
+
+            const response = await api.get('/brand-monitoring/mentions', { params });
+            setMentionsData(response.data);
+
+            // Fetch settings if we haven't yet (to populate tabs)
+            if (currentKeywords.length === 0) {
+                api.get('/brand-monitoring/settings').then(res => {
+                    if (res.data.status === 'success') {
+                        setCurrentKeywords(res.data.settings.keywords || []);
+                    }
+                }).catch(e => console.error(e));
+            }
+        } catch (err) {
+            console.error('❌ Failed to fetch brand mentions:', err);
+            setError(err.response?.data?.detail || 'Failed to fetch brand mentions');
+        } finally {
+            setLoading(false);
+        }
+    }, [brandName, activeTab]);
 
     useEffect(() => {
         fetchMentions();
@@ -235,8 +233,8 @@ export default function BrandMonitoringSection({ brandName }) {
                         <button
                             onClick={() => setActiveTab('main')}
                             className={`px-4 py-2 text-sm font-bold rounded-t-xl transition-all relative ${activeTab === 'main'
-                                    ? 'text-indigo-600 bg-indigo-50/50 border-b-2 border-indigo-600'
-                                    : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+                                ? 'text-indigo-600 bg-indigo-50/50 border-b-2 border-indigo-600'
+                                : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
                                 }`}
                         >
                             {brandName || "Overview"}
@@ -250,8 +248,8 @@ export default function BrandMonitoringSection({ brandName }) {
                                 key={keyword}
                                 onClick={() => setActiveTab(keyword)}
                                 className={`px-4 py-2 text-sm font-bold rounded-t-xl transition-all relative whitespace-nowrap ${activeTab === keyword
-                                        ? 'text-indigo-600 bg-indigo-50/50 border-b-2 border-indigo-600'
-                                        : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
+                                    ? 'text-indigo-600 bg-indigo-50/50 border-b-2 border-indigo-600'
+                                    : 'text-slate-500 hover:text-slate-700 hover:bg-slate-50'
                                     }`}
                             >
                                 {keyword}
@@ -281,16 +279,16 @@ export default function BrandMonitoringSection({ brandName }) {
                                     <div className="flex flex-wrap items-center gap-2 mt-1">
                                         <span className="text-xs text-slate-400 font-medium">Tracking:</span>
                                         <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded text-[10px] font-bold">
-                                            <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 rounded text-[10px] font-bold">
-                                                {activeTab === 'main' ? (mentionsData?.brand_name || "Brand") : activeTab}
+                                            {activeTab === 'main' ? (mentionsData?.brand_name || "Brand") : activeTab}
+                                        </span>
+                                        {mentionsData?.keywords && mentionsData.keywords.map(k => (
+                                            <span key={k} className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded text-[10px] font-bold">
+                                                {k}
                                             </span>
-                                            {mentionsData?.keywords && mentionsData.keywords.map(k => (
-                                                <span key={k} className="px-2 py-0.5 bg-slate-100 text-slate-600 rounded text-[10px] font-bold">
-                                                    {k}
-                                                </span>
-                                    { mentionsData?.keywords && mentionsData.keywords.length > 0 && activeTab === 'main' && (
-                                                    <span className="text-[10px] text-slate-400">+ {mentionsData.keywords.length} others</span>
-                                                )}
+                                        ))}
+                                        {mentionsData?.keywords && mentionsData.keywords.length > 0 && activeTab === 'main' && (
+                                            <span className="text-[10px] text-slate-400">+ {mentionsData.keywords.length} others</span>
+                                        )}
                                     </div>
                                 </div>
                             </div>
@@ -363,152 +361,153 @@ export default function BrandMonitoringSection({ brandName }) {
                         </button>
                     </div>
                 </div>
+            </div>
 
-                {/* Settings Modal */}
-                {settingsModalOpen && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
-                        <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden animate-scale-up">
-                            <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                                <h3 className="text-lg font-black text-slate-800 tracking-tight">Monitoring Settings</h3>
-                                <button onClick={() => setSettingsModalOpen(false)} className="text-slate-400 hover:text-slate-600 transition-colors">
-                                    <FaTimes size={20} />
-                                </button>
-                            </div>
+            {/* Settings Modal */}
+            {settingsModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in">
+                    <div className="bg-white w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden animate-scale-up">
+                        <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                            <h3 className="text-lg font-black text-slate-800 tracking-tight">Monitoring Settings</h3>
+                            <button onClick={() => setSettingsModalOpen(false)} className="text-slate-400 hover:text-slate-600 transition-colors">
+                                <FaTimes size={20} />
+                            </button>
+                        </div>
 
-                            <div className="p-6 space-y-6">
-                                <div>
-                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1 mb-2 block">Active Keywords</label>
-                                    <div className="flex flex-wrap gap-2 mb-3">
-                                        <div className="px-3 py-1.5 bg-indigo-50 text-indigo-700 rounded-full text-xs font-bold border border-indigo-100">
-                                            {brandName || "Brand Name"} (Default)
+                        <div className="p-6 space-y-6">
+                            <div>
+                                <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1 mb-2 block">Active Keywords</label>
+                                <div className="flex flex-wrap gap-2 mb-3">
+                                    <div className="px-3 py-1.5 bg-indigo-50 text-indigo-700 rounded-full text-xs font-bold border border-indigo-100">
+                                        {brandName || "Brand Name"} (Default)
+                                    </div>
+                                    {currentKeywords.map(k => (
+                                        <div key={k} className="px-3 py-1.5 bg-white text-slate-600 rounded-full text-xs font-bold border border-slate-200 flex items-center gap-2">
+                                            {k}
+                                            <button onClick={() => removeKeyword(k)} className="text-slate-400 hover:text-red-500">
+                                                <FaTimes />
+                                            </button>
                                         </div>
-                                        {currentKeywords.map(k => (
-                                            <div key={k} className="px-3 py-1.5 bg-white text-slate-600 rounded-full text-xs font-bold border border-slate-200 flex items-center gap-2">
-                                                {k}
-                                                <button onClick={() => removeKeyword(k)} className="text-slate-400 hover:text-red-500">
-                                                    <FaTimes />
-                                                </button>
-                                            </div>
-                                        ))}
-                                    </div>
-
-                                    <div className="flex gap-2">
-                                        <input
-                                            type="text"
-                                            value={newKeyword}
-                                            onChange={(e) => setNewKeyword(e.target.value)}
-                                            onKeyDown={(e) => e.key === 'Enter' && addKeyword(newKeyword)}
-                                            placeholder="Add keyword..."
-                                            className="flex-1 px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
-                                        />
-                                        <button
-                                            onClick={() => addKeyword(newKeyword)}
-                                            className="px-4 py-2 bg-slate-800 text-white rounded-xl hover:bg-slate-900 transition-colors"
-                                        >
-                                            <FaPlus />
-                                        </button>
-                                    </div>
+                                    ))}
                                 </div>
 
-                                <div>
-                                    <div className="flex justify-between items-center mb-2">
-                                        <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1 block">AI Suggestions</label>
-                                        <button
-                                            onClick={fetchSuggestions}
-                                            disabled={suggestionsLoading}
-                                            className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
-                                        >
-                                            {suggestionsLoading ? <FaSpinner className="animate-spin" /> : <FaRobot />} Refresh
-                                        </button>
-                                    </div>
-
-                                    <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 min-h-[100px]">
-                                        {suggestedKeywords.length > 0 ? (
-                                            <div className="flex flex-wrap gap-2">
-                                                {suggestedKeywords.map(s => (
-                                                    <button
-                                                        key={s}
-                                                        onClick={() => addKeyword(s)}
-                                                        className="px-3 py-1.5 bg-white text-indigo-600 hover:bg-indigo-50 hover:border-indigo-200 border border-slate-200 rounded-full text-xs font-medium transition-all flex items-center gap-1"
-                                                    >
-                                                        <FaPlus size={8} /> {s}
-                                                    </button>
-                                                ))}
-                                            </div>
-                                        ) : (
-                                            <div className="text-center text-slate-400 text-xs py-4">
-                                                {suggestionsLoading ? "Analyzing brand profile..." : "Click refresh for AI suggestions"}
-                                            </div>
-                                        )}
-                                    </div>
+                                <div className="flex gap-2">
+                                    <input
+                                        type="text"
+                                        value={newKeyword}
+                                        onChange={(e) => setNewKeyword(e.target.value)}
+                                        onKeyDown={(e) => e.key === 'Enter' && addKeyword(newKeyword)}
+                                        placeholder="Add keyword..."
+                                        className="flex-1 px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                                    />
+                                    <button
+                                        onClick={() => addKeyword(newKeyword)}
+                                        className="px-4 py-2 bg-slate-800 text-white rounded-xl hover:bg-slate-900 transition-colors"
+                                    >
+                                        <FaPlus />
+                                    </button>
                                 </div>
-
-                                <button
-                                    onClick={saveSettings}
-                                    disabled={settingsSaving}
-                                    className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-all shadow-lg shadow-indigo-500/20 disabled:opacity-50"
-                                >
-                                    {settingsSaving ? "Saving..." : "Save Configuration"}
-                                </button>
                             </div>
+
+                            <div>
+                                <div className="flex justify-between items-center mb-2">
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1 block">AI Suggestions</label>
+                                    <button
+                                        onClick={fetchSuggestions}
+                                        disabled={suggestionsLoading}
+                                        className="text-[10px] font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1"
+                                    >
+                                        {suggestionsLoading ? <FaSpinner className="animate-spin" /> : <FaRobot />} Refresh
+                                    </button>
+                                </div>
+
+                                <div className="p-4 bg-slate-50 rounded-xl border border-slate-100 min-h-[100px]">
+                                    {suggestedKeywords.length > 0 ? (
+                                        <div className="flex flex-wrap gap-2">
+                                            {suggestedKeywords.map(s => (
+                                                <button
+                                                    key={s}
+                                                    onClick={() => addKeyword(s)}
+                                                    className="px-3 py-1.5 bg-white text-indigo-600 hover:bg-indigo-50 hover:border-indigo-200 border border-slate-200 rounded-full text-xs font-medium transition-all flex items-center gap-1"
+                                                >
+                                                    <FaPlus size={8} /> {s}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div className="text-center text-slate-400 text-xs py-4">
+                                            {suggestionsLoading ? "Analyzing brand profile..." : "Click refresh for AI suggestions"}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            <button
+                                onClick={saveSettings}
+                                disabled={settingsSaving}
+                                className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl transition-all shadow-lg shadow-indigo-500/20 disabled:opacity-50"
+                            >
+                                {settingsSaving ? "Saving..." : "Save Configuration"}
+                            </button>
                         </div>
                     </div>
-                )}
+                </div>
+            )}
 
-                {/* Crisis Response Modal */}
-                {crisisModalOpen && (
-                    <CrisisResponseModal
-                        mention={selectedMention}
-                        response={crisisResponse}
-                        loading={crisisLoading}
-                        onClose={closeModal}
-                    />
-                )}
-            </>
-            );
+            {/* Crisis Response Modal */}
+            {crisisModalOpen && (
+                <CrisisResponseModal
+                    mention={selectedMention}
+                    response={crisisResponse}
+                    loading={crisisLoading}
+                    onClose={closeModal}
+                />
+            )}
+        </>
+    );
 }
 
-            // Individual Mention Card Component
-            function MentionCard({mention, onCrisisResponse, onRemove}) {
+// Individual Mention Card Component
+function MentionCard({ mention, onCrisisResponse, onRemove }) {
     const isNegative = mention.sentiment === 'negative';
-            const sentimentConfig = SENTIMENT_CONFIG[mention.sentiment] || SENTIMENT_CONFIG.neutral;
-            const [vote, setVote] = useState(null); // 'positive' | 'negative' | null
-            const [removalTimeout, setRemovalTimeout] = useState(null);
+    const sentimentConfig = SENTIMENT_CONFIG[mention.sentiment] || SENTIMENT_CONFIG.neutral;
+    const [vote, setVote] = useState(null); // 'positive' | 'negative' | null
+    const [removalTimeout, setRemovalTimeout] = useState(null);
 
     // Reset vote if the mention object changes (fixes state leak with index keys)
     useEffect(() => {
-                setVote(null);
-            if (removalTimeout) clearTimeout(removalTimeout);
+        setVote(null);
+        if (removalTimeout) clearTimeout(removalTimeout);
     }, [mention]);
 
     const handleUndo = () => {
         if (removalTimeout) clearTimeout(removalTimeout);
-            setVote(null);
+        setVote(null);
     };
 
     const handleVote = async (type) => {
         if (vote) return; // Prevent double voting
 
-            try {
-                setVote(type); // Optimistic update
+        try {
+            setVote(type); // Optimistic update
 
             // If negative, schedule removal
             if (type === 'negative' && onRemove) {
                 const timeout = setTimeout(() => {
-                onRemove();
+                    onRemove();
                 }, 1500); // 1.5s delay to allow undo
-            setRemovalTimeout(timeout);
+                setRemovalTimeout(timeout);
             }
 
             await api.post('/brand-monitoring/feedback', {
                 mention_id: mention.url || mention.title, // Use URL or Title as ID
-            title: mention.title,
-            snippet: mention.description || mention.content,
-            feedback_type: type
+                title: mention.title,
+                snippet: mention.description || mention.content,
+                feedback_type: type
             });
             console.log(`Vote ${type} submitted for ${mention.title}`);
         } catch (err) {
-                console.error("Feedback failed:", err);
+            console.error("Feedback failed:", err);
             setVote(null); // Revert on error
             if (removalTimeout) clearTimeout(removalTimeout);
         }
@@ -516,7 +515,7 @@ export default function BrandMonitoringSection({ brandName }) {
 
     const formatDate = (dateStr) => {
         if (!dateStr) return '';
-            try {
+        try {
             const date = new Date(dateStr);
             const now = new Date();
             const diffHours = Math.floor((now - date) / (1000 * 60 * 60));
@@ -528,123 +527,123 @@ export default function BrandMonitoringSection({ brandName }) {
         }
     };
 
-            // Render based on vote state
-            return vote === 'negative' ? (
-            <div className="p-5 bg-slate-50/50 opacity-50 animate-fade-out">
-                <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                        <FaThumbsDown className="text-slate-400" />
-                        <span className="text-xs text-slate-500 font-medium">Marked as irrelevant. We'll show fewer results like this.</span>
-                    </div>
-                    <button className="text-xs text-indigo-600 font-bold hover:underline" onClick={handleUndo}>Undo</button>
+    // Render based on vote state
+    return vote === 'negative' ? (
+        <div className="p-5 bg-slate-50/50 opacity-50 animate-fade-out">
+            <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                    <FaThumbsDown className="text-slate-400" />
+                    <span className="text-xs text-slate-500 font-medium">Marked as irrelevant. We'll show fewer results like this.</span>
                 </div>
+                <button className="text-xs text-indigo-600 font-bold hover:underline" onClick={handleUndo}>Undo</button>
             </div>
-            ) : (
-            <div className={`p-5 transition-all hover:bg-slate-50/50 group
+        </div>
+    ) : (
+        <div className={`p-5 transition-all hover:bg-slate-50/50 group
             ${isNegative ? 'bg-red-50/30 border-l-4 border-l-red-500' : ''}`}
-            >
-                <div className="flex flex-col lg:flex-row gap-4">
-                    {/* Main Content */}
-                    <div className="flex-1 min-w-0">
-                        <div className="flex items-start gap-3">
-                            {/* Sentiment Badge */}
-                            <div className={`p-2 rounded-lg flex-shrink-0 
+        >
+            <div className="flex flex-col lg:flex-row gap-4">
+                {/* Main Content */}
+                <div className="flex-1 min-w-0">
+                    <div className="flex items-start gap-3">
+                        {/* Sentiment Badge */}
+                        <div className={`p-2 rounded-lg flex-shrink-0 
                             ${isNegative ? 'bg-red-100 text-red-600' :
-                                    mention.sentiment === 'positive' ? 'bg-emerald-100 text-emerald-600' :
-                                        'bg-slate-100 text-slate-500'}`}
-                            >
-                                {sentimentConfig.icon}
-                            </div>
+                                mention.sentiment === 'positive' ? 'bg-emerald-100 text-emerald-600' :
+                                    'bg-slate-100 text-slate-500'}`}
+                        >
+                            {sentimentConfig.icon}
+                        </div>
 
-                            <div className="flex-1 min-w-0">
-                                {/* Title */}
-                                <h4 className={`font-bold text-sm mb-1 line-clamp-2 
+                        <div className="flex-1 min-w-0">
+                            {/* Title */}
+                            <h4 className={`font-bold text-sm mb-1 line-clamp-2 
                                 ${isNegative ? 'text-red-800' : 'text-slate-800'}`}
-                                >
-                                    {mention.title}
-                                </h4>
+                            >
+                                {mention.title}
+                            </h4>
 
-                                {/* Meta Info */}
-                                <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400 mb-2">
-                                    <span className="font-medium">{mention.source_name || mention.source}</span>
-                                    <span>•</span>
-                                    <span>{formatDate(mention.published_at)}</span>
-                                    {isNegative && mention.severity && (
-                                        <>
-                                            <span>•</span>
-                                            <span className="text-red-600 font-bold">Severity: {mention.severity}/10</span>
-                                        </>
-                                    )}
-                                </div>
-
-                                {/* Summary */}
-                                <p className="text-xs text-slate-500 line-clamp-2 mb-2">
-                                    {mention.ai_summary || mention.description}
-                                </p>
-
-                                {/* Key Concerns for Negative */}
-                                {isNegative && mention.key_concerns && mention.key_concerns.length > 0 && (
-                                    <div className="flex flex-wrap gap-1 mb-2">
-                                        {mention.key_concerns.map((concern, idx) => (
-                                            <span key={idx} className="px-2 py-0.5 bg-red-100 text-red-700 text-[10px] font-medium rounded">
-                                                {concern}
-                                            </span>
-                                        ))}
-                                    </div>
+                            {/* Meta Info */}
+                            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400 mb-2">
+                                <span className="font-medium">{mention.source_name || mention.source}</span>
+                                <span>•</span>
+                                <span>{formatDate(mention.published_at)}</span>
+                                {isNegative && mention.severity && (
+                                    <>
+                                        <span>•</span>
+                                        <span className="text-red-600 font-bold">Severity: {mention.severity}/10</span>
+                                    </>
                                 )}
                             </div>
+
+                            {/* Summary */}
+                            <p className="text-xs text-slate-500 line-clamp-2 mb-2">
+                                {mention.ai_summary || mention.description}
+                            </p>
+
+                            {/* Key Concerns for Negative */}
+                            {isNegative && mention.key_concerns && mention.key_concerns.length > 0 && (
+                                <div className="flex flex-wrap gap-1 mb-2">
+                                    {mention.key_concerns.map((concern, idx) => (
+                                        <span key={idx} className="px-2 py-0.5 bg-red-100 text-red-700 text-[10px] font-medium rounded">
+                                            {concern}
+                                        </span>
+                                    ))}
+                                </div>
+                            )}
                         </div>
-                    </div>
-
-                    {/* Actions */}
-                    <div className="flex lg:flex-col items-center gap-2 lg:border-l lg:border-slate-100 lg:pl-4">
-                        {/* Feedback Buttons */}
-                        <div className="flex gap-1 mb-2 lg:mb-0">
-                            <button
-                                onClick={() => handleVote('positive')}
-                                className={`p-1.5 rounded-lg transition-all ${vote === 'positive' ? 'text-emerald-600 bg-emerald-50' : 'text-slate-300 hover:text-emerald-500 hover:bg-emerald-50'}`}
-                                title="Relevant match"
-                            >
-                                <FaThumbsUp className="text-xs" />
-                            </button>
-                            <button
-                                onClick={() => handleVote('negative')}
-                                className={`p-1.5 rounded-lg transition-all ${vote === 'negative' ? 'text-red-600 bg-red-50' : 'text-slate-300 hover:text-red-500 hover:bg-red-50'}`}
-                                title="Irrelevant / Poor match"
-                            >
-                                <FaThumbsDown className="text-xs" />
-                            </button>
-                        </div>
-
-                        {mention.url && (
-                            <a
-                                href={mention.url}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
-                                title="View Article"
-                            >
-                                <FaExternalLinkAlt className="text-sm" />
-                            </a>
-                        )}
-
-                        {isNegative && (
-                            <button
-                                onClick={() => onCrisisResponse(mention)}
-                                className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white text-xs font-bold rounded-xl hover:bg-red-700 transition-all shadow-sm"
-                            >
-                                <FaRobot />
-                                <span>Get AI Suggestion</span>
-                            </button>
-                        )}
                     </div>
                 </div>
+
+                {/* Actions */}
+                <div className="flex lg:flex-col items-center gap-2 lg:border-l lg:border-slate-100 lg:pl-4">
+                    {/* Feedback Buttons */}
+                    <div className="flex gap-1 mb-2 lg:mb-0">
+                        <button
+                            onClick={() => handleVote('positive')}
+                            className={`p-1.5 rounded-lg transition-all ${vote === 'positive' ? 'text-emerald-600 bg-emerald-50' : 'text-slate-300 hover:text-emerald-500 hover:bg-emerald-50'}`}
+                            title="Relevant match"
+                        >
+                            <FaThumbsUp className="text-xs" />
+                        </button>
+                        <button
+                            onClick={() => handleVote('negative')}
+                            className={`p-1.5 rounded-lg transition-all ${vote === 'negative' ? 'text-red-600 bg-red-50' : 'text-slate-300 hover:text-red-500 hover:bg-red-50'}`}
+                            title="Irrelevant / Poor match"
+                        >
+                            <FaThumbsDown className="text-xs" />
+                        </button>
+                    </div>
+
+                    {mention.url && (
+                        <a
+                            href={mention.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-all"
+                            title="View Article"
+                        >
+                            <FaExternalLinkAlt className="text-sm" />
+                        </a>
+                    )}
+
+                    {isNegative && (
+                        <button
+                            onClick={() => onCrisisResponse(mention)}
+                            className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white text-xs font-bold rounded-xl hover:bg-red-700 transition-all shadow-sm"
+                        >
+                            <FaRobot />
+                            <span>Get AI Suggestion</span>
+                        </button>
+                    )}
+                </div>
             </div>
-            );
+        </div>
+    );
 }
 
-            // Crisis Response Modal Component
-            function CrisisResponseModal({mention, response, loading, onClose}) {
+// Crisis Response Modal Component
+function CrisisResponseModal({ mention, response, loading, onClose }) {
     const getEscalationColor = (level) => {
         switch (level) {
             case 'critical': return 'bg-red-600';
@@ -654,182 +653,182 @@ export default function BrandMonitoringSection({ brandName }) {
         }
     };
 
-            return (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in overflow-y-auto">
-                <div className="bg-white w-full max-w-3xl rounded-3xl shadow-2xl my-8 animate-scale-up max-h-[90vh] overflow-hidden flex flex-col">
-                    {/* Header */}
-                    <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex-shrink-0">
-                        <div className="flex justify-between items-start">
-                            <div className="flex items-center gap-3">
-                                <div className="p-3 bg-red-100 text-red-600 rounded-xl">
-                                    <FaRobot className="text-xl" />
-                                </div>
-                                <div>
-                                    <h3 className="text-xl font-black text-slate-800 tracking-tight">AI Crisis Response</h3>
-                                    <p className="text-xs text-slate-400 mt-0.5 line-clamp-1 max-w-md">{mention?.title}</p>
-                                </div>
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-fade-in overflow-y-auto">
+            <div className="bg-white w-full max-w-3xl rounded-3xl shadow-2xl my-8 animate-scale-up max-h-[90vh] overflow-hidden flex flex-col">
+                {/* Header */}
+                <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex-shrink-0">
+                    <div className="flex justify-between items-start">
+                        <div className="flex items-center gap-3">
+                            <div className="p-3 bg-red-100 text-red-600 rounded-xl">
+                                <FaRobot className="text-xl" />
                             </div>
-                            <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors p-2">
-                                <FaTimes size={20} />
-                            </button>
+                            <div>
+                                <h3 className="text-xl font-black text-slate-800 tracking-tight">AI Crisis Response</h3>
+                                <p className="text-xs text-slate-400 mt-0.5 line-clamp-1 max-w-md">{mention?.title}</p>
+                            </div>
                         </div>
-                    </div>
-
-                    {/* Content */}
-                    <div className="p-6 overflow-y-auto flex-1">
-                        {loading ? (
-                            <div className="flex flex-col items-center justify-center py-16">
-                                <div className="relative">
-                                    <FaRobot className="text-5xl text-indigo-200" />
-                                    <FaSpinner className="absolute -bottom-1 -right-1 text-xl text-indigo-600 animate-spin" />
-                                </div>
-                                <p className="text-slate-500 mt-4 font-medium">Generating crisis response strategy...</p>
-                                <p className="text-xs text-slate-400 mt-1">AI is analyzing the situation</p>
-                            </div>
-                        ) : response ? (
-                            <div className="space-y-6">
-                                {/* Escalation Level */}
-                                {response.escalation_level && (
-                                    <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-white text-xs font-bold uppercase tracking-wide ${getEscalationColor(response.escalation_level)}`}>
-                                        <FaFireAlt />
-                                        {response.escalation_level} Priority
-                                    </div>
-                                )}
-
-                                {/* Executive Summary */}
-                                {response.executive_summary && (
-                                    <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
-                                        <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-2">Executive Summary</h4>
-                                        <p className="text-slate-700 text-sm leading-relaxed">{response.executive_summary}</p>
-                                    </div>
-                                )}
-
-                                {/* Recommended Actions */}
-                                {response.recommended_actions && response.recommended_actions.length > 0 && (
-                                    <div>
-                                        <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
-                                            <FaLightbulb className="text-amber-500" />
-                                            Recommended Actions
-                                        </h4>
-                                        <div className="space-y-3">
-                                            {response.recommended_actions.map((action, idx) => (
-                                                <div key={idx} className="flex gap-3 p-3 bg-white border border-slate-100 rounded-xl">
-                                                    <div className="w-6 h-6 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">
-                                                        {action.priority || idx + 1}
-                                                    </div>
-                                                    <div>
-                                                        <p className="font-bold text-slate-800 text-sm">{action.action}</p>
-                                                        <p className="text-xs text-slate-500 mt-0.5">{action.rationale}</p>
-                                                        {action.owner && (
-                                                            <span className="inline-block mt-1 px-2 py-0.5 bg-slate-100 text-slate-600 text-[10px] font-medium rounded">
-                                                                {action.owner}
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* Timeline */}
-                                {response.timeline && (
-                                    <div>
-                                        <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
-                                            <FaClock className="text-blue-500" />
-                                            Response Timeline
-                                        </h4>
-                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                                            {response.timeline.immediate && (
-                                                <div className="p-3 bg-red-50 border border-red-100 rounded-xl">
-                                                    <p className="text-[10px] font-black text-red-400 uppercase mb-1">Immediate (1-2h)</p>
-                                                    <p className="text-xs text-red-700">{response.timeline.immediate}</p>
-                                                </div>
-                                            )}
-                                            {response.timeline.short_term && (
-                                                <div className="p-3 bg-amber-50 border border-amber-100 rounded-xl">
-                                                    <p className="text-[10px] font-black text-amber-400 uppercase mb-1">24 Hours</p>
-                                                    <p className="text-xs text-amber-700">{response.timeline.short_term}</p>
-                                                </div>
-                                            )}
-                                            {response.timeline.long_term && (
-                                                <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl">
-                                                    <p className="text-[10px] font-black text-blue-400 uppercase mb-1">This Week</p>
-                                                    <p className="text-xs text-blue-700">{response.timeline.long_term}</p>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* Response Templates */}
-                                {response.response_templates && (
-                                    <div>
-                                        <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-3">Response Templates</h4>
-                                        <div className="space-y-3">
-                                            {response.response_templates.press_statement && (
-                                                <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
-                                                    <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Press Statement</p>
-                                                    <p className="text-xs text-slate-700 italic">"{response.response_templates.press_statement}"</p>
-                                                </div>
-                                            )}
-                                            {response.response_templates.social_media && (
-                                                <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
-                                                    <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Social Media</p>
-                                                    <p className="text-xs text-slate-700 italic">"{response.response_templates.social_media}"</p>
-                                                </div>
-                                            )}
-                                        </div>
-                                    </div>
-                                )}
-
-                                {/* Key Messages */}
-                                {response.key_messages && response.key_messages.length > 0 && (
-                                    <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-xl">
-                                        <h4 className="text-xs font-black text-emerald-600 uppercase tracking-wider mb-2">Key Messages to Emphasize</h4>
-                                        <ul className="space-y-1">
-                                            {response.key_messages.map((msg, idx) => (
-                                                <li key={idx} className="text-xs text-emerald-700 flex items-start gap-2">
-                                                    <FaCheckCircle className="text-emerald-500 mt-0.5 flex-shrink-0" />
-                                                    {msg}
-                                                </li>
-                                            ))}
-                                        </ul>
-                                    </div>
-                                )}
-
-                                {/* Things to Avoid */}
-                                {response.do_not_say && response.do_not_say.length > 0 && (
-                                    <div className="p-4 bg-red-50 border border-red-100 rounded-xl">
-                                        <h4 className="text-xs font-black text-red-600 uppercase tracking-wider mb-2">⚠️ Phrases to Avoid</h4>
-                                        <ul className="space-y-1">
-                                            {response.do_not_say.map((phrase, idx) => (
-                                                <li key={idx} className="text-xs text-red-700 flex items-start gap-2">
-                                                    <FaTimes className="text-red-500 mt-0.5 flex-shrink-0" />
-                                                    {phrase}
-                                                </li>
-                                            ))}
-                                        </ul>
-                                    </div>
-                                )}
-                            </div>
-                        ) : (
-                            <div className="text-center py-8 text-slate-400">
-                                <p>Something went wrong. Please try again.</p>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Footer */}
-                    <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex-shrink-0">
-                        <button
-                            onClick={onClose}
-                            className="w-full py-3 bg-slate-800 text-white font-bold rounded-xl hover:bg-slate-900 transition-colors"
-                        >
-                            Close
+                        <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors p-2">
+                            <FaTimes size={20} />
                         </button>
                     </div>
                 </div>
+
+                {/* Content */}
+                <div className="p-6 overflow-y-auto flex-1">
+                    {loading ? (
+                        <div className="flex flex-col items-center justify-center py-16">
+                            <div className="relative">
+                                <FaRobot className="text-5xl text-indigo-200" />
+                                <FaSpinner className="absolute -bottom-1 -right-1 text-xl text-indigo-600 animate-spin" />
+                            </div>
+                            <p className="text-slate-500 mt-4 font-medium">Generating crisis response strategy...</p>
+                            <p className="text-xs text-slate-400 mt-1">AI is analyzing the situation</p>
+                        </div>
+                    ) : response ? (
+                        <div className="space-y-6">
+                            {/* Escalation Level */}
+                            {response.escalation_level && (
+                                <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-white text-xs font-bold uppercase tracking-wide ${getEscalationColor(response.escalation_level)}`}>
+                                    <FaFireAlt />
+                                    {response.escalation_level} Priority
+                                </div>
+                            )}
+
+                            {/* Executive Summary */}
+                            {response.executive_summary && (
+                                <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-2">Executive Summary</h4>
+                                    <p className="text-slate-700 text-sm leading-relaxed">{response.executive_summary}</p>
+                                </div>
+                            )}
+
+                            {/* Recommended Actions */}
+                            {response.recommended_actions && response.recommended_actions.length > 0 && (
+                                <div>
+                                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                                        <FaLightbulb className="text-amber-500" />
+                                        Recommended Actions
+                                    </h4>
+                                    <div className="space-y-3">
+                                        {response.recommended_actions.map((action, idx) => (
+                                            <div key={idx} className="flex gap-3 p-3 bg-white border border-slate-100 rounded-xl">
+                                                <div className="w-6 h-6 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">
+                                                    {action.priority || idx + 1}
+                                                </div>
+                                                <div>
+                                                    <p className="font-bold text-slate-800 text-sm">{action.action}</p>
+                                                    <p className="text-xs text-slate-500 mt-0.5">{action.rationale}</p>
+                                                    {action.owner && (
+                                                        <span className="inline-block mt-1 px-2 py-0.5 bg-slate-100 text-slate-600 text-[10px] font-medium rounded">
+                                                            {action.owner}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Timeline */}
+                            {response.timeline && (
+                                <div>
+                                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-3 flex items-center gap-2">
+                                        <FaClock className="text-blue-500" />
+                                        Response Timeline
+                                    </h4>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                        {response.timeline.immediate && (
+                                            <div className="p-3 bg-red-50 border border-red-100 rounded-xl">
+                                                <p className="text-[10px] font-black text-red-400 uppercase mb-1">Immediate (1-2h)</p>
+                                                <p className="text-xs text-red-700">{response.timeline.immediate}</p>
+                                            </div>
+                                        )}
+                                        {response.timeline.short_term && (
+                                            <div className="p-3 bg-amber-50 border border-amber-100 rounded-xl">
+                                                <p className="text-[10px] font-black text-amber-400 uppercase mb-1">24 Hours</p>
+                                                <p className="text-xs text-amber-700">{response.timeline.short_term}</p>
+                                            </div>
+                                        )}
+                                        {response.timeline.long_term && (
+                                            <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl">
+                                                <p className="text-[10px] font-black text-blue-400 uppercase mb-1">This Week</p>
+                                                <p className="text-xs text-blue-700">{response.timeline.long_term}</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Response Templates */}
+                            {response.response_templates && (
+                                <div>
+                                    <h4 className="text-xs font-black text-slate-400 uppercase tracking-wider mb-3">Response Templates</h4>
+                                    <div className="space-y-3">
+                                        {response.response_templates.press_statement && (
+                                            <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
+                                                <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Press Statement</p>
+                                                <p className="text-xs text-slate-700 italic">"{response.response_templates.press_statement}"</p>
+                                            </div>
+                                        )}
+                                        {response.response_templates.social_media && (
+                                            <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
+                                                <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Social Media</p>
+                                                <p className="text-xs text-slate-700 italic">"{response.response_templates.social_media}"</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Key Messages */}
+                            {response.key_messages && response.key_messages.length > 0 && (
+                                <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-xl">
+                                    <h4 className="text-xs font-black text-emerald-600 uppercase tracking-wider mb-2">Key Messages to Emphasize</h4>
+                                    <ul className="space-y-1">
+                                        {response.key_messages.map((msg, idx) => (
+                                            <li key={idx} className="text-xs text-emerald-700 flex items-start gap-2">
+                                                <FaCheckCircle className="text-emerald-500 mt-0.5 flex-shrink-0" />
+                                                {msg}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
+
+                            {/* Things to Avoid */}
+                            {response.do_not_say && response.do_not_say.length > 0 && (
+                                <div className="p-4 bg-red-50 border border-red-100 rounded-xl">
+                                    <h4 className="text-xs font-black text-red-600 uppercase tracking-wider mb-2">⚠️ Phrases to Avoid</h4>
+                                    <ul className="space-y-1">
+                                        {response.do_not_say.map((phrase, idx) => (
+                                            <li key={idx} className="text-xs text-red-700 flex items-start gap-2">
+                                                <FaTimes className="text-red-500 mt-0.5 flex-shrink-0" />
+                                                {phrase}
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            )}
+                        </div>
+                    ) : (
+                        <div className="text-center py-8 text-slate-400">
+                            <p>Something went wrong. Please try again.</p>
+                        </div>
+                    )}
+                </div>
+
+                {/* Footer */}
+                <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex-shrink-0">
+                    <button
+                        onClick={onClose}
+                        className="w-full py-3 bg-slate-800 text-white font-bold rounded-xl hover:bg-slate-900 transition-colors"
+                    >
+                        Close
+                    </button>
+                </div>
             </div>
-            );
+        </div>
+    );
 }
