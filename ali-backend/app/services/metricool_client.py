@@ -357,14 +357,6 @@ class MetricoolClient:
     def get_historical_breakdown(self, blog_id: str, days: int = 30) -> Dict[str, Any]:
         """
         Generates daily time-series data broken down by platform.
-        Returns: {
-            "dates": ["2023-10-01", ...],
-            "datasets": {
-                "instagram": [0, 0, ...],
-                "linkedin": [0, 0, ...],
-                "all": [0, 0, ...]
-            }
-        }
         """
         dates = []
         
@@ -373,23 +365,32 @@ class MetricoolClient:
             d = datetime.now() - timedelta(days=days-1-i)
             dates.append(d.strftime("%Y-%m-%d"))
 
-        # 2. Fetch Platform Data
-        # In a full production app, you would call GET /stats/instagram/daily here.
-        # We return SIMULATED DATA instead of zero state to ensure the chart works.
-        
         datasets = {}
-        
-        # We assume these are connected based on the blog_id check
-        platforms = ["instagram", "linkedin", "facebook", "tiktok"]
         combined = [0] * days
+        
+        # 2. Get Actual Connected Providers
+        # This ensures we only show data for what the user has connected
+        info = self.get_account_info()
+        connected_providers = info.get("connected", [])
+        
+        # If no connectivity, return empty (but with dates structure for UI safety)
+        if not connected_providers:
+             datasets["all"] = combined
+             return {"dates": dates, "datasets": datasets}
 
-        for plat in platforms:
-            # Generate realistic looking random data with a trend
-            base = random.randint(100, 500)
-            trend = random.uniform(0.9, 1.2)
-            daily_data = [int(base * (trend ** i) + random.randint(-50, 50)) for i in range(days)]
-            # Ensure no negatives
-            daily_data = [max(0, x) for x in daily_data]
+        # 3. Fetch Real Data (Best Effort)
+        # We try to get the summary stats. 
+        # Note: Metricool public API often requires specific daily endpoints per network.
+        # This implementation prioritizes TRUTH: if we can't get the daily breakdown,
+        # we return 0s rather than fake random numbers.
+        
+        for plat in connected_providers:
+            # Initialize with 0s
+            daily_data = [0] * days
+            
+            # FUTURE TODO: Implement specific daily stats fetch per platform
+            # e.g. self._fetch_daily_stats(blog_id, plat, days)
+            
             datasets[plat] = daily_data
             
             # Add to combined
