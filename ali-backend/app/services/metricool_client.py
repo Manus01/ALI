@@ -140,15 +140,29 @@ class MetricoolClient:
                     for item in data:
                         if isinstance(item, dict):
                             # Check if this item is "connected"
-                            is_connected = (
-                                item.get("connected") or 
-                                item.get("selected") or 
-                                item.get("status") == "connected" or
-                                item.get("active") or
-                                item.get("enabled") or
-                                item.get("isConnected") or
-                                'connected' not in item  # If no connection field, assume connected
-                            )
+                            # FIX: Strictly check status if present
+                            status = str(item.get("status") or "").lower()
+                            
+                            is_connected = False
+                            if status:
+                                is_connected = (status == "connected" or status == "active")
+                            else:
+                                # Fallback for fields that are booleans or older API formats
+                                is_connected = (
+                                    item.get("connected") or 
+                                    item.get("selected") or 
+                                    item.get("active") or
+                                    item.get("enabled") or
+                                    item.get("isConnected") or
+                                    # ONLY assume connected if we are looking at a explicit list of ONLY connected items (deprecated behavior)
+                                    # Safer to default to False if we can't be sure.
+                                    False
+                                )
+                                
+                                # Special case: If the field name itself implies connection (e.g. 'connectedNetworks')
+                                if field in ['connectedNetworks', 'connectedProviders', 'linkedAccounts']:
+                                     is_connected = True
+
                             if is_connected:
                                 provider_name = (
                                     item.get("id") or item.get("name") or 
@@ -407,9 +421,11 @@ class MetricoolClient:
     def get_historical_breakdown(self, blog_id: str, days: int = 30) -> Dict[str, Any]:
         """
         Generates daily time-series data broken down by platform.
+        Uses concurrent requests to fetch daily stats if timeseries endpoint is unavailable.
         """
-        dates = []
+        import concurrent.futures
         
+        dates = []
         # 1. Generate Dates
         for i in range(days):
             d = datetime.now() - timedelta(days=days-1-i)
@@ -419,32 +435,77 @@ class MetricoolClient:
         combined = [0] * days
         
         # 2. Get Actual Connected Providers
-        # This ensures we only show data for what the user has connected
         info = self.get_account_info()
         connected_providers = info.get("connected", [])
         
-        # If no connectivity, return empty (but with dates structure for UI safety)
         if not connected_providers:
              datasets["all"] = combined
              return {"dates": dates, "datasets": datasets}
 
-        # 3. Fetch Real Data (Best Effort)
-        # We try to get the summary stats. 
-        # Note: Metricool public API often requires specific daily endpoints per network.
-        # This implementation prioritizes TRUTH: if we can't get the daily breakdown,
-        # we return 0s rather than fake random numbers.
-        
-        for plat in connected_providers:
-            # Initialize with 0s
-            daily_data = [0] * days
+        logger.info(f"Fetching historical data for: {connected_providers} over {days} days")
+
+        def fetch_platform_daily_data(platform_name):
+            # Helper to fetch data for a specific platform
+            # We try to get the summary for EACH day to build the chart
+            # This is request-heavy but robust if we don't know the exact v2 timeseries endpoint
             
-            # FUTURE TODO: Implement specific daily stats fetch per platform
-            # e.g. self._fetch_daily_stats(blog_id, plat, days)
+            p_data = [0] * days
             
-            datasets[plat] = daily_data
+            # Helper for a single day fetch
+            def get_single_day(date_str):
+                url = f"{BASE_URL}/stats/{platform_name}"
+                # Handle special endpoint mappings if needed
+                if platform_name == 'google': url = f"{BASE_URL}/stats/googlemybusiness"
+                
+                params = {
+                    "blogId": blog_id, 
+                    "from": date_str, 
+                    "to": date_str, 
+                    "userId": self.user_id
+                }
+                try:
+                    res = requests.get(url, headers=self.headers, params=params, timeout=5)
+                    if res.status_code == 200:
+                        d = res.json()
+                        # Extract a meaningful metric (e.g., Impressions or Clicks)
+                        # We sum up clicks + likes + comments + shares for "Engagement"
+                        # OR just Impressions. Let's aim for Impressions or Reach as the "main" line.
+                        val = (
+                            d.get('impressions') or 
+                            d.get('reach') or 
+                            d.get('interactions') or
+                            d.get('followers_count') or # for evolution
+                            0
+                        )
+                        return val
+                except Exception:
+                    pass
+                return 0
+
+            # Run 30 requests in parallel
+            with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+                future_to_date = {executor.submit(get_single_day, d): i for i, d in enumerate(dates)}
+                for future in concurrent.futures.as_completed(future_to_date):
+                    idx = future_to_date[future]
+                    try:
+                        p_data[idx] = future.result()
+                    except Exception as e:
+                        logger.warning(f"Failed to fetch {platform_name} day {idx}: {e}")
             
-            # Add to combined
-            combined = [sum(x) for x in zip(combined, daily_data)]
+            return platform_name, p_data
+
+        # 3. Fetch Real Data with ThreadPool
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            futures = [executor.submit(fetch_platform_daily_data, p) for p in connected_providers]
+            
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    p_name, p_data = future.result()
+                    datasets[p_name] = p_data
+                    # Add to combined
+                    combined = [sum(x) for x in zip(combined, p_data)]
+                except Exception as e:
+                    logger.error(f"Platform fetch failed: {e}")
 
         datasets["all"] = combined
         

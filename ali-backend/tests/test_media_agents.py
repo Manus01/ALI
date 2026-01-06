@@ -72,7 +72,9 @@ class TestVideoAgent:
         result = agent.generate_video("Test video prompt", folder="test")
         
         assert result is not None
-        assert "firebasestorage.googleapis.com" in result
+        assert isinstance(result, dict)
+        assert "firebasestorage.googleapis.com" in result["url"]
+        assert "gcs_object_key" in result
         mock_blob.upload_from_string.assert_called_once()
     
     @patch('app.services.video_agent.storage.Client')
@@ -212,7 +214,9 @@ class TestImageAgent:
         result = agent.generate_image("Test image prompt", folder="test")
         
         assert result is not None
-        assert "firebasestorage.googleapis.com" in result
+        assert isinstance(result, dict)
+        assert "firebasestorage.googleapis.com" in result["url"]
+        assert "gcs_object_key" in result
         mock_blob.upload_from_string.assert_called_once()
     
     @patch('app.services.image_agent.types')
@@ -346,7 +350,9 @@ class TestAudioAgent:
         result = agent.generate_audio("Test audio text", folder="test")
         
         assert result is not None
-        assert "firebasestorage.googleapis.com" in result
+        assert isinstance(result, dict)
+        assert "firebasestorage.googleapis.com" in result["url"]
+        assert "gcs_object_key" in result
     
     @patch('app.services.audio_agent.storage.Client')
     @patch('app.services.audio_agent.genai.Client')

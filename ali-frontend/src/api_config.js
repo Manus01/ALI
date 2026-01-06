@@ -19,7 +19,7 @@ const APP_MODE = import.meta.env.MODE || process.env.NODE_ENV || 'development';
 const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 const API_BASE_URL = (!isLocalhost || APP_MODE === 'production')
     ? PROD_BACKEND
-    : "http://localhost:8001";
+    : "http://localhost:8000";
 
 // 3. Clean trailing slashes for safety
 export const API_URL = API_BASE_URL.replace(/\/$/, "");
