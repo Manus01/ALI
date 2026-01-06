@@ -115,69 +115,106 @@ class MetricoolClient:
 
     def _extract_connected_providers(self, blog: Dict[str, Any]) -> List[str]:
         """
-        Metricool can report connected social platforms in a few shapes depending on the
-        endpoint version:
-        - blogs[].socialNetworks: list of {id/name, connected/selected}
-        - blogs[].providers: list of provider codes (e.g. ["facebook", "instagram"])
-        - blogs[].networks: list of {provider, status}
-        We normalize all of them to a lowercase list of provider names.
+        Metricool can report connected social platforms in various formats.
+        We try multiple field names and structures to extract connected providers.
         """
         connected: List[str] = []
+        
+        # DEBUG: Log all keys in the blog response to help diagnose
+        logger.info(f"🔍 Extracting providers. Blog keys: {list(blog.keys())}")
 
-        # v2 user blogs payload often contains "socialNetworks"
-        for net in blog.get("socialNetworks", []) or []:
-            if isinstance(net, dict):
-                if net.get("connected") or net.get("selected") or net.get("status") == "connected":
-                    connected.append(net.get("id") or net.get("name") or net.get("provider"))
+        # Field names that might contain social network data
+        possible_fields = [
+            'socialNetworks', 'social_networks', 'socialnetworks',
+            'providers', 'networks', 'channels', 'accounts',
+            'connectedNetworks', 'connectedProviders', 'connected_providers',
+            'socials', 'linkedAccounts', 'linked_accounts'
+        ]
+        
+        # Try all possible field names
+        for field in possible_fields:
+            data = blog.get(field)
+            if data:
+                logger.info(f"📱 Found field '{field}': {data}")
+                if isinstance(data, list):
+                    for item in data:
+                        if isinstance(item, dict):
+                            # Check if this item is "connected"
+                            is_connected = (
+                                item.get("connected") or 
+                                item.get("selected") or 
+                                item.get("status") == "connected" or
+                                item.get("active") or
+                                item.get("enabled") or
+                                item.get("isConnected") or
+                                'connected' not in item  # If no connection field, assume connected
+                            )
+                            if is_connected:
+                                provider_name = (
+                                    item.get("id") or item.get("name") or 
+                                    item.get("provider") or item.get("network") or
+                                    item.get("type") or item.get("platform")
+                                )
+                                if provider_name:
+                                    connected.append(provider_name)
+                        elif isinstance(item, str):
+                            # Flat list of provider names
+                            connected.append(item)
 
-        # Some payloads expose a flat providers array
-        if not connected and isinstance(blog.get("providers"), list):
-            connected.extend(blog.get("providers") or [])
+        # If no connected providers found, do a heuristic scan for any network-like data
+        if not connected:
+            for key, val in blog.items():
+                if isinstance(val, list) and len(val) > 0:
+                    # Check if this list looks like it contains provider data
+                    first = val[0] if val else None
+                    if isinstance(first, dict):
+                        # Check if it looks like a social network object
+                        keys_lower = [k.lower() for k in first.keys()]
+                        if any(k in keys_lower for k in ['name', 'provider', 'network', 'type', 'id']):
+                            logger.info(f"🔎 Heuristic match found in key '{key}': {val}")
+                            for item in val:
+                                if isinstance(item, dict):
+                                    provider_name = (
+                                        item.get("id") or item.get("name") or 
+                                        item.get("provider") or item.get("network") or
+                                        item.get("type") or item.get("platform")
+                                    )
+                                    if provider_name:
+                                        connected.append(provider_name)
 
-        # Other responses use a networks array with provider/status
-        for net in blog.get("networks", []) or []:
-            if isinstance(net, dict) and (net.get("connected") or net.get("status") == "connected"):
-                connected.append(net.get("provider") or net.get("id") or net.get("name"))
+        logger.info(f"📊 Raw extracted providers: {connected}")
 
         # Normalize and deduplicate
         normalized = []
-        
-        # Mappings for Metricool specific provider names
-        # Based on observed API responses (e.g., facebookPage, instagramBusiness)
         PROVIDER_MAPPING = {
-            "facebookpage": "facebook",
-            "facebookads": "facebook",
-            "instagrambusiness": "instagram",
-            "linkedinpage": "linkedin",
-            "linkedincompany": "linkedin",
-            "tiktokbusiness": "tiktok",
-            "tiktokads": "tiktok", 
-            "googleads": "google",
-            "twitter": "twitter",
-            "x": "twitter",
-            "pinterest": "pinterest",
-            "youtube": "youtube"
+            "facebookpage": "facebook", "facebookads": "facebook", "fb": "facebook",
+            "instagrambusiness": "instagram", "ig": "instagram",
+            "linkedinpage": "linkedin", "linkedincompany": "linkedin", "li": "linkedin",
+            "tiktokbusiness": "tiktok", "tiktokads": "tiktok", "tt": "tiktok",
+            "googleads": "google", "googlemybusiness": "google",
+            "twitter": "twitter", "x": "twitter",
+            "pinterest": "pinterest", "youtube": "youtube"
         }
 
         for p in connected:
             if not p:
                 continue
-            val = str(p).lower()
+            val = str(p).lower().strip()
             
-            # 1. Direct Map Check
+            # Direct map check
             if val in PROVIDER_MAPPING:
                 val = PROVIDER_MAPPING[val]
-            # 2. Heuristic: If it ends with "page" or "business", strip it? 
-            # Safer to trust the mapping first, but fallback if needed.
             else:
-                # If provider starts with known keys, map it
-                for key in ["facebook", "instagram", "linkedin", "tiktok", "google", "youtube"]:
+                # Heuristic: map if starts with known provider name
+                for key in ["facebook", "instagram", "linkedin", "tiktok", "google", "youtube", "twitter", "pinterest"]:
                     if val.startswith(key):
                         val = key
                         break
             
             if val not in normalized:
                 normalized.append(val)
+        
+        logger.info(f"✅ Normalized providers: {normalized}")
         return normalized
 
     def get_account_info(self) -> Dict[str, Any]:

@@ -86,7 +86,11 @@ class OrchestratorAgent(BaseAgent):
             for i, result in enumerate(results):
                 key = platform_map.get(i)
                 if key and result:
-                    assets[key] = result
+                    # Extract URL if dict (new format), else use result (legacy string)
+                    if isinstance(result, dict):
+                         assets[key] = result.get('url')
+                    else:
+                         assets[key] = result
             
             # 4. Finalize & Package
             

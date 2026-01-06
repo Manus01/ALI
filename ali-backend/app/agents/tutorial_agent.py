@@ -625,19 +625,32 @@ def fabricate_block(block, topic, video_agent, image_agent, audio_agent, progres
             safe_p = f"Cinematic, abstract, photorealistic, 4k shot of {p}. High quality. No text, no screens."
             logger.info(f"      🎥 VEO Generating: {p}")
             
-            # Use Video Agent with progress callback
-            url = video_agent.generate_video(safe_p, folder="tutorials", progress_callback=progress_callback)
+            # Use Video Agent
+            result = video_agent.generate_video(safe_p, folder="tutorials", progress_callback=progress_callback)
+            
+            url = result
+            gcs_key = None
+            if isinstance(result, dict):
+                url = result.get("url")
+                gcs_key = result.get("gcs_object_key")
             
             # Fallback 1: Try Image if Video fails
-            if not url or not url.startswith("http"):
+            if not url or not str(url).startswith("http"):
                 logger.warning(f"      ⚠️ VEO Failed. Falling back to Image Agent for: {p}")
-                url = image_agent.generate_image(f"Cinematic photorealistic image of {p}", folder="tutorials")
+                result = image_agent.generate_image(f"Cinematic photorealistic image of {p}", folder="tutorials")
+                
+                url = result
+                gcs_key = None
+                if isinstance(result, dict):
+                    url = result.get("url")
+                    gcs_key = result.get("gcs_object_key")
+                
                 if url:
                     logger.info("      ✅ Fallback Image Created")
-                    return { "type": "image", "url": url, "prompt": p, "fallback": True }
+                    return { "type": "image", "url": url, "prompt": p, "fallback": True, "gcs_object_key": gcs_key }
             
             # Fallback 2: Alert (Soft Failure)
-            if not url or not url.startswith("http"):
+            if not url or not str(url).startswith("http"):
                  logger.error(f"      ❌ All Visual Generation Failed on: {p}")
                  return { 
                      "type": "placeholder", 
@@ -648,17 +661,23 @@ def fabricate_block(block, topic, video_agent, image_agent, audio_agent, progres
                  }
             
             logger.info(f"      ✅ Video Created: {url[:30]}...")
-            return { "type": "video", "url": url, "prompt": p }
+            return { "type": "video", "url": url, "prompt": p, "gcs_object_key": gcs_key }
         
         elif block["type"] == "image_diagram":
             p = block.get("visual_prompt", f"Diagram of {topic}")
             
             # Use Image Agent
-            url = image_agent.generate_image(p, folder="tutorials")
+            result = image_agent.generate_image(p, folder="tutorials")
             
-            if url and url.startswith("http"):
+            url = result
+            gcs_key = None
+            if isinstance(result, dict):
+                url = result.get("url")
+                gcs_key = result.get("gcs_object_key")
+            
+            if url and str(url).startswith("http"):
                 logger.info(f"      ✅ Image Created")
-                return { "type": "image", "url": url, "prompt": p }
+                return { "type": "image", "url": url, "prompt": p, "gcs_object_key": gcs_key }
             
             logger.warning("      ⚠️ Image generation failed, recording alert.")
             return {
@@ -675,10 +694,16 @@ def fabricate_block(block, topic, video_agent, image_agent, audio_agent, progres
             logger.info(f"      🎙️ TTS Generating...")
             
             # Use Audio Agent (Persistent)
-            url = audio_agent.generate_audio(s, folder="tutorials")
+            result = audio_agent.generate_audio(s, folder="tutorials")
+            
+            url = result
+            gcs_key = None
+            if isinstance(result, dict):
+                url = result.get("url")
+                gcs_key = result.get("gcs_object_key")
             
             # Alert on Audio Fail
-            if not url or not url.startswith("http"):
+            if not url or not str(url).startswith("http"):
                 logger.error("      ❌ TTS Failed.")
                 return {
                     "type": "placeholder",
@@ -689,7 +714,7 @@ def fabricate_block(block, topic, video_agent, image_agent, audio_agent, progres
                 }
                 
             logger.info(f"      ✅ Audio Created")
-            return { "type": "audio", "url": url, "transcript": s }
+            return { "type": "audio", "url": url, "transcript": s, "gcs_object_key": gcs_key }
         
         else:
             return block 

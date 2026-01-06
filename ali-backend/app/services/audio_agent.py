@@ -43,9 +43,9 @@ class AudioAgent:
         except Exception as e:
             logger.error(f"❌ AudioAgent Client Init Failed: {e}")
 
-    def _upload_bytes(self, data: bytes, folder: str = "general", extension: str = "mp3", content_type: str = "audio/mpeg") -> str:
+    def _upload_bytes(self, data: bytes, folder: str = "general", extension: str = "mp3", content_type: str = "audio/mpeg") -> dict:
         """Uploads raw bytes to GCS and returns a persistent Firebase Download URL."""
-        if not self.storage_client: return ""
+        if not self.storage_client: return {"url": "", "gcs_object_key": ""}
         try:
             bucket = self.storage_client.bucket(BUCKET_NAME)
             # Use folder structure as requested
@@ -68,10 +68,14 @@ class AudioAgent:
             encoded_path = urllib.parse.quote(filename, safe="")
             public_url = f"https://firebasestorage.googleapis.com/v0/b/{BUCKET_NAME}/o/{encoded_path}?alt=media&token={token}"
             
-            return public_url
+            return {
+                "url": public_url,
+                "gcs_object_key": filename,
+                "bucket": BUCKET_NAME
+            }
         except Exception as e:
             logger.error(f"❌ Upload Failed: {e}")
-            return ""
+            return {"url": "", "gcs_object_key": ""}
 
     def generate_audio(self, text: str, folder: str = "general") -> Optional[str]:
         """
@@ -153,6 +157,7 @@ class AudioAgent:
                 logger.warning(f"⚠️ Byte extraction warning: {e}")
 
             if audio_bytes:
+                # Return full dict (URL + Key)
                 return self._upload_bytes(audio_bytes, folder=folder)
 
             logger.error("❌ Audio Generation failed: No bytes returned.")

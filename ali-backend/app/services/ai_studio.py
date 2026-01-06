@@ -1,16 +1,76 @@
 import os
-import time
-import json
 import logging
-import re
-from typing import Optional, Any
+from typing import Optional
 
 from google import genai
-from google.genai import types
 from google.cloud import storage
 
 # --- CONFIGURATION & LOGGING ---
 logger = logging.getLogger("ali_platform.services.ai_studio")
+
+# Stable alias defaults (auto-upgrade without code changes)
+VIDEO_MODEL_ALIAS = os.getenv("VERTEX_VIDEO_MODEL_ALIAS", "veo-3.1-generate-001")
+IMAGE_MODEL_ALIAS = os.getenv("VERTEX_IMAGE_MODEL_ALIAS", "imagen-4.0-generate-001")
+TTS_MODEL_ALIAS = os.getenv("VERTEX_TTS_MODEL_ALIAS", "gemini-1.5-pro")
+BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "ali-platform-prod-73019.firebasestorage.app")
+
+
+def _resolve_project_id(numeric_env_id: Optional[str], standard_env_id: Optional[str]) -> Optional[int]:
+    """Parse project ID, strictly enforcing numeric value."""
+    for candidate in (numeric_env_id, standard_env_id):
+        try:
+            if candidate is not None:
+                return int(candidate)
+        except (ValueError, TypeError):
+            logger.warning(f"⚠️ Non-numeric PROJECT_ID detected: {candidate}")
+    logger.error("❌ GENAI_PROJECT_ID missing or non-numeric. Aborting client init.")
+    return None
+
+
+class CreativeService:
+    """
+    DEPRECATED: This class is maintained for backward compatibility only.
+    
+    For new code, use the specialized agents:
+    - VideoAgent (app/services/video_agent.py)
+    - ImageAgent (app/services/image_agent.py)
+    - AudioAgent (app/services/audio_agent.py)
+    
+    These agents use PERSISTENT Firebase URLs that never expire.
+    """
+    
+    def __init__(self):
+        """Initialize clients for potential legacy usage."""
+        self.storage_client = None
+        self.client = None
+
+        location = os.getenv("AI_STUDIO_LOCATION", "us-central1")
+        numeric_env_id = os.getenv("GENAI_PROJECT_ID", "776425171266")
+        standard_env_id = os.getenv("PROJECT_ID")
+
+        final_project_id = _resolve_project_id(numeric_env_id, standard_env_id)
+
+        try:
+            self.storage_client = storage.Client()
+        except Exception as e:
+            logger.error(f"❌ Storage client initialization failed: {e}")
+
+        if final_project_id is None:
+            logger.warning("⚠️ GenAI Client skipped: No PROJECT_ID found.")
+            return
+
+        try:
+            self.client = genai.Client(
+                vertexai=True,
+                project=str(int(final_project_id)),
+                location=location
+            )
+            logger.info("✅ CreativeService initialized (DEPRECATED - use VideoAgent/ImageAgent/AudioAgent).")
+        except Exception as e:
+            logger.error(f"❌ Vertex AI initialization failed: {e}")
+
+    # All generation methods removed - use specialized agents instead
+    # See: video_agent.py, image_agent.py, audio_agent.py
 
 # Stable alias defaults (auto-upgrade without code changes)
 VIDEO_MODEL_ALIAS = os.getenv("VERTEX_VIDEO_MODEL_ALIAS", "veo-3.1-generate-001")

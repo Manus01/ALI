@@ -5,10 +5,29 @@ import os
 import json
 import logging
 import traceback
-from typing import Callable
+from typing import Callable, List, Dict
+import httpx # For async media health checks
 from firebase_admin import firestore
 
 logger = logging.getLogger("ali_platform.routers.tutorials")
+
+# Admin Configuration - comma-separated list of admin emails
+ADMIN_EMAILS = [
+    email.strip().lower() 
+    for email in os.getenv("ADMIN_EMAILS", "").split(",") 
+    if email.strip()
+]
+
+def _require_admin(user: dict, action: str):
+    """Verify user has admin privileges via is_admin flag or email allowlist."""
+    user_email = user.get('email', '').lower()
+    is_admin = user.get('is_admin', False)
+    
+    if not is_admin and user_email not in ADMIN_EMAILS:
+        logger.warning(f"🚫 Unauthorized admin action '{action}' by {user_email}")
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    logger.info(f"✅ Admin action '{action}' authorized for {user_email}")
 
 # NOTE: We intentionally delay heavy imports (Job Runner, LLM Factory) to runtime
 # inside each endpoint. This prevents startup crashes that would stop the tutorials
@@ -338,6 +357,77 @@ def get_tutorial_details(tutorial_id: str, user: dict = Depends(verify_token)):
         raise HTTPException(status_code=500, detail=str(e))
 
 # --- 3. GRANULAR AUTO-LEVELING ---
+
+@router.get("/tutorials/{tutorial_id}/health")
+async def check_tutorial_media_health(tutorial_id: str, user: dict = Depends(verify_token)):
+    """
+    Validates all media URLs in a tutorial are accessible.
+    Returns health status for each media block.
+    """
+    try:
+        user_id = user['uid']
+        _require_db("check_tutorial_media_health")()
+        
+        # Fetch tutorial (try private first, then global)
+        doc_ref = db.collection('users').document(user_id).collection('tutorials').document(tutorial_id)
+        doc = doc_ref.get()
+        
+        if not doc.exists:
+            doc = db.collection('tutorials').document(tutorial_id).get()
+        
+        if not doc.exists:
+            raise HTTPException(status_code=404, detail="Tutorial not found")
+        
+        tutorial_data = doc.to_dict()
+        
+        # Collect all media URLs
+        media_checks: List[Dict] = []
+        
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            for sec_idx, section in enumerate(tutorial_data.get('sections', [])):
+                for block_idx, block in enumerate(section.get('blocks', [])):
+                    url = block.get('url')
+                    if not url:
+                        continue
+                    
+                    block_type = block.get('type', 'unknown')
+                    
+                    try:
+                        # HEAD request to check accessibility without downloading
+                        response = await client.head(url, follow_redirects=True)
+                        status = "healthy" if response.status_code == 200 else "error"
+                        status_code = response.status_code
+                    except Exception as e:
+                        status = "unreachable"
+                        status_code = None
+                    
+                    media_checks.append({
+                        "section_index": sec_idx,
+                        "block_index": block_idx,
+                        "type": block_type,
+                        "status": status,
+                        "status_code": status_code,
+                        "url_preview": url[:80] + "..." if len(url) > 80 else url
+                    })
+        
+        # Summary
+        total = len(media_checks)
+        healthy = sum(1 for m in media_checks if m['status'] == 'healthy')
+        
+        return {
+            "tutorial_id": tutorial_id,
+            "overall_status": "healthy" if healthy == total else "degraded",
+            "summary": f"{healthy}/{total} media assets accessible",
+            "details": media_checks
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Media Health Check Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# --- 3. GRANULAR AUTO-LEVELING ---
 @router.post("/tutorials/{tutorial_id}/complete")
 def mark_complete(tutorial_id: str, payload: CompletionRequest, user: dict = Depends(verify_token)):
     """
@@ -445,10 +535,13 @@ def delete_user_tutorial(tutorial_id: str, user: dict = Depends(verify_token)):
 
 # --- ADMIN DELETION LOGIC ---
 
-def _delete_storage_assets(tutorial_data: dict):
+def _delete_storage_assets(tutorial_data: dict) -> dict:
     """
     Parses tutorial structure and deletes all referenced assets from Cloud Storage.
+    Returns a summary of deletion results.
     """
+    results = {"deleted": 0, "failed": 0, "errors": []}
+    
     try:
         from google.cloud import storage
         import urllib.parse
@@ -457,44 +550,65 @@ def _delete_storage_assets(tutorial_data: dict):
         # Fallback bucket name if not found in URL (though URL usually has it)
         default_bucket = os.getenv("GCS_BUCKET_NAME", "ali-platform-prod-73019.firebasestorage.app")
         
-        # Collect URLs
         urls_to_delete = []
         
         for section in tutorial_data.get('sections', []):
             for block in section.get('blocks', []):
                 if block.get('url'):
                     urls_to_delete.append(block['url'])
+                # Also check for gcs_object_key (new field for auditability)
+                if block.get('gcs_object_key'):
+                    # Format as scheme to distinguish from HTTP URLs
+                    urls_to_delete.append(f"gcs://{block.get('bucket', default_bucket)}/{block['gcs_object_key']}")
         
-        deleted_count = 0
         for url in urls_to_delete:
             try:
-                # Parse Firebase URL
-                # Example: https://firebasestorage.googleapis.com/v0/b/{bucket}/o/{path}?alt=media...
+                blob = None
+                
+                # Case A: Firebase Persistent URL
                 if "firebasestorage.googleapis.com" in url:
                     # Extract path
-                    # 1. Split by '/o/'
+                    # Example: https://firebasestorage.googleapis.com/v0/b/{bucket}/o/{path}?alt=media...
                     parts = url.split("/o/")
                     if len(parts) < 2: continue
                     
                     bucket_part = parts[0].split("/b/")[-1]
                     path_part = parts[1].split("?")[0]
-                    
-                    # 2. Decode URL path (e.g., tutorials%2Fvideo.mp4 -> tutorials/video.mp4)
+                    # Decode URL path (e.g., tutorials%2Fvideo.mp4 -> tutorials/video.mp4)
                     blob_name = urllib.parse.unquote(path_part)
                     
                     bucket = storage_client.bucket(bucket_part)
                     blob = bucket.blob(blob_name)
-                    blob.delete()
-                    deleted_count += 1
-                    logger.info(f"   🗑️ Deleted Asset: {blob_name}")
-            except Exception as e:
-                logger.warning(f"   ⚠️ Failed to delete asset {url}: {e}")
                 
-        logger.info(f"✅ Cleanup: Removed {deleted_count} assets.")
+                # Case B: Direct GCS Reference
+                elif url.startswith("gcs://"):
+                    parts = url.split("gcs://")[1].split("/")
+                    bucket_name = parts[0]
+                    blob_name = "/".join(parts[1:])
+                    bucket = storage_client.bucket(bucket_name)
+                    blob = bucket.blob(blob_name)
+
+                if blob:
+                    if blob.exists():
+                        blob.delete()
+                        results["deleted"] += 1
+                        logger.info(f"   🗑️ Deleted Asset: {blob.name}")
+                    else:
+                        logger.warning(f"   ⚠️ Asset not found (already deleted?): {blob.name}")
+                        
+            except Exception as e:
+                results["failed"] += 1
+                results["errors"].append({"url": url[:50], "error": str(e)})
+                logger.warning(f"   ⚠️ Failed to delete asset {url[:50]}: {e}")
+                
+        logger.info(f"✅ Cleanup Complete: {results['deleted']} deleted, {results['failed']} failed")
+        return results
 
     except Exception as e:
         logger.error(f"❌ Asset Deletion Logic Failed: {e}")
         # Don't raise, we want to continue deleting the metadata docs
+        results["errors"].append({"url": "Global Logic", "error": str(e)})
+        return results
 
 @router.delete("/admin/tutorials/{tutorial_id}")
 def admin_delete_tutorial(tutorial_id: str, confirm: bool = False, user: dict = Depends(verify_token)):
@@ -502,8 +616,8 @@ def admin_delete_tutorial(tutorial_id: str, confirm: bool = False, user: dict = 
     ADMIN: Completely deletes a tutorial and ALL generated assets.
     """
     try:
-        # TODO: Add specific Admin Role check here
-        # if not user.get('is_admin'): raise HTTPException(403)
+        # Admin role verification
+        _require_admin(user, f"delete_tutorial:{tutorial_id}")
         
         if not confirm:
              raise HTTPException(status_code=400, detail="Must set confirm=true for permanent deletion.")
@@ -557,6 +671,9 @@ def admin_decide_deletion(request_id: str, decision: str, user: dict = Depends(v
     decision: 'delete' | 'keep'
     """
     try:
+        # Admin role verification
+        _require_admin(user, f"decide_deletion:{request_id}")
+        
         _require_db("admin_decide_deletion")()
         
         task_ref = db.collection("admin_tasks").document(request_id)

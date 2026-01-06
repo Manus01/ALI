@@ -49,20 +49,14 @@ class VideoAgent:
         except Exception as e:
             logger.error(f"❌ VideoAgent Client Init Failed: {e}")
 
-    def _upload_bytes(self, data: bytes, folder: str = "general", extension: str = "mp4", content_type: str = "video/mp4") -> str:
+    def _upload_bytes(self, data: bytes, folder: str = "general", extension: str = "mp4", content_type: str = "video/mp4") -> dict:
         """
-        Uploads raw bytes to GCS and returns a persistent Firebase Download URL.
+        Uploads raw bytes to GCS and returns a dict with persistent Firebase Download URL.
         
-        Args:
-            data: Raw binary data
-            folder: Target folder path in bucket
-            extension: File extension (default: mp4)
-            content_type: MIME type of the file
-            
         Returns:
-            str: Public Firebase URL or empty string on failure
+            dict: {"url": str, "gcs_object_key": str, "bucket": str} or empty strings on failure
         """
-        if not self.storage_client: return ""
+        if not self.storage_client: return {"url": "", "gcs_object_key": ""}
         try:
             bucket = self.storage_client.bucket(BUCKET_NAME)
             # Use folder structure as requested
@@ -76,36 +70,69 @@ class VideoAgent:
             
             # Upload with metadata
             blob.upload_from_string(data, content_type=content_type)
-            # Must patch metadata after upload to ensure it persists if not set during upload (though client usually handles it)
-            # Explicitly setting metadata on the blob object and patching is safer.
+            # Must patch metadata after upload to ensure it persists if not set during upload
             blob.metadata = metadata
             blob.patch()
             
             logger.info(f"   ✅ Video Uploaded (Persistent): {filename}")
             
             # Construct Persistent URL
-            # Format: https://firebasestorage.googleapis.com/v0/b/{bucket}/o/{path}?alt=media&token={token}
             encoded_path = urllib.parse.quote(filename, safe="")
             public_url = f"https://firebasestorage.googleapis.com/v0/b/{BUCKET_NAME}/o/{encoded_path}?alt=media&token={token}"
             
-            return public_url
+            return {
+                "url": public_url,
+                "gcs_object_key": filename,
+                "bucket": BUCKET_NAME
+            }
         except Exception as e:
             logger.error(f"❌ Upload Failed: {e}")
-            return ""
+            return {"url": "", "gcs_object_key": ""}
 
-    def _get_signed_url(self, gcs_uri: str) -> str:
-        """Generates a signed URL from a gs:// URI. Kept as fallback/helper."""
-        if not self.storage_client: return gcs_uri
+    def _convert_gcs_uri_to_persistent_url(self, gcs_uri: str) -> dict:
+        """
+        Converts a gs:// URI to a persistent Firebase URL by copying the blob
+        with a download token. This ensures URLs never expire.
+        
+        Returns:
+            dict: {"url": str, "gcs_object_key": str} or fallback
+        """
+        if not self.storage_client or not gcs_uri: 
+            return {"url": gcs_uri, "gcs_object_key": ""}
+        
         try:
-            if gcs_uri.startswith("gs://"):
-                parts = gcs_uri.split("/")
-                bucket_name = parts[2]
-                blob_name = "/".join(parts[3:])
-                blob = self.storage_client.bucket(bucket_name).blob(blob_name)
-                return blob.generate_signed_url(version="v4", expiration=3600, method="GET")
-        except Exception:
-            pass
-        return gcs_uri
+            if not gcs_uri.startswith("gs://"):
+                return {"url": gcs_uri, "gcs_object_key": ""}
+                
+            parts = gcs_uri.split("/")
+            source_bucket_name = parts[2]
+            source_blob_name = "/".join(parts[3:])
+            
+            # 1. Access Source Blob
+            source_bucket = self.storage_client.bucket(source_bucket_name)
+            source_blob = source_bucket.blob(source_blob_name)
+            
+            # 2. Download Content (In-memory is fine for generated clips < 50MB)
+            logger.info("   ⬇️ Downloading Veo output to re-upload with persistent token...")
+            content = source_blob.download_as_bytes()
+            
+            # 3. Re-upload as Persistent Asset
+            return self._upload_bytes(content, folder="tutorials", extension="mp4", content_type="video/mp4")
+            
+        except Exception as e:
+            logger.error(f"❌ Persistent Conversion Failed: {e}")
+            # Fallback: Signed URL (Expire warning)
+            try:
+                if gcs_uri.startswith("gs://"):
+                    parts = gcs_uri.split("/")
+                    bucket_name = parts[2]
+                    blob_name = "/".join(parts[3:])
+                    blob = self.storage_client.bucket(bucket_name).blob(blob_name)
+                    signed = blob.generate_signed_url(version="v4", expiration=3600, method="GET")
+                    return {"url": signed, "gcs_object_key": blob_name, "warning": "signed_url_expiry"}
+            except:
+                pass
+            return {"url": gcs_uri, "gcs_object_key": ""}
 
     # --- HELPER: Image Object Creation ---
     def _prepare_image_part(self, image_input: str) -> Optional[types.Part]:
@@ -274,11 +301,13 @@ class VideoAgent:
             # Action
             if video_bytes:
                 logger.info("RETRIEVED BYTES")
+                # Return full dict result (URL + Key)
                 return self._upload_bytes(video_bytes, folder=folder)
             
             if video_uri:
                 logger.info(f"RETRIEVED URI: {video_uri}")
-                return self._get_signed_url(video_uri)
+                # Return full dict result (URL + Key)
+                return self._convert_gcs_uri_to_persistent_url(video_uri)
 
             logger.error("❌ Failed to extract Video Bytes or URI.")
             return None
