@@ -36,6 +36,7 @@ export default function AdminPage() {
     const [availableBrands, setAvailableBrands] = useState([]);
     const [brandSearch, setBrandSearch] = useState("");
     const [isBrandsLoading, setIsBrandsLoading] = useState(false);
+    const [connections, setConnections] = useState([]);
 
     useEffect(() => {
         if (currentUser?.email === "manoliszografos@gmail.com") {
@@ -46,6 +47,7 @@ export default function AdminPage() {
             fetchTutorials();
             fetchAiReports();
             fetchPendingTasks();
+            fetchConnections();
         }
     }, [currentUser]);
 
@@ -97,6 +99,13 @@ export default function AdminPage() {
             const res = await api.get('/api/admin/integration-alerts');
             setIntegrationAlerts(res.data.alerts || []);
         } catch (err) { console.error("Failed to fetch integration alerts", err); }
+    };
+
+    const fetchConnections = async () => {
+        try {
+            const res = await api.get('/api/admin/connections');
+            setConnections(res.data.connections || []);
+        } catch (err) { console.error("Failed to fetch connections", err); }
     };
 
     const fetchResearchUsers = async () => {
@@ -497,6 +506,39 @@ export default function AdminPage() {
                     {verifiedChannels.length > 0 && (
                         <div className="pt-6 border-t"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Live Channels</p>
                             <div className="flex gap-3">{verifiedChannels.map(ch => <div key={ch} className="p-3 bg-slate-50 rounded-xl text-xl shadow-inner">{CHANNEL_ICONS[ch] || <FaSync className="animate-spin text-slate-300" />}</div>)}</div></div>
+                    )}
+
+                    {/* ESTABLISHED CONNECTIONS */}
+                    {connections.length > 0 && (
+                        <div className="pt-6 border-t">
+                            <div className="flex items-center justify-between mb-3">
+                                <p className="text-[10px] font-black text-green-600 uppercase tracking-widest">✓ Established Connections</p>
+                                <button onClick={fetchConnections} className="text-[10px] text-slate-400 hover:text-slate-600"><FaSync /></button>
+                            </div>
+                            <div className="space-y-2 max-h-48 overflow-y-auto">
+                                {connections.map(c => (
+                                    <div key={c.uid} className="p-3 bg-green-50 rounded-xl border border-green-100">
+                                        <div className="flex justify-between items-start">
+                                            <div>
+                                                <p className="text-xs font-bold text-slate-800">{c.name || 'Anonymous'}</p>
+                                                <p className="text-[10px] text-slate-400">{c.email}</p>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="text-[10px] font-mono text-green-700">ID: {c.blog_id}</p>
+                                                {c.linked_at && <p className="text-[9px] text-slate-400">{new Date(c.linked_at).toLocaleDateString()}</p>}
+                                            </div>
+                                        </div>
+                                        {c.connected_providers?.length > 0 && (
+                                            <div className="flex gap-1 mt-2">
+                                                {c.connected_providers.map(p => (
+                                                    <span key={p} className="p-1 bg-white rounded text-xs">{CHANNEL_ICONS[p] || p}</span>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
                     )}
                 </div>
 

@@ -394,3 +394,39 @@ def delete_admin_task(task_id: str, admin: dict = Depends(verify_admin)):
     except Exception as e:
         logger.error(f"❌ Delete Task Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/connections")
+def get_established_connections(admin: dict = Depends(verify_admin)):
+    """
+    Fetches all users with established Metricool connections.
+    Returns: List of connected users with their linked brand info.
+    """
+    try:
+        users_ref = db.collection("users").limit(200)
+        users = users_ref.stream()
+        
+        connections = []
+        for user_doc in users:
+            uid = user_doc.id
+            user_data = user_doc.to_dict()
+            
+            # Check for Metricool integration
+            metricool_doc = db.collection("users").document(uid).collection("user_integrations").document("metricool").get()
+            if metricool_doc.exists:
+                m_data = metricool_doc.to_dict()
+                blog_id = m_data.get("metricool_blog_id")
+                if blog_id and m_data.get("status") == "active":
+                    connections.append({
+                        "uid": uid,
+                        "email": user_data.get("email", "Unknown"),
+                        "name": user_data.get("name", "Anonymous"),
+                        "blog_id": blog_id,
+                        "linked_at": m_data.get("linked_at"),
+                        "connected_providers": m_data.get("connected_providers", [])
+                    })
+        
+        return {"connections": connections}
+    except Exception as e:
+        logger.error(f"❌ Fetch Connections Error: {e}")
+        return {"connections": [], "error": str(e)}
+
