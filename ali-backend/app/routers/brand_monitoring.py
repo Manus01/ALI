@@ -80,12 +80,15 @@ async def submit_feedback(
 @router.get("/mentions")
 async def get_brand_mentions(
     brand_name: Optional[str] = None,
+    topic: Optional[str] = None,  # NEW: Specific topic/keyword to search for
     max_results: int = 10,
     user: dict = Depends(verify_token)
 ):
     """
     Fetch and analyze brand mentions from news sources.
     Uses brand name from user profile if not provided.
+    If 'topic' is provided, it searches for that specific topic instead of the brand name,
+    but still applies global relevance filters.
     """
     user_id = user['uid']
     
@@ -114,6 +117,11 @@ async def get_brand_mentions(
                 "mentions": []
             }
         
+        # Determine the primary search query
+        # If 'topic' is set (e.g. a specific keyword tab), we use it as the main search term.
+        # Otherwise we use the brand_name.
+        search_query = topic if topic else brand_name
+        
         # Fetch stored settings for additional keywords and filters
         keywords = []
         language = "en"
@@ -125,6 +133,12 @@ async def get_brand_mentions(
             keywords = settings.get('keywords', [])
             language = settings.get('language', 'en')
             country = settings.get('country', None)
+
+        # If we are searching for a specific topic, we don't need to append the other keywords to the query,
+        # as that would muddy the specific tab's results.
+        # However, we might want to keep them for context or relevance filtering if needed.
+        # For now, if topic is present, we pass EMPTY keywords to NewsClient so it focuses on the topic.
+        search_keywords = [] if topic else keywords
 
         # Fetch negative feedback (irrelevant articles) to filter out similar ones
         negative_examples = []
@@ -141,8 +155,8 @@ async def get_brand_mentions(
         # Fetch news mentions
         news_client = NewsClient()
         news_coroutine = news_client.search_brand_mentions(
-            brand_name=brand_name,
-            keywords=keywords,
+            brand_name=search_query,  # Use search_query (topic or brand_name)
+            keywords=search_keywords, # Use adjusted keywords list
             language=language,
             country=country,
             max_results=max_results
@@ -152,8 +166,8 @@ async def get_brand_mentions(
         # We can perform these in parallel
         web_client = WebSearchClient()
         web_coroutine = web_client.search_web_mentions(
-            brand_name=brand_name,
-            keywords=keywords,
+            brand_name=search_query,
+            keywords=search_keywords,
             max_results=max_results
         )
         
@@ -182,12 +196,13 @@ async def get_brand_mentions(
                 unique_articles.append(a)
         
         # === AI RELEVANCE FILTERING (Entity Disambiguation) ===
-        # Filter out articles that mention brand name but are about different entities
+        # Filter out articles that mention brand name/topic but are about different entities
         filter_agent = RelevanceFilterAgent()
         relevant_articles, filter_stats = await filter_agent.filter_articles(
             brand_profile=brand_profile,
             articles=unique_articles,
-            feedback_patterns=negative_examples  # Use negative feedback as disambiguation patterns
+            feedback_patterns=negative_examples,  # Use negative feedback as disambiguation patterns
+            monitoring_topic=search_query        # NEW: Specifically filter for the topic we searched for
         )
         
         logger.info(f"📊 Relevance filter: {filter_stats['relevant']}/{filter_stats['total']} articles kept ({filter_stats['filter_rate']}% filtered)")
@@ -195,7 +210,7 @@ async def get_brand_mentions(
         # Analyze sentiment only on relevant (filtered) articles
         monitoring_agent = BrandMonitoringAgent()
         analyzed_mentions = await monitoring_agent.analyze_mentions(
-            brand_name=brand_name, 
+            brand_name=search_query,   # Analyze relevance to the specific topic if set
             articles=relevant_articles,
             negative_examples=[]  # Already filtered, no need to pass again
         )

@@ -28,28 +28,20 @@ class RelevanceFilterAgent(BaseAgent):
         self,
         brand_profile: Dict[str, Any],
         articles: List[Dict[str, Any]],
-        feedback_patterns: Optional[List[Dict[str, str]]] = None
+        feedback_patterns: Optional[List[Dict[str, str]]] = None,
+        monitoring_topic: Optional[str] = None
     ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
         """
-        Filter articles to keep only those that are about the user's specific brand.
+        Filter articles to keep only those that are about the user's specific brand OR monitored topic.
         
         Args:
-            brand_profile: Rich brand context including:
-                - brand_name: Primary name
-                - industry: Business sector (e.g., "Digital Marketing Agency")
-                - offerings: Products/services list
-                - description: Business description
-                - location: Geographic context
-                - website: Official domain
-            articles: List of article dictionaries from news/web clients
-            feedback_patterns: List of user-flagged false positives with patterns
-            
-        Returns:
-            Tuple of:
-            - List of relevant articles with added filter metadata
-            - Filter statistics dict
+            brand_profile: Rich brand context (used if monitoring_topic is None or matches brand)
+            articles: List of article dictionaries
+            feedback_patterns: User-flagged false positives
+            monitoring_topic: Specific topic/keyword being monitored (overrides brand_name context)
         """
-        self.log_task(f"Filtering {len(articles)} articles for brand: {brand_profile.get('brand_name', 'Unknown')}")
+        target_name = monitoring_topic if monitoring_topic else brand_profile.get('brand_name', 'Unknown')
+        self.log_task(f"Filtering {len(articles)} articles for target: {target_name}")
         
         if not articles:
             return [], {"total": 0, "relevant": 0, "filtered_out": 0}
@@ -57,11 +49,11 @@ class RelevanceFilterAgent(BaseAgent):
         relevant_articles = []
         filtered_count = 0
         
-        # Process articles in batches for efficiency
+        # Process articles in batches
         batch_size = 8
         for i in range(0, len(articles), batch_size):
             batch = articles[i:i + batch_size]
-            batch_results = await self._filter_batch(brand_profile, batch, feedback_patterns)
+            batch_results = await self._filter_batch(brand_profile, batch, feedback_patterns, monitoring_topic)
             
             for article, filter_result in zip(batch, batch_results):
                 article_with_filter = {
@@ -84,26 +76,44 @@ class RelevanceFilterAgent(BaseAgent):
             "filter_rate": round(filtered_count / len(articles) * 100, 1) if articles else 0
         }
         
-        self.log_task(f"Filtering complete. Kept {filter_stats['relevant']}/{filter_stats['total']} articles ({filter_stats['filter_rate']}% filtered)")
         return relevant_articles, filter_stats
     
     async def _filter_batch(
         self,
         brand_profile: Dict[str, Any],
         articles: List[Dict[str, Any]],
-        feedback_patterns: Optional[List[Dict[str, str]]] = None
+        feedback_patterns: Optional[List[Dict[str, str]]] = None,
+        monitoring_topic: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """Filter a batch of articles using LLM disambiguation."""
         
-        # Build rich brand context
+        # Determine context based on whether we are monitoring the brand or a generic topic
         brand_name = brand_profile.get('brand_name', 'Unknown')
-        industry = brand_profile.get('industry', brand_profile.get('offerings', ['Unknown'])[0] if brand_profile.get('offerings') else 'Unknown')
-        offerings = brand_profile.get('offerings', [])
-        description = brand_profile.get('description', '')
-        location = brand_profile.get('location', brand_profile.get('cultural_nuance', ''))
-        website = brand_profile.get('website', '')
-        tone = brand_profile.get('tone', '')
+        is_generic_topic = monitoring_topic and monitoring_topic != brand_name
         
+        if is_generic_topic:
+            # We are monitoring a topic/competitor, so strict brand profile details (like my website) 
+            # might NOT apply to the relevant articles.
+            target_name = monitoring_topic
+            industry = brand_profile.get('industry', 'Business') # Keep industry as loose context
+            context_desc = f"Topic/Keyword being monitored: {monitoring_topic}"
+        else:
+            # We are monitoring the user's specific brand
+            target_name = brand_name
+            industry = brand_profile.get('industry', brand_profile.get('offerings', ['Unknown'])[0] if brand_profile.get('offerings') else 'Unknown')
+            offerings = brand_profile.get('offerings', [])
+            description = brand_profile.get('description', '')
+            location = brand_profile.get('location', brand_profile.get('cultural_nuance', ''))
+            website = brand_profile.get('website', '')
+            tone = brand_profile.get('tone', '')
+            
+            context_desc = f"""• Name: {target_name}
+• Industry/Sector: {industry}
+• Products/Services: {', '.join(offerings[:5]) if offerings else 'Not specified'}
+• Description: {description[:200] if description else 'Not specified'}
+• Location/Markets: {location if location else 'Not specified'}
+• Website: {website if website else 'Not specified'}"""
+
         # Build articles text for analysis
         articles_text = []
         for idx, article in enumerate(articles):
@@ -120,30 +130,22 @@ URL: {article.get('url', 'N/A')}
         if feedback_patterns:
             examples_list = "\n".join([
                 f"- \"{ex.get('title', '')[:60]}...\" → Actually about: {ex.get('detected_entity', ex.get('snippet', '')[:40])}"
-                for ex in feedback_patterns[:10]  # Limit to 10 examples
+                for ex in feedback_patterns[:10]
             ])
             feedback_context = f"""
-KNOWN FALSE POSITIVES (user has flagged these as NOT about this brand):
+KNOWN FALSE POSITIVES (user flagged as irrelevant):
 {examples_list}
-
-If an article is similar to these false positives or clearly about a DIFFERENT entity 
-with the same/similar name, mark it as NOT relevant.
 """
 
-        prompt = f"""You are a brand disambiguation expert. Your ONLY task is to determine if news articles 
-are about THIS SPECIFIC BRAND or a DIFFERENT entity with the same/similar name.
-
-═══════════════════════════════════════════════════════════════════════════════
-BRAND IDENTITY TO MATCH:
-═══════════════════════════════════════════════════════════════════════════════
-• Name: {brand_name}
-• Industry/Sector: {industry}
-• Products/Services: {', '.join(offerings[:5]) if offerings else 'Not specified'}
-• Description: {description[:200] if description else 'Not specified'}
-• Location/Markets: {location if location else 'Not specified'}
-• Website: {website if website else 'Not specified'}
-• Brand Tone: {tone if tone else 'Not specified'}
+        prompt = f"""You are a relevance filter expert.
+Target ID: {target_name}
+Context: {context_desc}
 {feedback_context}
+
+Task: Identify articles RELEVANT to "{target_name}".
+1. IGNORE articles clearly about a completely different entity with a similar name.
+2. KEEP articles that discuss "{target_name}" or are relevant to this topic.
+
 ═══════════════════════════════════════════════════════════════════════════════
 DISAMBIGUATION GUIDELINES:
 ═══════════════════════════════════════════════════════════════════════════════
