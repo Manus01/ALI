@@ -22,12 +22,11 @@ try:
 except Exception as e:
     logger.error(f"⚠️ Vertex AI Init Failed: {e}. AI features may be unavailable.")
 
-# 🏛️ Stable Aliases (Auto-healing)
-# 🏛️ Stable Aliases (Auto-healing)
+# 🏛️ Stable Aliases (Auto-healing) - Use versioned model names
 MODEL_ALIASES = {
-    "complex": os.getenv("VERTEX_MODEL_ALIAS_COMPLEX", "gemini-1.5-pro"),
-    "fast": os.getenv("VERTEX_MODEL_ALIAS_FAST", "gemini-1.5-pro"),
-    "lite": os.getenv("VERTEX_MODEL_ALIAS_LITE", "gemini-1.5-pro"),
+    "complex": os.getenv("VERTEX_MODEL_ALIAS_COMPLEX", "gemini-1.5-pro-002"),
+    "fast": os.getenv("VERTEX_MODEL_ALIAS_FAST", "gemini-2.0-flash-001"),
+    "lite": os.getenv("VERTEX_MODEL_ALIAS_LITE", "gemini-2.0-flash-001"),
 }
 
 def get_model(intent: str = "fast") -> GenerativeModel:
@@ -43,8 +42,8 @@ def get_model(intent: str = "fast") -> GenerativeModel:
     except exceptions.NotFound:
         # 🛡️ Emergency Fallback: If for some reason the alias is unavailable,
         # we try the base 'pro' to ensure the app never crashes.
-        logger.warning(f"⚠️ Alias {model_name} not found. Falling back to base 1.5-pro.")
-        return GenerativeModel("gemini-1.5-pro")
+        logger.warning(f"⚠️ Alias {model_name} not found. Falling back to gemini-1.5-pro-002.")
+        return GenerativeModel("gemini-1.5-pro-002")
 
 # Helper to auto-detect complexity based on prompt length or keywords
 def get_model_smart(prompt: str) -> GenerativeModel:

@@ -65,40 +65,53 @@ class MetricoolClient:
     def get_brand_status(self, blog_id: str) -> Dict[str, Any]:
         """
         Checks if a brand (blog) exists for the authenticated agency user.
-        Uses the 'simpleProfiles' endpoint to list all brands.
+        Tries '/admin/profiles' first for full data (including socialNetworks),
+        then falls back to '/admin/simpleProfiles'.
         """
-        # Endpoint found via search: lists all profiles for the user
-        url = f"{BASE_URL}/admin/simpleProfiles"
         params = self._auth_params()
         
-        try:
-            res = requests.get(url, headers=self.headers, params=params)
-            res.raise_for_status()
-            data = res.json()
-            
-            # Identify the list of blogs. The endpoint usually returns a list directly, 
-            # but we handle a dict wrapper just in case.
-            blogs = []
-            if isinstance(data, list):
-                blogs = data
-            elif isinstance(data, dict):
-                # Try common keys if wrapped
-                blogs = data.get('blogs') or data.get('data') or data.get('profiles') or []
-            
-            found_blog = next((b for b in blogs if str(b.get('id')) == str(blog_id) or str(b.get('blogId')) == str(blog_id)), None)
-            
-            if not found_blog:
-                # If using simpleProfiles, it might use 'blogId' instead of 'id'. 
-                # Attempt to debug or just raise.
-                # Use a specific message to help debugging if it persists.
-                logger.warning(f"Available blogs: {[b.get('id', b.get('blogId')) for b in blogs]}")
-                raise ValueError(f"Blog ID {blog_id} not found for this Metricool User.")
+        # Try the full profiles endpoint first (has socialNetworks data)
+        endpoints_to_try = [
+            f"{BASE_URL}/admin/profiles",
+            f"{BASE_URL}/admin/simpleProfiles"
+        ]
+        
+        for url in endpoints_to_try:
+            try:
+                res = requests.get(url, headers=self.headers, params=params, timeout=10)
+                res.raise_for_status()
+                data = res.json()
                 
-            return found_blog
-
-        except requests.exceptions.RequestException as e:
-            logger.error(f"❌ Metricool Check Failed: {e}")
-            raise ValueError(f"Could not verify Brand ID {blog_id}: {e}")
+                # Parse the blogs list
+                blogs = []
+                if isinstance(data, list):
+                    blogs = data
+                elif isinstance(data, dict):
+                    blogs = data.get('blogs') or data.get('data') or data.get('profiles') or []
+                
+                found_blog = next((b for b in blogs if str(b.get('id')) == str(blog_id) or str(b.get('blogId')) == str(blog_id)), None)
+                
+                if found_blog:
+                    # DEBUG: Log what we're getting from Metricool
+                    logger.info(f"✅ Found blog {blog_id} via {url}. Keys: {list(found_blog.keys())}")
+                    if 'socialNetworks' in found_blog:
+                        logger.info(f"📱 socialNetworks found: {found_blog.get('socialNetworks')}")
+                    elif 'providers' in found_blog:
+                        logger.info(f"📱 providers found: {found_blog.get('providers')}")
+                    else:
+                        logger.warning(f"⚠️ No socialNetworks or providers in blog response. Full response: {found_blog}")
+                    return found_blog
+                    
+            except requests.exceptions.RequestException as e:
+                logger.warning(f"⚠️ {url} failed: {e}")
+                continue
+            except Exception as e:
+                logger.warning(f"⚠️ Error parsing {url}: {e}")
+                continue
+        
+        # No blog found in any endpoint
+        logger.warning(f"❌ Blog ID {blog_id} not found in any Metricool endpoint")
+        raise ValueError(f"Blog ID {blog_id} not found for this Metricool User.")
 
     def _extract_connected_providers(self, blog: Dict[str, Any]) -> List[str]:
         """
