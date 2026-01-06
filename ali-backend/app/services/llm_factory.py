@@ -22,10 +22,11 @@ try:
 except Exception as e:
     logger.error(f"⚠️ Vertex AI Init Failed: {e}. AI features may be unavailable.")
 
-# 🏛️ Stable Aliases (Auto-healing) - Use versioned model names
+# 🏛️ Stable Aliases (Auto-healing) - Use current model versions
+# Updated 2026-01-07: Gemini 1.5 Pro deprecated, using Gemini 2.5 family
 MODEL_ALIASES = {
-    "complex": os.getenv("VERTEX_MODEL_ALIAS_COMPLEX", "gemini-1.5-pro-002"),
-    "fast": os.getenv("VERTEX_MODEL_ALIAS_FAST", "gemini-2.0-flash-001"),
+    "complex": os.getenv("VERTEX_MODEL_ALIAS_COMPLEX", "gemini-2.5-pro"),
+    "fast": os.getenv("VERTEX_MODEL_ALIAS_FAST", "gemini-2.5-flash"),
     "lite": os.getenv("VERTEX_MODEL_ALIAS_LITE", "gemini-2.0-flash-001"),
 }
 
@@ -40,10 +41,9 @@ def get_model(intent: str = "fast") -> GenerativeModel:
         # Initial attempt with the stable alias
         return GenerativeModel(model_name)
     except exceptions.NotFound:
-        # 🛡️ Emergency Fallback: If for some reason the alias is unavailable,
-        # we try the base 'pro' to ensure the app never crashes.
-        logger.warning(f"⚠️ Alias {model_name} not found. Falling back to gemini-1.5-pro-002.")
-        return GenerativeModel("gemini-1.5-pro-002")
+        # 🛡️ Emergency Fallback: Try Gemini 2.5 Flash (most widely available)
+        logger.warning(f"⚠️ Alias {model_name} not found. Falling back to gemini-2.5-flash.")
+        return GenerativeModel("gemini-2.5-flash")
 
 # Helper to auto-detect complexity based on prompt length or keywords
 def get_model_smart(prompt: str) -> GenerativeModel:
