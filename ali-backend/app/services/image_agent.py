@@ -150,11 +150,12 @@ class ImageAgent:
                  except Exception as ref_e:
                      logger.warning(f"⚠️ Failed to configure Reference Image: {ref_e}. Proceeding with text only.")
 
-             # 4. Generate with Imagen 4.0 config
+             # 4. Generate with Imagen 4.0 config - optimized for speed
              job_config = types.GenerateImagesConfig(
                  number_of_images=1,
                  aspect_ratio="16:9",
-                 output_mime_type="image/png"
+                 output_mime_type="image/jpeg",  # JPEG is faster and smaller than PNG
+                 output_compression_quality=80   # Good quality, faster processing
              )
              
              # Inject reference images if valid
@@ -182,8 +183,8 @@ class ImageAgent:
                     # Fallback: try direct bytes attribute
                     img_bytes = getattr(img, 'image_bytes', None)
                 if img_bytes:
-                    # Return full dict (URL + Key)
-                    return self._upload_bytes(img_bytes, folder=folder)
+                    # Return full dict (URL + Key) - using JPEG for faster processing
+                    return self._upload_bytes(img_bytes, folder=folder, extension="jpg", content_type="image/jpeg")
             
              logger.warning("⚠️ No image bytes returned from Imagen 4.0.")
              return None
