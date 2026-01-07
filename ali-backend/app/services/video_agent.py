@@ -13,7 +13,8 @@ logger = logging.getLogger("ali_platform.services.video_agent")
 
 # Configuration
 BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "ali-platform-prod-73019.firebasestorage.app")
-VIDEO_MODEL = "veo-3.1-generate-001"
+# Veo 3 Fast: Optimized for speed (3-4 min vs 13+ min for standard)
+VIDEO_MODEL = os.getenv("VEO_MODEL", "veo-3.1-fast-generate-001")
 MAX_RETRIES = 3
 POLL_INTERVAL = 5
 
@@ -208,7 +209,7 @@ class VideoAgent:
             # 5. Robust Polling with Extended Timeout
             if hasattr(job, "done"):
                 start_time = time.time()
-                timeout = 900  # 15 minutes max (matches Cloud Run timeout)
+                timeout = 1200  # 20 minutes max (safety margin for complex prompts)
                 last_progress_log = 0
                 
                 is_done_func = job.done if callable(job.done) else lambda: job.done

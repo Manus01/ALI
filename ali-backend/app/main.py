@@ -1,6 +1,7 @@
 ﻿import os
 import logging
 import time
+import signal
 import traceback
 from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,6 +17,15 @@ from app.core.security import verify_token, db
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ali_platform")
 load_dotenv()
+
+# --- 1b. GRACEFUL SHUTDOWN HANDLER ---
+def handle_sigterm(signum, frame):
+    """Handle SIGTERM from Cloud Run - log context for debugging"""
+    logger.warning("🛑 SIGTERM received - Cloud Run is shutting down this instance!")
+    logger.warning("💡 If this happens during tutorial generation, consider setting 'Minimum instances' to 1 in Cloud Console.")
+    # Note: We have 10 seconds to clean up before SIGKILL
+
+signal.signal(signal.SIGTERM, handle_sigterm)
 
 # --- 2. ROUTER IMPORTS ---
 # Core routers registered globally for immediate availability
