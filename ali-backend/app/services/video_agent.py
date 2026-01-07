@@ -15,6 +15,8 @@ logger = logging.getLogger("ali_platform.services.video_agent")
 BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "ali-platform-prod-73019.firebasestorage.app")
 # Veo 3 Fast: Optimized for speed (3-4 min vs 13+ min for standard)
 VIDEO_MODEL = os.getenv("VEO_MODEL", "veo-3.1-fast-generate-001")
+# VIDEO_ENABLED: Set to "true" to enable video generation (Veo is slow, default OFF for reliability)
+VIDEO_ENABLED = os.getenv("VIDEO_ENABLED", "false").lower() == "true"
 MAX_RETRIES = 3
 POLL_INTERVAL = 5
 
@@ -159,6 +161,11 @@ class VideoAgent:
         - Folder Organization
         - Progress Callback for status broadcasting
         """
+        # Skip video generation if disabled (default) - use images instead
+        if not VIDEO_ENABLED:
+            logger.info("⏭️ Video generation disabled (VIDEO_ENABLED=false). Use image fallback.")
+            return None
+            
         if not self.client: return None
         
         # 1. Pydantic Fix: String-Strict Validation

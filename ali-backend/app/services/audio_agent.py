@@ -14,7 +14,8 @@ logger = logging.getLogger("ali_platform.services.audio_agent")
 
 # Configuration
 BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "ali-platform-prod-73019.firebasestorage.app")
-TTS_MODEL = "gemini-1.5-pro" 
+# Updated 2026-01-07: gemini-1.5-pro deprecated, using Gemini 2.5 Flash for TTS
+TTS_MODEL = os.getenv("TTS_MODEL", "gemini-2.5-flash") 
 
 class AudioAgent:
     def __init__(self):
