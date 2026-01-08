@@ -1,7 +1,7 @@
 ﻿import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FaPlus, FaRobot, FaCheckCircle, FaLightbulb, FaSearch, FaArrowRight, FaGraduationCap, FaTrash } from 'react-icons/fa';
-import { getFirestore, collection, query, onSnapshot, orderBy } from 'firebase/firestore';
+import { FaPlus, FaRobot, FaCheckCircle, FaLightbulb, FaSearch, FaArrowRight, FaGraduationCap, FaTrash, FaTimes, FaClock, FaSpinner, FaCheck } from 'react-icons/fa';
+import { getFirestore, collection, query, onSnapshot, orderBy, where } from 'firebase/firestore';
 import api from '../api/axiosInterceptor';
 import { useAuth } from '../hooks/useAuth';
 
@@ -15,6 +15,11 @@ export default function TutorialsPage() {
     const [generationState, setGenerationState] = useState('idle');
     const [errorMessage, setErrorMessage] = useState('');
     const [deleteModal, setDeleteModal] = useState({ show: false, tutorialId: null, title: '' });
+
+    // Request Modal State
+    const [showRequestModal, setShowRequestModal] = useState(false);
+    const [requestTopic, setRequestTopic] = useState('');
+    const [pendingRequests, setPendingRequests] = useState([]);
 
     // --- 1. REAL-TIME LISTENER (SECURE PATH) ---
     useEffect(() => {
@@ -55,6 +60,17 @@ export default function TutorialsPage() {
             }
         };
         fetchSuggestions();
+
+        // Fetch pending requests for this user
+        const fetchPendingRequests = async () => {
+            try {
+                const res = await api.get('/tutorials/requests/mine');
+                setPendingRequests(res.data.requests || []);
+            } catch (err) {
+                console.error("Could not fetch pending requests", err);
+            }
+        };
+        fetchPendingRequests();
 
         return () => unsubscribe();
     }, [currentUser]);
@@ -100,6 +116,43 @@ export default function TutorialsPage() {
         } catch (err) {
             console.error("Delete failed", err);
             alert("Failed to delete tutorial.");
+        }
+    };
+
+    // Modal submit handler
+    const handleModalSubmit = async () => {
+        if (!requestTopic.trim()) return;
+        setGenerationState('loading');
+        try {
+            const response = await api.post('/tutorials/request', { topic: requestTopic });
+            setRequestTopic('');
+            setShowRequestModal(false);
+            setGenerationState('success');
+            // Refresh pending requests
+            const res = await api.get('/tutorials/requests/mine');
+            setPendingRequests(res.data.requests || []);
+            setErrorMessage(`✅ ${response.data.message || "Request submitted! You'll be notified when approved."}`);
+            setTimeout(() => { setGenerationState('idle'); setErrorMessage(''); }, 5000);
+        } catch (err) {
+            console.error(err);
+            setErrorMessage(err.response?.data?.detail || 'Failed to submit request. Try again.');
+            setGenerationState('idle');
+        }
+    };
+
+    // Helper for status badge styling
+    const getStatusBadge = (status) => {
+        switch (status) {
+            case 'PENDING':
+                return { bg: 'bg-amber-100 dark:bg-amber-900/30', text: 'text-amber-700 dark:text-amber-400', icon: <FaClock /> };
+            case 'APPROVED':
+                return { bg: 'bg-blue-100 dark:bg-blue-900/30', text: 'text-blue-700 dark:text-blue-400', icon: <FaCheck /> };
+            case 'GENERATING':
+                return { bg: 'bg-indigo-100 dark:bg-indigo-900/30', text: 'text-indigo-700 dark:text-indigo-400', icon: <FaSpinner className="animate-spin" /> };
+            case 'COMPLETED':
+                return { bg: 'bg-green-100 dark:bg-green-900/30', text: 'text-green-700 dark:text-green-400', icon: <FaCheckCircle /> };
+            default:
+                return { bg: 'bg-slate-100 dark:bg-slate-700', text: 'text-slate-500 dark:text-slate-400', icon: <FaClock /> };
         }
     };
 
@@ -161,7 +214,82 @@ export default function TutorialsPage() {
                 )}
             </header>
 
+            {/* STATUS TRACKER - Pending Requests */}
+            {pendingRequests.length > 0 && (
+                <div className="mb-6 bg-white dark:bg-slate-800 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-700 shadow-sm">
+                    <h3 className="text-xs font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-4 flex items-center gap-2">
+                        <FaClock /> Your Tutorial Requests
+                    </h3>
+                    <div className="space-y-3">
+                        {pendingRequests.map((req, idx) => {
+                            const badge = getStatusBadge(req.status);
+                            return (
+                                <div key={req.id || idx} className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-700/50 rounded-xl border border-slate-100 dark:border-slate-600">
+                                    <div className="flex-1">
+                                        <p className="font-bold text-sm text-slate-800 dark:text-white">{req.topic}</p>
+                                        <div className="flex items-center gap-4 mt-2">
+                                            {/* Status Pipeline */}
+                                            <div className="flex items-center gap-1 text-[10px]">
+                                                <span className={`px-2 py-0.5 rounded ${req.status === 'PENDING' || req.status === 'APPROVED' || req.status === 'GENERATING' || req.status === 'COMPLETED' ? 'bg-amber-500 text-white' : 'bg-slate-200 text-slate-500'}`}>Requested</span>
+                                                <span className="text-slate-300">→</span>
+                                                <span className={`px-2 py-0.5 rounded ${req.status === 'GENERATING' || req.status === 'COMPLETED' ? 'bg-indigo-500 text-white' : 'bg-slate-200 text-slate-500'}`}>Generating</span>
+                                                <span className="text-slate-300">→</span>
+                                                <span className={`px-2 py-0.5 rounded ${req.status === 'COMPLETED' ? 'bg-green-500 text-white' : 'bg-slate-200 text-slate-500'}`}>Ready</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <span className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 ${badge.bg} ${badge.text}`}>
+                                        {badge.icon} {req.status}
+                                    </span>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+
             <div className="flex flex-col lg:grid lg:grid-cols-3 gap-8 flex-1 min-h-0">
+                {/* REQUEST TUTORIAL MODAL */}
+                {showRequestModal && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+                        <div className="bg-white dark:bg-slate-800 rounded-[2rem] p-8 max-w-md w-full shadow-2xl animate-fade-in">
+                            <div className="flex justify-between items-center mb-6">
+                                <h3 className="text-xl font-black text-slate-800 dark:text-white">Request a Tutorial</h3>
+                                <button onClick={() => setShowRequestModal(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-xl transition-colors">
+                                    <FaTimes className="text-slate-400" />
+                                </button>
+                            </div>
+                            <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
+                                Submit a topic and our admin team will review and generate a personalized tutorial for you.
+                            </p>
+                            <input
+                                type="text"
+                                placeholder="e.g., 'Advanced Facebook Retargeting Strategies'"
+                                className="w-full p-4 rounded-2xl border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none text-sm mb-6 text-slate-800 dark:text-white"
+                                value={requestTopic}
+                                onChange={(e) => setRequestTopic(e.target.value)}
+                                onKeyDown={(e) => e.key === 'Enter' && handleModalSubmit()}
+                            />
+                            <div className="flex gap-3">
+                                <button
+                                    onClick={() => setShowRequestModal(false)}
+                                    className="flex-1 py-3 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 font-bold rounded-xl hover:bg-slate-200 dark:hover:bg-slate-600 transition-colors"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleModalSubmit}
+                                    disabled={!requestTopic.trim() || generationState === 'loading'}
+                                    className="flex-1 py-3 bg-primary text-white font-bold rounded-xl hover:bg-blue-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                                >
+                                    {generationState === 'loading' ? <FaSpinner className="animate-spin" /> : <FaPlus />}
+                                    Submit Request
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 {/* DELETE MODAL */}
                 {deleteModal.show && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">

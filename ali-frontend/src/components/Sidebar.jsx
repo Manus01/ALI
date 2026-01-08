@@ -35,8 +35,8 @@ export default function Sidebar() {
     // RESTORED: All original nav items with updated icons for clarity
     const navItems = [
         { to: '/dashboard', label: 'Dashboard', icon: <FaHome /> },
-        { to: '/campaign-center', label: 'Campaign Center', icon: <FaRocket /> },
-        { to: '/tutorials', label: 'Learning', icon: <FaGraduationCap /> },
+        { to: '/campaign-center', label: 'Creative Studio', icon: <FaRocket /> },
+        { to: '/tutorials', label: 'Learning Center', icon: <FaGraduationCap /> },
         { to: '/integrations', label: 'Vault', icon: <FaLock /> },
     ];
 
@@ -103,7 +103,7 @@ export default function Sidebar() {
                             `}
                         >
                             <FaUserCog />
-                            <span>Research Admin</span>
+                            <span>Orchestration Hub</span>
                         </NavLink>
                     )}
 

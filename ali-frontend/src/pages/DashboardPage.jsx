@@ -42,6 +42,9 @@ export default function DashboardPage() {
     // --- BRAND EDIT MODAL ---
     const [editModalOpen, setEditModalOpen] = useState(false);
 
+    // --- NEXT BEST ACTION CARDS ---
+    const [nextBestActions, setNextBestActions] = useState([]);
+
     const fetchDashboardData = useCallback(async () => {
         try {
             if (!currentUser) return;
@@ -54,6 +57,14 @@ export default function DashboardPage() {
                 setAnalyticsData(analyticsRes.data);
             } catch (anaErr) {
                 console.warn("Analytics fetch failed, using defaults", anaErr);
+            }
+
+            // Fetch user's approved Next Best Actions
+            try {
+                const actionsRes = await api.get('/dashboard/next-actions');
+                setNextBestActions(actionsRes.data.actions || []);
+            } catch (actErr) {
+                console.warn("Next actions fetch failed", actErr);
             }
 
             setLoading(false);
@@ -282,6 +293,59 @@ export default function DashboardPage() {
                             <Link to={rec.link} className="px-4 py-2 text-xs font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/30 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 rounded-lg flex items-center gap-2">Take Action <FaArrowRight /></Link>
                         </div>
                     ))}
+                </div>
+            )}
+
+            {/* Next Best Action Cards from Prediction Engine */}
+            {nextBestActions.length > 0 && (
+                <div className="bg-white dark:bg-slate-800 p-6 rounded-[2rem] border border-slate-100 dark:border-slate-700 shadow-sm">
+                    <div className="flex items-center justify-between mb-6">
+                        <div>
+                            <h3 className="text-lg font-black text-slate-800 dark:text-white flex items-center gap-2">
+                                <FaLightbulb className="text-indigo-500" /> Next Best Actions
+                            </h3>
+                            <p className="text-xs text-slate-400 mt-1">AI-powered recommendations approved by your admin</p>
+                        </div>
+                        <span className="px-3 py-1 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 text-[10px] font-black uppercase rounded-full">
+                            Tier 2 Predictions
+                        </span>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {nextBestActions.map((action, idx) => (
+                            <div key={action.id || idx} className="p-5 bg-gradient-to-br from-indigo-50/50 to-blue-50/50 dark:from-indigo-900/20 dark:to-blue-900/20 rounded-2xl border border-indigo-100 dark:border-indigo-800/50 hover:shadow-lg hover:border-indigo-200 dark:hover:border-indigo-700 transition-all cursor-pointer group">
+                                <div className="flex justify-between items-start mb-3">
+                                    <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${action.priority === 'HIGH' ? 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400' :
+                                            action.priority === 'MEDIUM' ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400' :
+                                                'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400'
+                                        }`}>
+                                        {action.priority || 'MEDIUM'}
+                                    </span>
+                                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${action.status === 'APPROVED' ? 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400' :
+                                            action.status === 'PENDING' ? 'bg-amber-100 text-amber-600' :
+                                                'bg-slate-100 text-slate-500'
+                                        }`}>
+                                        {action.status === 'APPROVED' ? '✓ Admin Approved' : action.status}
+                                    </span>
+                                </div>
+                                <h4 className="font-bold text-slate-800 dark:text-white mb-2">{action.title}</h4>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mb-4 line-clamp-2">{action.description}</p>
+                                {action.confidence && (
+                                    <div className="flex items-center gap-2 mb-3">
+                                        <div className="flex-1 h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                                            <div
+                                                className="h-full bg-gradient-to-r from-indigo-500 to-blue-500 rounded-full"
+                                                style={{ width: `${action.confidence}%` }}
+                                            />
+                                        </div>
+                                        <span className="text-[10px] font-bold text-slate-400">{action.confidence}% confidence</span>
+                                    </div>
+                                )}
+                                <button className="w-full py-2.5 bg-indigo-600 text-white text-xs font-bold rounded-xl hover:bg-indigo-700 transition-colors group-hover:shadow-md flex items-center justify-center gap-2">
+                                    Execute Action <FaArrowRight size={10} />
+                                </button>
+                            </div>
+                        ))}
+                    </div>
                 </div>
             )}
 
