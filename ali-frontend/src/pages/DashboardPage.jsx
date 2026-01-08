@@ -11,7 +11,6 @@ import {
     FaTimes, FaCloudUploadAlt, FaSpinner
 } from 'react-icons/fa';
 import api from '../api/axiosInterceptor';
-import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import BrandMonitoringSection from '../components/BrandMonitoringSection';
 import EditBrandModal from '../components/modals/EditBrandModal';
 
@@ -128,9 +127,59 @@ export default function DashboardPage() {
                 forecastDataset = [...forecastDataset, ...forecastValues];
             }
 
+            // Confidence Band Data (from BigQuery predictions)
+            const confidenceLower = data.confidence_band_lower || [];
+            const confidenceUpper = data.confidence_band_upper || [];
+            const hasConfidenceBand = confidenceLower.length > 0 && confidenceUpper.length > 0 && activeFilter === 'all';
+
+            // Prepare confidence band datasets to match labels length
+            let bandUpperDataset = [];
+            let bandLowerDataset = [];
+
+            if (hasConfidenceBand) {
+                // Confidence bands apply to forecast period - extend from last historical point
+                bandUpperDataset = new Array(historicalDataset.length).fill(null);
+                bandLowerDataset = new Array(historicalDataset.length).fill(null);
+
+                // Connect to last historical point
+                if (historicalDataset.length > 0) {
+                    bandUpperDataset[bandUpperDataset.length - 1] = historicalDataset[historicalDataset.length - 1];
+                    bandLowerDataset[bandLowerDataset.length - 1] = historicalDataset[historicalDataset.length - 1];
+                }
+
+                // Add forecast confidence values
+                bandUpperDataset = [...bandUpperDataset, ...confidenceUpper.slice(0, forecastValues.length)];
+                bandLowerDataset = [...bandLowerDataset, ...confidenceLower.slice(0, forecastValues.length)];
+            }
+
             return {
                 labels: finalLabels,
                 datasets: [
+                    // Confidence Band Upper (filled down to lower)
+                    hasConfidenceBand ? {
+                        label: 'Confidence Band',
+                        data: bandUpperDataset,
+                        borderColor: 'transparent',
+                        backgroundColor: 'rgba(147, 197, 253, 0.25)',
+                        fill: '+1', // Fill to next dataset (lower band)
+                        tension: 0.4,
+                        pointRadius: 0,
+                        borderWidth: 0,
+                        order: 4
+                    } : null,
+                    // Confidence Band Lower
+                    hasConfidenceBand ? {
+                        label: 'Confidence Lower',
+                        data: bandLowerDataset,
+                        borderColor: 'rgba(147, 197, 253, 0.3)',
+                        backgroundColor: 'transparent',
+                        borderWidth: 1,
+                        borderDash: [2, 2],
+                        tension: 0.4,
+                        pointRadius: 0,
+                        order: 3
+                    } : null,
+                    // Main trend line
                     {
                         label: CHANNEL_CONFIG[activeFilter]?.label || activeFilter,
                         data: historicalDataset,
@@ -141,10 +190,11 @@ export default function DashboardPage() {
                         borderWidth: 2,
                         order: 1
                     },
+                    // AI Prediction line
                     hasForecast ? {
                         label: 'AI Prediction',
                         data: forecastDataset,
-                        borderColor: '#93C5FD', // Light Blue
+                        borderColor: '#93C5FD',
                         backgroundColor: '#93C5FD',
                         borderDash: [5, 5],
                         tension: 0.4,
@@ -152,7 +202,7 @@ export default function DashboardPage() {
                         borderWidth: 2,
                         order: 2
                     } : null
-                ].filter(Boolean) // Remove null if no forecast
+                ].filter(Boolean)
             };
         }
 
@@ -315,14 +365,14 @@ export default function DashboardPage() {
                             <div key={action.id || idx} className="p-5 bg-gradient-to-br from-indigo-50/50 to-blue-50/50 dark:from-indigo-900/20 dark:to-blue-900/20 rounded-2xl border border-indigo-100 dark:border-indigo-800/50 hover:shadow-lg hover:border-indigo-200 dark:hover:border-indigo-700 transition-all cursor-pointer group">
                                 <div className="flex justify-between items-start mb-3">
                                     <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${action.priority === 'HIGH' ? 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400' :
-                                            action.priority === 'MEDIUM' ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400' :
-                                                'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400'
+                                        action.priority === 'MEDIUM' ? 'bg-amber-100 text-amber-600 dark:bg-amber-900/30 dark:text-amber-400' :
+                                            'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400'
                                         }`}>
                                         {action.priority || 'MEDIUM'}
                                     </span>
                                     <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${action.status === 'APPROVED' ? 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400' :
-                                            action.status === 'PENDING' ? 'bg-amber-100 text-amber-600' :
-                                                'bg-slate-100 text-slate-500'
+                                        action.status === 'PENDING' ? 'bg-amber-100 text-amber-600' :
+                                            'bg-slate-100 text-slate-500'
                                         }`}>
                                         {action.status === 'APPROVED' ? '✓ Admin Approved' : action.status}
                                     </span>

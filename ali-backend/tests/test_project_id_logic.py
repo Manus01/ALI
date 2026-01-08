@@ -4,11 +4,11 @@ import sys
 sys.path.append(r"d:\github\repos\Manus01\ALI\ali-backend")
 
 from unittest.mock import patch, MagicMock
-from app.services.video_agent import VideoAgent
+from app.legacy.video_agent import VideoAgent
 
 # Mock google.genai to avoid actual API calls and credential checks
 sys.modules["google.genai"] = MagicMock()
-from app.services.video_agent import genai
+from app.legacy.video_agent import genai
 
 @patch("os.getenv")
 def test_video_agent_accepts_string_id(mock_getenv):

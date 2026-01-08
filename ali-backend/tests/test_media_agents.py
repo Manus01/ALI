@@ -27,11 +27,11 @@ mock_types.GcsSource = MagicMock
 class TestVideoAgent:
     """Tests for VideoAgent (Veo 3.1)"""
     
-    @patch('app.services.video_agent.storage.Client')
-    @patch('app.services.video_agent.genai.Client')
+    @patch('app.legacy.video_agent.storage.Client')
+    @patch('app.legacy.video_agent.genai.Client')
     def test_video_agent_initialization(self, mock_genai, mock_storage):
         """Test VideoAgent initializes correctly with clients"""
-        from app.services.video_agent import VideoAgent
+        from app.legacy.video_agent import VideoAgent
         
         agent = VideoAgent()
         
@@ -39,11 +39,11 @@ class TestVideoAgent:
         assert agent.client is not None
         mock_genai.assert_called_once()
     
-    @patch('app.services.video_agent.storage.Client')
-    @patch('app.services.video_agent.genai.Client')
+    @patch('app.legacy.video_agent.storage.Client')
+    @patch('app.legacy.video_agent.genai.Client')
     def test_video_agent_generate_returns_url_from_bytes(self, mock_genai, mock_storage):
         """Test that video generation uploads bytes and returns Firebase URL"""
-        from app.services.video_agent import VideoAgent
+        from app.legacy.video_agent import VideoAgent
         
         # Mock the video generation response with bytes
         mock_client = mock_genai.return_value
@@ -77,11 +77,11 @@ class TestVideoAgent:
         assert "gcs_object_key" in result
         mock_blob.upload_from_string.assert_called_once()
     
-    @patch('app.services.video_agent.storage.Client')
-    @patch('app.services.video_agent.genai.Client')
+    @patch('app.legacy.video_agent.storage.Client')
+    @patch('app.legacy.video_agent.genai.Client')
     def test_video_agent_generate_returns_url_from_gcs_uri(self, mock_genai, mock_storage):
         """Test that video generation can return signed URL from GCS URI"""
-        from app.services.video_agent import VideoAgent
+        from app.legacy.video_agent import VideoAgent
         
         mock_client = mock_genai.return_value
         mock_operation = MagicMock()
@@ -112,11 +112,11 @@ class TestVideoAgent:
         
         assert result is not None
     
-    @patch('app.services.video_agent.storage.Client')
-    @patch('app.services.video_agent.genai.Client')
+    @patch('app.legacy.video_agent.storage.Client')
+    @patch('app.legacy.video_agent.genai.Client')
     def test_video_agent_handles_generation_failure(self, mock_genai, mock_storage):
         """Test that video generation returns None on API failure"""
-        from app.services.video_agent import VideoAgent
+        from app.legacy.video_agent import VideoAgent
         
         mock_client = mock_genai.return_value
         mock_client.models.generate_videos.side_effect = Exception("API Error")
@@ -126,11 +126,11 @@ class TestVideoAgent:
         
         assert result is None
     
-    @patch('app.services.video_agent.storage.Client')
-    @patch('app.services.video_agent.genai.Client')
+    @patch('app.legacy.video_agent.storage.Client')
+    @patch('app.legacy.video_agent.genai.Client')
     def test_video_agent_handles_no_client(self, mock_genai, mock_storage):
         """Test that video generation returns None when client not initialized"""
-        from app.services.video_agent import VideoAgent
+        from app.legacy.video_agent import VideoAgent
         
         mock_genai.side_effect = Exception("Client init failed")
         
@@ -140,11 +140,11 @@ class TestVideoAgent:
         
         assert result is None
     
-    @patch('app.services.video_agent.storage.Client')
-    @patch('app.services.video_agent.genai.Client')
+    @patch('app.legacy.video_agent.storage.Client')
+    @patch('app.legacy.video_agent.genai.Client')
     def test_video_agent_handles_list_prompt(self, mock_genai, mock_storage):
         """Test that video generation handles list prompts correctly"""
-        from app.services.video_agent import VideoAgent
+        from app.legacy.video_agent import VideoAgent
         
         mock_client = mock_genai.return_value
         mock_operation = MagicMock()

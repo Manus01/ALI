@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import MagicMock, patch
 from app.services.metricool_client import MetricoolClient
-from app.services.video_agent import VideoAgent
+from app.legacy.video_agent import VideoAgent
 
 def test_metricool_timeout_handling():
     """ Verify MetricoolClient handles timeouts effectively. """
@@ -20,10 +20,10 @@ def test_metricool_timeout_handling():
 def test_video_agent_fallback_chain():
     """ Verify VideoAgent falls back when generation fails (simulated). """
     # This logic is actually in `tutorial_agent.py` fabricator, but verify VideoAgent itself handles errors
-    with patch('app.services.video_agent.logging') as mock_log:
+    with patch('app.legacy.video_agent.logging') as mock_log:
          agent = VideoAgent()
          # If generate_video called with error, does it crash?
-         with patch('app.services.video_agent.genai.Client') as MockClient:
+         with patch('app.legacy.video_agent.genai.Client') as MockClient:
              mock_client_instance = MockClient.return_value
              # Mock the models.generate_content chain
              mock_client_instance.models.generate_content.side_effect = Exception("API Error")

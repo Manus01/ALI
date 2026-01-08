@@ -247,7 +247,7 @@ def design_section_assets(section_text, section_meta, metaphor, struggle_topics:
         logger.warning(f"⚠️ Asset Generation Parsing Failed: {e}. Returning empty assets.")
         return {"assets": []}
 
-from app.services.video_agent import VideoAgent
+from app.legacy.video_agent import VideoAgent
 from app.services.image_agent import ImageAgent
 from app.services.audio_agent import AudioAgent
 

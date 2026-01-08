@@ -4,6 +4,7 @@ import { FaPlus, FaRobot, FaCheckCircle, FaLightbulb, FaSearch, FaArrowRight, Fa
 import { getFirestore, collection, query, onSnapshot, orderBy, where } from 'firebase/firestore';
 import api from '../api/axiosInterceptor';
 import { useAuth } from '../hooks/useAuth';
+import SagaMapNavigator from '../components/SagaMapNavigator';
 
 export default function TutorialsPage() {
     const { currentUser } = useAuth();
@@ -249,6 +250,11 @@ export default function TutorialsPage() {
             )}
 
             <div className="flex flex-col lg:grid lg:grid-cols-3 gap-8 flex-1 min-h-0">
+                {/* SAGA MAP NAVIGATOR */}
+                <div className="lg:col-span-3">
+                    <SagaMapNavigator onModuleSelect={(module) => console.log('Selected module:', module)} />
+                </div>
+
                 {/* REQUEST TUTORIAL MODAL */}
                 {showRequestModal && (
                     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">

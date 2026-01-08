@@ -57,6 +57,8 @@ campaigns = safe_import_router("campaigns")
 monitoring = safe_import_router("monitoring")
 brand_monitoring = safe_import_router("brand_monitoring")
 scheduler = safe_import_router("scheduler")
+assets = safe_import_router("assets")
+saga_map = safe_import_router("saga_map")
 
 logger.info("✅ Router imports processed.")
 
@@ -160,7 +162,9 @@ routers_map = [
     ("/api/campaign", (campaigns, ["Campaigns"])), # Registered new Campaigns router
     ("/api/monitoring", (monitoring, ["Monitoring"])),
     ("/api/brand-monitoring", (brand_monitoring, ["Brand Monitoring"])),
-    ("/internal", (scheduler, ["Scheduler"]))
+    ("/internal", (scheduler, ["Scheduler"])),
+    ("/api/assets", (assets, ["Assets"])),
+    ("/api/saga-map", (saga_map, ["Saga Map"]))
 ]
 
 for prefix, (module, tags) in routers_map:
