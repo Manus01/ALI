@@ -24,152 +24,6 @@ mock_types.SubjectImage = MagicMock
 mock_types.GcsSource = MagicMock
 
 
-class TestVideoAgent:
-    """Tests for VideoAgent (Veo 3.1)"""
-    
-    @patch('app.legacy.video_agent.storage.Client')
-    @patch('app.legacy.video_agent.genai.Client')
-    def test_video_agent_initialization(self, mock_genai, mock_storage):
-        """Test VideoAgent initializes correctly with clients"""
-        from app.legacy.video_agent import VideoAgent
-        
-        agent = VideoAgent()
-        
-        assert agent.storage_client is not None
-        assert agent.client is not None
-        mock_genai.assert_called_once()
-    
-    @patch('app.legacy.video_agent.storage.Client')
-    @patch('app.legacy.video_agent.genai.Client')
-    def test_video_agent_generate_returns_url_from_bytes(self, mock_genai, mock_storage):
-        """Test that video generation uploads bytes and returns Firebase URL"""
-        from app.legacy.video_agent import VideoAgent
-        
-        # Mock the video generation response with bytes
-        mock_client = mock_genai.return_value
-        mock_operation = MagicMock()
-        mock_operation.done = MagicMock(return_value=True)
-        
-        # Create response with generated_videos containing bytes
-        mock_video = MagicMock()
-        mock_video.video = MagicMock()
-        mock_video.video.video_bytes = b"fake_video_bytes"
-        mock_video.gcs_uri = None
-        
-        mock_result = MagicMock()
-        mock_result.generated_videos = [mock_video]
-        mock_operation.result = MagicMock(return_value=mock_result)
-        
-        mock_client.models.generate_videos = MagicMock(return_value=mock_operation)
-        
-        # Mock storage upload
-        mock_bucket = MagicMock()
-        mock_blob = MagicMock()
-        mock_bucket.blob.return_value = mock_blob
-        mock_storage.return_value.bucket.return_value = mock_bucket
-        
-        agent = VideoAgent()
-        result = agent.generate_video("Test video prompt", folder="test")
-        
-        assert result is not None
-        assert isinstance(result, dict)
-        assert "firebasestorage.googleapis.com" in result["url"]
-        assert "gcs_object_key" in result
-        mock_blob.upload_from_string.assert_called_once()
-    
-    @patch('app.legacy.video_agent.storage.Client')
-    @patch('app.legacy.video_agent.genai.Client')
-    def test_video_agent_generate_returns_url_from_gcs_uri(self, mock_genai, mock_storage):
-        """Test that video generation can return signed URL from GCS URI"""
-        from app.legacy.video_agent import VideoAgent
-        
-        mock_client = mock_genai.return_value
-        mock_operation = MagicMock()
-        mock_operation.done = MagicMock(return_value=True)
-        
-        # Create response with generated_videos containing URI (no bytes)
-        mock_video = MagicMock()
-        mock_video.video = None
-        mock_video.video_bytes = None
-        mock_video.bytes = None
-        mock_video.gcs_uri = "gs://bucket/path/video.mp4"
-        
-        mock_result = MagicMock()
-        mock_result.generated_videos = [mock_video]
-        mock_operation.result = MagicMock(return_value=mock_result)
-        
-        mock_client.models.generate_videos = MagicMock(return_value=mock_operation)
-        
-        # Mock signed URL generation
-        mock_bucket = MagicMock()
-        mock_blob = MagicMock()
-        mock_blob.generate_signed_url.return_value = "https://signed-url.example.com/video.mp4"
-        mock_bucket.blob.return_value = mock_blob
-        mock_storage.return_value.bucket.return_value = mock_bucket
-        
-        agent = VideoAgent()
-        result = agent.generate_video("Test video prompt")
-        
-        assert result is not None
-    
-    @patch('app.legacy.video_agent.storage.Client')
-    @patch('app.legacy.video_agent.genai.Client')
-    def test_video_agent_handles_generation_failure(self, mock_genai, mock_storage):
-        """Test that video generation returns None on API failure"""
-        from app.legacy.video_agent import VideoAgent
-        
-        mock_client = mock_genai.return_value
-        mock_client.models.generate_videos.side_effect = Exception("API Error")
-        
-        agent = VideoAgent()
-        result = agent.generate_video("Test video prompt")
-        
-        assert result is None
-    
-    @patch('app.legacy.video_agent.storage.Client')
-    @patch('app.legacy.video_agent.genai.Client')
-    def test_video_agent_handles_no_client(self, mock_genai, mock_storage):
-        """Test that video generation returns None when client not initialized"""
-        from app.legacy.video_agent import VideoAgent
-        
-        mock_genai.side_effect = Exception("Client init failed")
-        
-        agent = VideoAgent()
-        agent.client = None  # Simulate failed initialization
-        result = agent.generate_video("Test video prompt")
-        
-        assert result is None
-    
-    @patch('app.legacy.video_agent.storage.Client')
-    @patch('app.legacy.video_agent.genai.Client')
-    def test_video_agent_handles_list_prompt(self, mock_genai, mock_storage):
-        """Test that video generation handles list prompts correctly"""
-        from app.legacy.video_agent import VideoAgent
-        
-        mock_client = mock_genai.return_value
-        mock_operation = MagicMock()
-        mock_operation.done = MagicMock(return_value=True)
-        
-        mock_video = MagicMock()
-        mock_video.video = MagicMock()
-        mock_video.video.video_bytes = b"fake_video_bytes"
-        
-        mock_result = MagicMock()
-        mock_result.generated_videos = [mock_video]
-        mock_operation.result = MagicMock(return_value=mock_result)
-        
-        mock_client.models.generate_videos = MagicMock(return_value=mock_operation)
-        
-        mock_bucket = MagicMock()
-        mock_blob = MagicMock()
-        mock_bucket.blob.return_value = mock_blob
-        mock_storage.return_value.bucket.return_value = mock_bucket
-        
-        agent = VideoAgent()
-        # Pass list instead of string (edge case mentioned in code)
-        result = agent.generate_video(["Test prompt in list"], folder="test")
-        
-        assert result is not None
 
 
 class TestImageAgent:
@@ -426,44 +280,35 @@ class TestAudioAgent:
 class TestFabricateBlock:
     """Tests for the fabricate_block function in tutorial_agent"""
     
-    def test_fabricate_block_video_success(self):
-        """Test video block creation with successful generation"""
+    def test_fabricate_block_video_redirects_to_image(self):
+        """Test video block request is redirected to image agent"""
         from app.agents.tutorial_agent import fabricate_block
         
-        mock_video_agent = MagicMock()
-        mock_video_agent.generate_video.return_value = "https://storage.example.com/video.mp4"
+        # We pass None for video_agent as it is deprecated
+        mock_video_agent = None 
         mock_image_agent = MagicMock()
+        mock_image_agent.generate_image.return_value = "https://storage.example.com/image_fallback.png"
         mock_audio_agent = MagicMock()
         
         block = {"type": "video_clip", "visual_prompt": "Test scene"}
-        result = fabricate_block(block, "Test Topic", mock_video_agent, mock_image_agent, mock_audio_agent)
-        
-        assert result["type"] == "video"
-        assert result["url"] == "https://storage.example.com/video.mp4"
-    
-    def test_fabricate_block_video_fallback_to_image(self):
-        """Test video block falls back to image on video failure"""
-        from app.agents.tutorial_agent import fabricate_block
-        
-        mock_video_agent = MagicMock()
-        mock_video_agent.generate_video.return_value = None  # Video fails
-        mock_image_agent = MagicMock()
-        mock_image_agent.generate_image.return_value = "https://storage.example.com/image.png"
-        mock_audio_agent = MagicMock()
-        
-        block = {"type": "video_clip", "visual_prompt": "Test scene"}
+        # Pass None for video agent
         result = fabricate_block(block, "Test Topic", mock_video_agent, mock_image_agent, mock_audio_agent)
         
         assert result["type"] == "image"
+        assert result["url"] == "https://storage.example.com/image_fallback.png"
         assert result["fallback"] is True
-        assert result["url"] == "https://storage.example.com/image.png"
+        # Verify image agent was called with enhanced prompt
+        mock_image_agent.generate_image.assert_called_once()
+        args = mock_image_agent.generate_image.call_args
+        assert "Cinematic photorealistic image" in args[0][0]
+    
+
     
     def test_fabricate_block_video_complete_failure(self):
-        """Test video block returns placeholder on complete failure"""
+        """Test video block returns placeholder on complete image fallback failure"""
         from app.agents.tutorial_agent import fabricate_block
         
-        mock_video_agent = MagicMock()
-        mock_video_agent.generate_video.return_value = None
+        mock_video_agent = None
         mock_image_agent = MagicMock()
         mock_image_agent.generate_image.return_value = None  # Fallback also fails
         mock_audio_agent = MagicMock()
@@ -539,9 +384,9 @@ class TestFabricateBlock:
         """Test fabricate_block handles unexpected exceptions gracefully"""
         from app.agents.tutorial_agent import fabricate_block
         
-        mock_video_agent = MagicMock()
-        mock_video_agent.generate_video.side_effect = Exception("Unexpected error")
+        mock_video_agent = None
         mock_image_agent = MagicMock()
+        mock_image_agent.generate_image.side_effect = Exception("Unexpected error")
         mock_audio_agent = MagicMock()
         
         block = {"type": "video_clip", "visual_prompt": "Test scene"}

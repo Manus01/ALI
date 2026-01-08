@@ -6,7 +6,7 @@ import {
     FaWindowMaximize, FaEdit, FaCloudUploadAlt, FaInfoCircle
 } from 'react-icons/fa';
 import { useAuth } from '../hooks/useAuth';
-import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
+// Firebase imports removed - Unified Asset Pipeline in use
 
 // Define outside to prevent re-creation on every render
 const allCountries = [
@@ -91,12 +91,18 @@ export default function BrandOnboarding() {
         let finalLogoUrl = null;
 
         try {
-            // A. Upload Logo to Firebase Storage
+            // A. Upload Logo via Asset Processing API (Unified Pipeline)
             if (logoFile && currentUser) {
-                const storage = getStorage();
-                const storageRef = ref(storage, `users/${currentUser.uid}/brand/logo_${Date.now()}`);
-                const uploadRes = await uploadBytes(storageRef, logoFile);
-                finalLogoUrl = await getDownloadURL(uploadRes.ref);
+                const formData = new FormData();
+                formData.append('file', logoFile);
+                formData.append('remove_bg', 'true'); // Auto-clean logos
+                formData.append('optimize', 'true');
+
+                // Helper to POST multipart
+                const uploadRes = await api.post('/assets/process', formData, {
+                    headers: { 'Content-Type': 'multipart/form-data' }
+                });
+                finalLogoUrl = uploadRes.data.processed_url;
             }
 
             // B. Complete Onboarding

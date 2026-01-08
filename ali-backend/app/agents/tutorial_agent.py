@@ -201,8 +201,8 @@ def design_section_assets(section_text, section_meta, metaphor, struggle_topics:
     section_type = section_meta.get('type', 'general')
     
     if section_type == 'supportive' or section_type == 'activation':
-        # MUST have a VEO demonstration for mental models
-        requirements = "1. `video_clip` (VEO: Cinematic visualization of the Metaphor). 2. `quiz_single` (Reflection)."
+        # MUST have a Visual demonstration for mental models
+        requirements = "1. `image_diagram` (Visualization of the Metaphor). 2. `quiz_single` (Reflection)."
     elif section_type == 'procedural' or section_type == 'demonstration':
         # Procedural needs TTS guidance and Diagrams
         requirements = "1. `audio_note` (TTS: Step-by-step summary). 2. `image_diagram` (Flowchart). 3. `callout_pro_tip`."
@@ -220,7 +220,7 @@ def design_section_assets(section_text, section_meta, metaphor, struggle_topics:
     {requirements}
 
     **RULES:**
-    1. **VEO Video:** Prompt must be "Cinematic, abstract, photorealistic shot of {metaphor}...". NO TEXT/CHARACTERS.
+    1. **Visuals:** Prompt must be "Cinematic, abstract, photorealistic shot of {metaphor}...". NO TEXT/CHARACTERS.
     2. **TTS Audio:** Script must be a concise, engaging summary of the key concept.
     3. **Quiz Standardization (CRITICAL):**
        - `correct_answer` must be an INTEGER index (0-3).
@@ -233,7 +233,7 @@ def design_section_assets(section_text, section_meta, metaphor, struggle_topics:
     ### OUTPUT JSON FORMAT
     {{
         "assets": [
-            {{ "type": "video_clip", "visual_prompt": "..." }},
+            {{ "type": "image_diagram", "visual_prompt": "..." }},
             {{ "type": "audio_note", "script": "..." }}
         ]
     }}
@@ -247,7 +247,7 @@ def design_section_assets(section_text, section_meta, metaphor, struggle_topics:
         logger.warning(f"⚠️ Asset Generation Parsing Failed: {e}. Returning empty assets.")
         return {"assets": []}
 
-from app.legacy.video_agent import VideoAgent
+
 from app.services.image_agent import ImageAgent
 from app.services.audio_agent import AudioAgent
 
@@ -258,7 +258,8 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
     try:
         # Initialize all Creative Agents
         # creative = CreativeService() # DEPRECATED
-        video_agent = VideoAgent()
+        # video_agent = VideoAgent() # DEPRECATED
+
         image_agent = ImageAgent()
         audio_agent = AudioAgent()
         
@@ -389,7 +390,7 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
                         # We use a context manager for the inner execution to ensure clean-up
                         max_asset_workers = int(os.getenv("TUTORIAL_ASSET_WORKERS", 3))
                         with ThreadPoolExecutor(max_workers=max_asset_workers) as inner_executor:
-                             fab_task = lambda b: fabricate_block(b, topic, video_agent, image_agent, audio_agent)
+                             fab_task = lambda b: fabricate_block(b, topic, None, image_agent, audio_agent)
                              processed_visuals = list(inner_executor.map(fab_task, visuals))
                              processed_audios = list(inner_executor.map(fab_task, audios))
 
@@ -634,8 +635,32 @@ def fabricate_block(block, topic, video_agent, image_agent, audio_agent, progres
         if block["type"] == "video_clip":
             p = block.get("visual_prompt", f"Cinematic {topic}")
             safe_p = f"Cinematic, abstract, photorealistic, 4k shot of {p}. High quality. No text, no screens."
-            logger.info(f"      🎥 VEO Generating: {p}")
+            # Legacy support: Redirect video requests to Image Agent
+            logger.info(f"      🎥 VEO Request Redirected to Image Agent: {p}")
             
+            # Use Image Agent instead
+            result = image_agent.generate_image(f"Cinematic photorealistic image of {p}", folder="tutorials")
+            
+            url = result
+            gcs_key = None
+            if isinstance(result, dict):
+                url = result.get("url")
+                gcs_key = result.get("gcs_object_key")
+            
+            if url:
+                 logger.info("      ✅ Fallback Image Created for Video Request")
+                 return { "type": "image", "url": url, "prompt": p, "fallback": True, "gcs_object_key": gcs_key }
+            
+            return {
+                     "type": "placeholder",
+                     "original_type": "video",
+                     "prompt": p,
+                     "status": "failed",
+                     "info": "Video generation disabled. Image fallback failed."
+                 }
+
+            # Original Video Logic Removed
+            """
             # Use Video Agent
             result = video_agent.generate_video(safe_p, folder="tutorials", progress_callback=progress_callback)
             
@@ -644,6 +669,7 @@ def fabricate_block(block, topic, video_agent, image_agent, audio_agent, progres
             if isinstance(result, dict):
                 url = result.get("url")
                 gcs_key = result.get("gcs_object_key")
+            """
             
             # Fallback 1: Try Image if Video fails
             if not url or not str(url).startswith("http"):

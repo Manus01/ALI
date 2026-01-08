@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { FaTimes, FaCloudUploadAlt, FaSpinner } from 'react-icons/fa';
-import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
+// Firebase imports removed - Unified Asset Pipeline in use
 import { useAuth } from '../../hooks/useAuth';
 import api from '../../api/axiosInterceptor';
 
@@ -46,12 +46,17 @@ export default function EditBrandModal({ isOpen, onClose }) {
         try {
             let finalLogoUrl = editFormData.logo_url;
 
-            // Upload new logo if selected
+            // Upload new logo via Unified Asset Pipeline
             if (logoFile && currentUser) {
-                const storage = getStorage();
-                const storageRef = ref(storage, `users/${currentUser.uid}/brand/logo_${Date.now()}`);
-                const uploadRes = await uploadBytes(storageRef, logoFile);
-                finalLogoUrl = await getDownloadURL(uploadRes.ref);
+                const formData = new FormData();
+                formData.append('file', logoFile);
+                formData.append('remove_bg', 'true');
+                formData.append('optimize', 'true');
+
+                const uploadRes = await api.post('/assets/process', formData, {
+                    headers: { 'Content-Type': 'multipart/form-data' }
+                });
+                finalLogoUrl = uploadRes.data.processed_url;
             }
 
             await api.put('/auth/me/brand', {

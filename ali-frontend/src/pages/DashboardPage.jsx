@@ -1,7 +1,7 @@
 ﻿import React, { useEffect, useState, useCallback } from 'react';
 import { Line } from 'react-chartjs-2';
 import {
-    Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend,
+    Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler
 } from 'chart.js';
 import { useAuth } from '../hooks/useAuth';
 import { useNavigate, Link } from 'react-router-dom';
@@ -14,7 +14,7 @@ import api from '../api/axiosInterceptor';
 import BrandMonitoringSection from '../components/BrandMonitoringSection';
 import EditBrandModal from '../components/modals/EditBrandModal';
 
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler);
 
 const CHANNEL_CONFIG = {
     all: { label: 'Aggregated View', color: '#4F46E5', icon: <FaLayerGroup /> },

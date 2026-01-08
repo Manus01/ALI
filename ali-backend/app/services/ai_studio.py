@@ -32,7 +32,7 @@ class CreativeService:
     DEPRECATED: This class is maintained for backward compatibility only.
     
     For new code, use the specialized agents:
-    - VideoAgent (app/services/video_agent.py)
+
     - ImageAgent (app/services/image_agent.py)
     - AudioAgent (app/services/audio_agent.py)
     
@@ -70,7 +70,7 @@ class CreativeService:
             logger.error(f"❌ Vertex AI initialization failed: {e}")
 
     # All generation methods removed - use specialized agents instead
-    # See: video_agent.py, image_agent.py, audio_agent.py
+    # See: image_agent.py, audio_agent.py
 
 # Stable alias defaults (auto-upgrade without code changes)
 VIDEO_MODEL_ALIAS = os.getenv("VERTEX_VIDEO_MODEL_ALIAS", "veo-3.1-generate-001")
@@ -198,7 +198,7 @@ class CreativeService:
 
     # --- DEPRECATED METHODS ---
     # As of Jan 2026, media generation has been moved to specialized agents:
-    # - VideoAgent (app/services/video_agent.py)
+
     # - ImageAgent (app/services/image_agent.py)
     # - AudioAgent (app/services/audio_agent.py)
     #

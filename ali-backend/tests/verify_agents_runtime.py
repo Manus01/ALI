@@ -52,18 +52,6 @@ def verify_agents():
         print(f"[FAIL] ImageAgent Crash: {e}")
         errors.append(f"ImageAgent: {e}")
 
-    # 3. Verify Video Agent Init
-    try:
-        print("\n--- Testing VideoAgent ---")
-        from app.services.video_agent import VideoAgent
-        agent = VideoAgent()
-        if agent.client:
-            print("[OK] VideoAgent initialized with Vertex Client.")
-        else:
-            print("[WARN] VideoAgent initialized but Client is None.")
-    except Exception as e:
-        print(f"[FAIL] VideoAgent Crash: {e}")
-        errors.append(f"VideoAgent: {e}")
 
     # 4. Verify Audio Agent Init
     try:

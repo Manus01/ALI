@@ -35,9 +35,9 @@ mock_response = MagicMock()
 mock_model.generate_content.return_value = mock_response
 
 # Mock Agents
-mock_video_agent = MagicMock()
 mock_image_agent = MagicMock()
 mock_audio_agent = MagicMock()
+
 
 # Setup Logging
 logging.basicConfig(level=logging.INFO)
@@ -97,7 +97,6 @@ def test_tutorial_logic():
 
     # 2. Patch dependencies
     with patch('app.agents.tutorial_agent.get_model', return_value=mock_model), \
-         patch('app.agents.tutorial_agent.VideoAgent', return_value=mock_video_agent), \
          patch('app.agents.tutorial_agent.ImageAgent', return_value=mock_image_agent), \
          patch('app.agents.tutorial_agent.AudioAgent', return_value=mock_audio_agent), \
          patch('app.agents.tutorial_agent.MetricoolClient') as MockMetricool:
@@ -107,7 +106,6 @@ def test_tutorial_logic():
         mock_mc.get_account_info.return_value = {"connected": ["instagram", "linkedin"]}
 
         # Setup Agent Mocks (Simulate Success)
-        mock_video_agent.generate_video.return_value = "http://video.mp4"
         mock_audio_agent.generate_audio.return_value = "http://audio.mp3"
         mock_image_agent.generate_image.return_value = "http://image.png"
 
@@ -135,9 +133,10 @@ def test_tutorial_logic():
         else:
              print("   [FAIL] Final Audio Summary Missing")
 
-        # 4. RUN TEST CASE 2: ROBUST FALLBACK (Video Fail -> Image Success)
-        print("\n[TEST 2]: Asset Fallback (Video Fail)...")
-        mock_video_agent.generate_video.return_value = None # Fail Video
+        # 4. RUN TEST CASE 2: ROBUST FALLBACK (Video Request -> Image Success)
+        print("\n[TEST 2]: Asset Fallback (Video Req -> Image)...")
+        # Ensure image agent works
+        mock_image_agent.generate_image.return_value = "http://image_fallback.png"
         
         result_fallback = generate_tutorial("user_123", "Digital Marketing")
         
@@ -148,13 +147,12 @@ def test_tutorial_logic():
                      found_fallback = True
         
         if found_fallback:
-            print("   [OK] Video Failure -> Image Fallback Triggered")
+            print("   [OK] Video Request -> Image Fallback Triggered")
         else:
-            print("   [FAIL] Fallback Logic Failed")
+            print("   [FAIL] Fallback Logic Failed (Expected 'fallback': True in block)")
 
-        # 5. RUN TEST CASE 3: TOTAL FAILURE (Video & Image Fail -> Blocked)
+        # 5. RUN TEST CASE 3: TOTAL FAILURE (Image Fail -> Blocked)
         print("\n[TEST 3]: Total Failure (Strict Validation Blocks Save)...")
-        mock_video_agent.generate_video.return_value = None
         mock_image_agent.generate_image.return_value = None
         
         # New behavior: Should raise RuntimeError and NOT save tutorial
