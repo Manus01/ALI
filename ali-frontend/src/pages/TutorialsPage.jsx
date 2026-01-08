@@ -66,16 +66,23 @@ export default function TutorialsPage() {
         setGenerationState('loading');
         setErrorMessage('');
         try {
-            await api.post('/generate/tutorial', null, {
-                params: { topic: finalTopic }
-            });
+            // Submit REQUEST (not generation) - Admin will review and approve
+            // This complies with spec v1.2 §4.1: Admin-Gated Tutorial Generation
+            const response = await api.post('/tutorials/request', { topic: finalTopic });
 
             setCustomTopic('');
             setGenerationState('success');
-            setTimeout(() => setGenerationState('idle'), 3000);
+            // Show success message explaining the new flow
+            setErrorMessage(`✅ ${response.data.message || "Request submitted! You'll be notified when approved."}`);
+            setTimeout(() => { setGenerationState('idle'); setErrorMessage(''); }, 5000);
         } catch (err) {
             console.error(err);
-            setErrorMessage('AI is resting, try again in a moment.');
+            // Handle 403 differently - explain the new flow
+            if (err.response?.status === 403) {
+                setErrorMessage('Tutorial requests require approval. Request submitted for review.');
+            } else {
+                setErrorMessage(err.response?.data?.detail || 'Failed to submit request. Try again.');
+            }
             setGenerationState('idle');
         }
     };

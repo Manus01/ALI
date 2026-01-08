@@ -4,7 +4,8 @@ import { useAuth } from '../hooks/useAuth';
 import Logger from '../services/Logger';
 import {
     FaUserCog, FaDatabase, FaPlay, FaBell, FaLink,
-    FaSync, FaInstagram, FaLinkedin, FaFacebook, FaTiktok, FaSpinner, FaFileCsv, FaSearch, FaExclamationTriangle
+    FaSync, FaInstagram, FaLinkedin, FaFacebook, FaTiktok, FaSpinner, FaFileCsv, FaSearch, FaExclamationTriangle,
+    FaCheckCircle, FaTimesCircle, FaPalette, FaLightbulb, FaThList
 } from 'react-icons/fa';
 
 const CHANNEL_ICONS = {
@@ -14,16 +15,36 @@ const CHANNEL_ICONS = {
     tiktok: <FaTiktok className="text-black" />
 };
 
+// Tab configuration for Orchestration Hub
+const ORCHESTRATION_TABS = [
+    { id: 'tutorials', label: 'Tutorial Approvals', icon: <FaPlay /> },
+    { id: 'creatives', label: 'Creative Staging', icon: <FaPalette /> },
+    { id: 'actions', label: 'Action Center', icon: <FaLightbulb /> },
+    { id: 'alerts', label: 'Research Alerts', icon: <FaBell /> }
+];
+
 export default function AdminPage() {
     const { currentUser } = useAuth();
     const [isAdmin, setIsAdmin] = useState(false);
+    const [activeTab, setActiveTab] = useState('tutorials'); // Orchestration Hub tab state
+
+    // Orchestration Hub data states
+    const [tutorialRequests, setTutorialRequests] = useState([]);
+    const [creativeDrafts, setCreativeDrafts] = useState([]);
+    const [recommendations, setRecommendations] = useState([]);
+    const [researchAlerts, setResearchAlerts] = useState([]);
+    const [loadingRequests, setLoadingRequests] = useState(false);
+    const [loadingDrafts, setLoadingDrafts] = useState(false);
+    const [loadingRecommendations, setLoadingRecommendations] = useState(false);
+    const [loadingAlerts, setLoadingAlerts] = useState(false);
+
+    // Legacy state (kept for backward compatibility)
     const [targetUid, setTargetUid] = useState("");
     const [userSearch, setUserSearch] = useState("");
     const [blogId, setBlogId] = useState("");
     const [pendingTasks, setPendingTasks] = useState([]);
     const [verifiedChannels, setVerifiedChannels] = useState([]);
     const [logs, setLogs] = useState([]);
-    // integrationAlerts removed
     const [researchUsers, setResearchUsers] = useState([]);
     const [tutorials, setTutorials] = useState([]);
     const [aiReports, setAiReports] = useState([]);
@@ -32,26 +53,31 @@ export default function AdminPage() {
     const [loadingAI, setLoadingAI] = useState(false);
     const [actionMsg, setActionMsg] = useState("");
 
-    // Moved these hooks from after the conditional return to fix React error #310
+    // Additional state for provisioning
     const [availableBrands, setAvailableBrands] = useState([]);
     const [brandSearch, setBrandSearch] = useState("");
     const [isBrandsLoading, setIsBrandsLoading] = useState(false);
     const [connections, setConnections] = useState([]);
 
+
     useEffect(() => {
         if (currentUser?.email === "manoliszografos@gmail.com") {
             setIsAdmin(true);
             fetchLogs();
-            // fetchIntegrationAlerts removed
             fetchResearchUsers();
             fetchTutorials();
             fetchAiReports();
             fetchPendingTasks();
             fetchConnections();
+            // Orchestration Hub data
+            fetchTutorialRequests();
+            fetchCreativeDrafts();
+            fetchRecommendations();
+            fetchResearchAlerts();
         }
     }, [currentUser]);
 
-    // Moved this useEffect from after the conditional return to fix React error #310
+    // Fetch brands for provisioning
     useEffect(() => {
         if (!isAdmin) return;
         const fetchBrands = async () => {
@@ -64,6 +90,112 @@ export default function AdminPage() {
         };
         fetchBrands();
     }, [isAdmin]);
+
+    // --- ORCHESTRATION HUB FETCH FUNCTIONS ---
+    const fetchTutorialRequests = async () => {
+        setLoadingRequests(true);
+        try {
+            const res = await api.get('/api/admin/tutorial-requests');
+            setTutorialRequests(res.data.requests || []);
+        } catch (err) { console.error("Failed to fetch tutorial requests", err); }
+        finally { setLoadingRequests(false); }
+    };
+
+    const fetchCreativeDrafts = async () => {
+        setLoadingDrafts(true);
+        try {
+            const res = await api.get('/api/admin/creative-drafts');
+            setCreativeDrafts(res.data.drafts || []);
+        } catch (err) { console.error("Failed to fetch creative drafts", err); }
+        finally { setLoadingDrafts(false); }
+    };
+
+    const fetchRecommendations = async () => {
+        setLoadingRecommendations(true);
+        try {
+            const res = await api.get('/api/admin/recommendations');
+            setRecommendations(res.data.recommendations || []);
+        } catch (err) { console.error("Failed to fetch recommendations", err); }
+        finally { setLoadingRecommendations(false); }
+    };
+
+    const fetchResearchAlerts = async () => {
+        setLoadingAlerts(true);
+        try {
+            const res = await api.get('/api/admin/research-alerts');
+            setResearchAlerts(res.data.alerts || []);
+        } catch (err) { console.error("Failed to fetch research alerts", err); }
+        finally { setLoadingAlerts(false); }
+    };
+
+    // --- ORCHESTRATION HUB ACTION HANDLERS ---
+    const handleApproveTutorialRequest = async (requestId) => {
+        try {
+            await api.post(`/api/admin/tutorial-requests/${requestId}/approve`);
+            setActionMsg("✅ Request Approved!");
+            fetchTutorialRequests();
+        } catch (err) {
+            console.error(err);
+            alert("Approval failed: " + (err.response?.data?.detail || err.message));
+        }
+    };
+
+    const handleDenyTutorialRequest = async (requestId) => {
+        const reason = prompt("Reason for denial (optional):");
+        try {
+            await api.post(`/api/admin/tutorial-requests/${requestId}/deny?reason=${encodeURIComponent(reason || '')}`);
+            setActionMsg("❌ Request Denied");
+            fetchTutorialRequests();
+        } catch (err) {
+            console.error(err);
+            alert("Denial failed: " + (err.response?.data?.detail || err.message));
+        }
+    };
+
+    const handleTriggerGeneration = async (requestId) => {
+        try {
+            await api.post(`/api/admin/tutorial-requests/${requestId}/generate`);
+            setActionMsg("🚀 Generation Triggered!");
+            fetchTutorialRequests();
+        } catch (err) {
+            console.error(err);
+            alert("Generation trigger failed: " + (err.response?.data?.detail || err.message));
+        }
+    };
+
+    const handlePublishDraft = async (draftId) => {
+        try {
+            await api.post(`/api/admin/creative-drafts/${draftId}/publish`);
+            setActionMsg("✅ Creative Published!");
+            fetchCreativeDrafts();
+        } catch (err) {
+            console.error(err);
+            alert("Publish failed: " + (err.response?.data?.detail || err.message));
+        }
+    };
+
+    const handleApproveRecommendation = async (recommendationId) => {
+        try {
+            await api.post(`/api/admin/recommendations/${recommendationId}/approve`);
+            setActionMsg("✅ Action Approved!");
+            fetchRecommendations();
+        } catch (err) {
+            console.error(err);
+            alert("Approval failed: " + (err.response?.data?.detail || err.message));
+        }
+    };
+
+    const handleAcknowledgeAlert = async (alertId) => {
+        try {
+            await api.post(`/api/admin/research-alerts/${alertId}/acknowledge`);
+            setActionMsg("✅ Alert Acknowledged");
+            fetchResearchAlerts();
+        } catch (err) {
+            console.error(err);
+            alert("Acknowledge failed: " + (err.response?.data?.detail || err.message));
+        }
+    };
+
 
     const fetchLogs = async () => {
         try {
@@ -251,9 +383,9 @@ export default function AdminPage() {
             <header className="mb-10 flex justify-between items-center">
                 <div>
                     <h1 className="text-3xl font-black flex items-center gap-3">
-                        <FaUserCog className="text-indigo-600" /> Research Control
+                        <FaThList className="text-indigo-600" /> ALI Orchestration Hub
                     </h1>
-                    <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mt-1">PhD Data Management</p>
+                    <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mt-1">Unified Governance Center</p>
                 </div>
                 <div className="flex gap-4 items-center">
                     {actionMsg && <span className="text-green-600 font-bold text-sm">{actionMsg}</span>}
@@ -263,9 +395,221 @@ export default function AdminPage() {
                 </div>
             </header>
 
-            {/* LIVE FEED */}
+            {/* ORCHESTRATION HUB TABS */}
+            <div className="mb-10 bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
+                {/* Tab Navigation */}
+                <div className="flex border-b border-slate-100">
+                    {ORCHESTRATION_TABS.map(tab => (
+                        <button
+                            key={tab.id}
+                            onClick={() => setActiveTab(tab.id)}
+                            className={`flex-1 py-4 px-6 text-sm font-bold flex items-center justify-center gap-2 transition-all ${activeTab === tab.id
+                                    ? 'bg-indigo-600 text-white'
+                                    : 'text-slate-500 hover:bg-slate-50'
+                                }`}
+                        >
+                            {tab.icon} {tab.label}
+                        </button>
+                    ))}
+                </div>
+
+                {/* Tab Content */}
+                <div className="p-8">
+                    {/* TAB 1: Tutorial Approvals */}
+                    {activeTab === 'tutorials' && (
+                        <div>
+                            <div className="flex justify-between items-center mb-6">
+                                <h3 className="text-lg font-black text-slate-800">Tutorial Generation Requests</h3>
+                                <button onClick={fetchTutorialRequests} className="text-xs font-bold text-indigo-600 hover:bg-indigo-50 px-3 py-2 rounded-xl flex items-center gap-1">
+                                    {loadingRequests ? <FaSpinner className="animate-spin" /> : <FaSync />} Refresh
+                                </button>
+                            </div>
+                            {tutorialRequests.length === 0 ? (
+                                <div className="text-center py-12 text-slate-400 text-sm">
+                                    <FaPlay className="mx-auto text-4xl mb-4 opacity-20" />
+                                    <p>No pending tutorial requests</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    {tutorialRequests.map(req => (
+                                        <div key={req.id} className="p-6 rounded-2xl border border-slate-100 bg-slate-50/50 hover:shadow-md transition-all">
+                                            <div className="flex justify-between items-start">
+                                                <div className="flex-1">
+                                                    <h4 className="font-bold text-slate-800">{req.topic || "Untitled"}</h4>
+                                                    <p className="text-xs text-slate-400 mt-1">User: {req.userId || "Unknown"}</p>
+                                                    <span className={`inline-block mt-2 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${req.status === 'PENDING' ? 'bg-amber-100 text-amber-700' :
+                                                            req.status === 'APPROVED' ? 'bg-green-100 text-green-700' :
+                                                                req.status === 'GENERATING' ? 'bg-blue-100 text-blue-700' :
+                                                                    req.status === 'COMPLETED' ? 'bg-indigo-100 text-indigo-700' :
+                                                                        'bg-red-100 text-red-700'
+                                                        }`}>
+                                                        {req.status}
+                                                    </span>
+                                                </div>
+                                                <div className="flex gap-2">
+                                                    {req.status === 'PENDING' && (
+                                                        <>
+                                                            <button onClick={() => handleApproveTutorialRequest(req.id)} className="bg-green-600 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-green-700 flex items-center gap-1">
+                                                                <FaCheckCircle /> Approve
+                                                            </button>
+                                                            <button onClick={() => handleDenyTutorialRequest(req.id)} className="bg-red-500 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-red-600 flex items-center gap-1">
+                                                                <FaTimesCircle /> Deny
+                                                            </button>
+                                                        </>
+                                                    )}
+                                                    {req.status === 'APPROVED' && (
+                                                        <button onClick={() => handleTriggerGeneration(req.id)} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-indigo-700 flex items-center gap-1">
+                                                            <FaPlay /> Generate
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* TAB 2: Creative Staging */}
+                    {activeTab === 'creatives' && (
+                        <div>
+                            <div className="flex justify-between items-center mb-6">
+                                <h3 className="text-lg font-black text-slate-800">Creative Drafts Staging</h3>
+                                <button onClick={fetchCreativeDrafts} className="text-xs font-bold text-indigo-600 hover:bg-indigo-50 px-3 py-2 rounded-xl flex items-center gap-1">
+                                    {loadingDrafts ? <FaSpinner className="animate-spin" /> : <FaSync />} Refresh
+                                </button>
+                            </div>
+                            {creativeDrafts.length === 0 ? (
+                                <div className="text-center py-12 text-slate-400 text-sm">
+                                    <FaPalette className="mx-auto text-4xl mb-4 opacity-20" />
+                                    <p>No creative drafts awaiting review</p>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                    {creativeDrafts.map(draft => (
+                                        <div key={draft.id} className="p-6 rounded-2xl border border-slate-100 bg-white hover:shadow-lg transition-all">
+                                            <div className="aspect-video bg-gradient-to-br from-slate-100 to-slate-200 rounded-xl mb-4 flex items-center justify-center">
+                                                <FaPalette className="text-4xl text-slate-300" />
+                                            </div>
+                                            <h4 className="font-bold text-slate-800 truncate">{draft.title || "Untitled Draft"}</h4>
+                                            <p className="text-xs text-slate-400 mt-1">{draft.format || "Unknown format"} • {draft.size || "N/A"}</p>
+                                            <div className="flex justify-between items-center mt-4">
+                                                <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${draft.status === 'DRAFT' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'
+                                                    }`}>
+                                                    {draft.status}
+                                                </span>
+                                                <button onClick={() => handlePublishDraft(draft.id)} className="bg-green-600 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-green-700">
+                                                    Publish
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* TAB 3: Action Center */}
+                    {activeTab === 'actions' && (
+                        <div>
+                            <div className="flex justify-between items-center mb-6">
+                                <h3 className="text-lg font-black text-slate-800">Next Best Action Recommendations</h3>
+                                <button onClick={fetchRecommendations} className="text-xs font-bold text-indigo-600 hover:bg-indigo-50 px-3 py-2 rounded-xl flex items-center gap-1">
+                                    {loadingRecommendations ? <FaSpinner className="animate-spin" /> : <FaSync />} Refresh
+                                </button>
+                            </div>
+                            {recommendations.length === 0 ? (
+                                <div className="text-center py-12 text-slate-400 text-sm">
+                                    <FaLightbulb className="mx-auto text-4xl mb-4 opacity-20" />
+                                    <p>No pending actions from the Prediction Engine</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    {recommendations.map(rec => (
+                                        <div key={rec.id} className="p-6 rounded-2xl border border-indigo-100 bg-indigo-50/30 hover:shadow-md transition-all">
+                                            <div className="flex justify-between items-start">
+                                                <div className="flex-1">
+                                                    <div className="flex items-center gap-2 mb-2">
+                                                        <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${rec.priority === 'HIGH' ? 'bg-red-100 text-red-600' :
+                                                                rec.priority === 'MEDIUM' ? 'bg-amber-100 text-amber-600' :
+                                                                    'bg-slate-100 text-slate-500'
+                                                            }`}>
+                                                            {rec.priority || 'MEDIUM'}
+                                                        </span>
+                                                        <span className="text-[10px] font-bold text-slate-400 uppercase">{rec.actionType || 'Recommendation'}</span>
+                                                    </div>
+                                                    <h4 className="font-bold text-slate-800">{rec.title || "Untitled Action"}</h4>
+                                                    <p className="text-sm text-slate-600 mt-2">{rec.description || "No description provided"}</p>
+                                                </div>
+                                                <button onClick={() => handleApproveRecommendation(rec.id)} className="bg-indigo-600 text-white px-5 py-2.5 rounded-xl text-xs font-bold hover:bg-indigo-700 flex items-center gap-1">
+                                                    <FaCheckCircle /> Approve Action
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* TAB 4: Research Alerts */}
+                    {activeTab === 'alerts' && (
+                        <div>
+                            <div className="flex justify-between items-center mb-6">
+                                <h3 className="text-lg font-black text-slate-800">Web Engine Monitoring Alerts</h3>
+                                <button onClick={fetchResearchAlerts} className="text-xs font-bold text-indigo-600 hover:bg-indigo-50 px-3 py-2 rounded-xl flex items-center gap-1">
+                                    {loadingAlerts ? <FaSpinner className="animate-spin" /> : <FaSync />} Refresh
+                                </button>
+                            </div>
+                            {researchAlerts.length === 0 ? (
+                                <div className="text-center py-12 text-slate-400 text-sm">
+                                    <FaBell className="mx-auto text-4xl mb-4 opacity-20" />
+                                    <p>No critical or important alerts detected</p>
+                                </div>
+                            ) : (
+                                <div className="space-y-4">
+                                    {researchAlerts.map(alert => (
+                                        <div key={alert.id} className={`p-6 rounded-2xl border transition-all ${alert.severity === 'CRITICAL' ? 'border-red-200 bg-red-50/50' :
+                                                alert.severity === 'IMPORTANT' ? 'border-amber-200 bg-amber-50/50' :
+                                                    'border-slate-200 bg-slate-50/50'
+                                            }`}>
+                                            <div className="flex justify-between items-start">
+                                                <div className="flex-1">
+                                                    <div className="flex items-center gap-3 mb-2">
+                                                        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${alert.severity === 'CRITICAL' ? 'bg-red-500 text-white' :
+                                                                alert.severity === 'IMPORTANT' ? 'bg-amber-500 text-white' :
+                                                                    'bg-slate-300 text-slate-700'
+                                                            }`}>
+                                                            {alert.severity}
+                                                        </span>
+                                                        {alert.topicTags && (
+                                                            <span className="text-[10px] text-slate-400">{alert.topicTags.join(', ')}</span>
+                                                        )}
+                                                    </div>
+                                                    <h4 className="font-bold text-slate-800">{alert.title || `Pack Change: ${alert.packId || 'Unknown'}`}</h4>
+                                                    <p className="text-sm text-slate-600 mt-1">{alert.description || (alert.changes ? `${alert.changes.length} changes detected` : 'Alert details unavailable')}</p>
+                                                    {alert.detectedAt && (
+                                                        <p className="text-[10px] text-slate-400 mt-2">Detected: {new Date(alert.detectedAt).toLocaleString()}</p>
+                                                    )}
+                                                </div>
+                                                <button onClick={() => handleAcknowledgeAlert(alert.id)} className="bg-slate-700 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-slate-800 flex items-center gap-1">
+                                                    <FaCheckCircle /> Acknowledge
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            {/* LEGACY: LIVE FEED - Pending Integration Requests */}
             {pendingTasks.length > 0 && (
                 <div className="mb-10 space-y-4">
+
                     <h3 className="text-[10px] font-black text-amber-600 flex items-center gap-2 uppercase tracking-[0.2em]"><FaBell className="animate-pulse" /> Pending Integration Requests</h3>
                     {pendingTasks.map(task => {
                         // Smart Match Logic Calculation PER CARD (v2)

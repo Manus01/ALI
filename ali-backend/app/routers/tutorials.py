@@ -5,9 +5,18 @@ import os
 import json
 import logging
 import traceback
-from typing import Callable, List, Dict
-import httpx # For async media health checks
+import time
+from typing import Callable, List, Dict, Optional
+import httpx  # For async media health checks
 from firebase_admin import firestore
+
+# Import lifecycle types for type hints
+try:
+    from app.types.tutorial_lifecycle import TutorialStatus, TutorialRequestStatus
+except ImportError:
+    # Fallback if types not deployed yet
+    TutorialStatus = None
+    TutorialRequestStatus = None
 
 logger = logging.getLogger("ali_platform.routers.tutorials")
 
@@ -53,9 +62,79 @@ class CompletionRequest(BaseModel):
     score: float = Field(..., ge=0, le=100)
     quiz_results: list[dict] = Field(default_factory=list, description="Detailed results per quiz/section")
 
-# --- 1. ASYNC GENERATION (Standard) ---
+
+class TutorialRequestCreate(BaseModel):
+    """Request for a new tutorial (user submits, admin approves)."""
+    topic: str = Field(..., min_length=3, max_length=200)
+    context: Optional[str] = Field(None, max_length=1000)
+
+
+# --- 0. TUTORIAL REQUEST SYSTEM (Admin-Gated per Spec v1.2 §4.1) ---
+@router.post("/tutorials/request")
+def request_tutorial(payload: TutorialRequestCreate, user: dict = Depends(verify_token)):
+    """
+    User submits a tutorial request → Admin must approve before generation.
+    This replaces direct generation access for non-admin users.
+    """
+    try:
+        _require_db("request_tutorial")()
+        
+        request_id = f"req_{user['uid']}_{int(time.time())}"
+        
+        db.collection("tutorial_requests").document(request_id).set({
+            "requestId": request_id,
+            "userId": user["uid"],
+            "userEmail": user.get("email", ""),
+            "topic": payload.topic.strip(),
+            "context": payload.context,
+            "status": "PENDING",  # PENDING → APPROVED → GENERATING → COMPLETED
+            "createdAt": firestore.SERVER_TIMESTAMP,
+            "adminDecision": None,
+            "tutorialId": None
+        })
+        
+        logger.info(f"📝 Tutorial request submitted: {request_id} by {user.get('email')}")
+        
+        # Create notification for user
+        db.collection("users").document(user["uid"]).collection("notifications").document(request_id).set({
+            "user_id": user["uid"],
+            "type": "info",
+            "status": "pending_approval",
+            "title": "Tutorial Request Submitted",
+            "message": f"Your request for '{payload.topic.strip()}' is pending admin review.",
+            "link": None,
+            "read": False,
+            "created_at": firestore.SERVER_TIMESTAMP
+        })
+        
+        return {
+            "requestId": request_id,
+            "status": "PENDING",
+            "message": "Request submitted for admin review. You'll be notified when approved."
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Tutorial Request Error: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Failed to submit request.")
+
+
+# --- 1. ASYNC GENERATION (Admin-Only per Spec v1.2 §4.1) ---
 @router.post("/generate/tutorial")
-def start_tutorial_job(topic: str, background_tasks: BackgroundTasks, user: dict = Depends(verify_token)):
+def start_tutorial_job(
+    topic: str,
+    background_tasks: BackgroundTasks,
+    request_id: Optional[str] = None,
+    user: dict = Depends(verify_token)
+):
+    """
+    ADMIN-ONLY: Triggers tutorial generation.
+    Non-admin users should use POST /tutorials/request instead.
+    """
+    # SECURITY FIX: Require admin for direct generation
+    _require_admin(user, "generate_tutorial")
     try:
         global process_tutorial_job
         if process_tutorial_job is None:
