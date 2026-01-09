@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useLocation } from 'react-router-dom';
 import api from '../api/axiosInterceptor';
 import { useAuth } from '../hooks/useAuth';
@@ -21,6 +21,10 @@ export default function CampaignCenter() {
     const [campaignId, setCampaignId] = useState(null);
     const [progress, setProgress] = useState({ message: 'Initializing...', percent: 0 });
     const [finalAssets, setFinalAssets] = useState(null);
+
+    // Prevent double submission and track finalization state
+    const isFinalizing = useRef(false);
+    const hasFinalized = useRef(false);
 
     // Recycling States
     const [showRecycleModal, setShowRecycleModal] = useState(false);
@@ -70,15 +74,8 @@ export default function CampaignCenter() {
         fetchIntegrations();
     }, []);
 
-    // Fetch user's draft creatives on mount
-    useEffect(() => {
-        if (currentUser && hasBrandDna) {
-            fetchUserDrafts();
-        }
-    }, [currentUser, hasBrandDna]);
-
     // --- USER DRAFT REVIEW FUNCTIONS ---
-    const fetchUserDrafts = async () => {
+    const fetchUserDrafts = useCallback(async () => {
         setLoadingDrafts(true);
         try {
             const res = await api.get('/api/creatives/my-drafts');
@@ -88,7 +85,14 @@ export default function CampaignCenter() {
         } finally {
             setLoadingDrafts(false);
         }
-    };
+    }, []);
+
+    // Fetch user's draft creatives on mount
+    useEffect(() => {
+        if (currentUser && hasBrandDna) {
+            fetchUserDrafts();
+        }
+    }, [currentUser, hasBrandDna, fetchUserDrafts]);
 
     const handleApproveAndPublish = async (draftId) => {
         setPublishingId(draftId);
@@ -124,9 +128,28 @@ export default function CampaignCenter() {
         }
     }, [location.state, userProfile]);
 
+    // Define fetchFinalResults before the progress listener useEffect that uses it
+    const fetchFinalResults = useCallback(async () => {
+        if (!campaignId) return;
+
+        try {
+            const res = await api.get(`/campaign/results/${campaignId}`);
+            setFinalAssets(res.data);
+            setStage('results');
+            // Refresh drafts so the user sees their new draft immediately
+            fetchUserDrafts();
+        } catch (err) {
+            console.error("Failed to fetch results", err);
+            // Don't change stage on fetch error - show what we have
+        }
+    }, [campaignId, fetchUserDrafts]);
+
     // --- 1. REAL-TIME PROGRESS LISTENER (SECURE PATH) ---
     useEffect(() => {
         if (stage !== 'generating' || !campaignId || !currentUser) return;
+
+        // Prevent re-triggering if we've already fetched results
+        let isMounted = true;
 
         const db = getFirestore();
 
@@ -134,6 +157,8 @@ export default function CampaignCenter() {
         const statusDocRef = doc(db, "users", currentUser.uid, "notifications", campaignId);
 
         const unsub = onSnapshot(statusDocRef, (snapshot) => {
+            if (!isMounted) return;
+
             if (snapshot.exists()) {
                 const data = snapshot.data();
                 setProgress({
@@ -141,19 +166,24 @@ export default function CampaignCenter() {
                     percent: data.progress || 0
                 });
 
-                if (data.progress === 100) {
+                if (data.progress === 100 && data.status === 'completed') {
+                    // Only fetch results once
                     fetchFinalResults();
                 }
                 if (data.status === 'error') {
                     setStage('error');
+                    isFinalizing.current = false;
                 }
             }
         }, (err) => {
             console.warn("Progress listener restricted:", err.message);
         });
 
-        return () => unsub();
-    }, [stage, campaignId, currentUser]);
+        return () => {
+            isMounted = false;
+            unsub();
+        };
+    }, [stage, campaignId, currentUser, fetchFinalResults]);
 
     // --- BRAND DNA HANDLERS ---
     const handleLogoChange = (e) => {
@@ -233,6 +263,9 @@ export default function CampaignCenter() {
         try {
             const res = await api.post('/campaign/initiate', { goal });
             setQuestions(res.data.questions);
+            // Reset finalization tracking for new campaign
+            isFinalizing.current = false;
+            hasFinalized.current = false;
             setStage('questioning');
         } catch (err) {
             console.error("Initiation failed", err);
@@ -240,26 +273,28 @@ export default function CampaignCenter() {
         }
     };
 
-    const handleConfirmStrategy = async () => {
+    const handleConfirmStrategy = useCallback(async () => {
+        // CRITICAL FIX: Prevent double submission that causes the loop
+        if (isFinalizing.current || hasFinalized.current) {
+            console.warn("Finalization already in progress or completed, ignoring duplicate call");
+            return;
+        }
+
+        isFinalizing.current = true;
         setStage('generating');
+
         try {
             const res = await api.post('/campaign/finalize', { goal, answers });
             setCampaignId(res.data.campaign_id);
+            hasFinalized.current = true;
+            // Stage remains 'generating' - the progress listener will transition to results
         } catch (err) {
             console.error("Finalization failed", err);
-            setStage('questioning');
+            isFinalizing.current = false;
+            // Don't go back to questioning - show error stage instead to prevent loop
+            setStage('error');
         }
-    };
-
-    const fetchFinalResults = async () => {
-        try {
-            const res = await api.get(`/campaign/results/${campaignId}`);
-            setFinalAssets(res.data);
-            setStage('results');
-        } catch (err) {
-            console.error("Failed to fetch results", err);
-        }
-    };
+    }, [goal, answers]);
 
     const handleRecycleSubmit = async () => {
         if (!recyclePrompt) return;
