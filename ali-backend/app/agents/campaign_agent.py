@@ -10,13 +10,18 @@ class CampaignAgent(BaseAgent):
         # Using Pro for complex strategic reasoning
         self.model = get_model(intent='complex')
 
-    async def generate_clarifying_questions(self, goal: str, brand_dna: dict, connected_platforms: list = None):
+    async def generate_clarifying_questions(self, goal: str, brand_dna: dict, connected_platforms: list = None, selected_channels: list = None):
         """Analyze goal vs Brand DNA and ask 3-4 strategic questions."""
         self.log_task(f"Generating strategic questions for goal: {goal}")
         
         # Contextual Instructions based on integrations
         platform_instruction = ""
-        if connected_platforms and len(connected_platforms) > 0:
+        if selected_channels and len(selected_channels) > 0:
+             platform_instruction = f"""
+            CONTEXT: The user has ALREADY selected these channels: {', '.join(selected_channels)}. 
+            DO NOT ask questions about which channels to use. Focus only on content strategy.
+            """
+        elif connected_platforms and len(connected_platforms) > 0:
             platform_instruction = f"""
             DETECTED INTEGRATIONS: {', '.join(connected_platforms)}.
             CRITICAL: Do NOT ask which platforms to use. We MUST use the detected ones. 

@@ -150,10 +150,17 @@ class OrchestratorAgent(BaseAgent):
             
             self._update_progress(uid, campaign_id, f"Generating {len(tasks)} Channel Assets...", 60)
             
+                })
+            
+            self._update_progress(uid, campaign_id, f"Generating {len(tasks)} Channel Assets...", 60)
+            
             # Execute all tasks concurrently
             results = await asyncio.gather(*tasks, return_exceptions=True)
             
             # Map results back to structured assets
+            from app.services.asset_processor import get_asset_processor
+            asset_processor = get_asset_processor()
+            
             assets = {}
             assets_metadata = {}
             for i, result in enumerate(results):
@@ -165,10 +172,25 @@ class OrchestratorAgent(BaseAgent):
                     continue
                     
                 # Extract URL if dict (new format), else use result (legacy string)
-                if isinstance(result, dict):
-                    assets[channel] = result.get('url')
-                else:
-                    assets[channel] = result
+                raw_url = result.get('url') if isinstance(result, dict) else result
+                
+                # FIX 1: Apply Programmatic Brand Overlay
+                try:
+                    # Get brand details
+                    logo_url = brand_dna.get('logo_url')
+                    primary_color = brand_dna.get('color_palette', {}).get('primary', '#000000')
+                    
+                    # Apply overlay
+                    final_url = await asyncio.to_thread(
+                        asset_processor.apply_brand_layer,
+                        raw_url,
+                        logo_url,
+                        primary_color
+                    )
+                    assets[channel] = final_url
+                except Exception as e:
+                    logger.warning(f"⚠️ Brand overlay skipped for {channel}: {e}")
+                    assets[channel] = raw_url
                 
                 assets_metadata[channel] = meta
             
@@ -190,7 +212,10 @@ class OrchestratorAgent(BaseAgent):
             for channel, asset_url in assets.items():
                 if asset_url:
                     meta = assets_metadata.get(channel, {})
-                    draft_id = f"draft_{campaign_id}_{channel}"
+                    
+                    # FIX 2: Standardize Draft ID Construction (lowercase, underscores)
+                    clean_channel = channel.lower().replace(" ", "_").replace("-", "_")
+                    draft_id = f"draft_{campaign_id}_{clean_channel}"
                     
                     # Get channel-specific copy from blueprint
                     channel_blueprint = blueprint.get(channel, blueprint.get('instagram', {}))

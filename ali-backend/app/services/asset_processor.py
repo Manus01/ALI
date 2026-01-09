@@ -440,6 +440,88 @@ class AssetProcessor:
         logger.info(f"✅ Processed asset {asset_id}: {result.width}x{result.height}")
         return result
     
+    def apply_brand_layer(
+        self,
+        base_image_url: str,
+        logo_url: Optional[str],
+        primary_color: str = "#000000",
+        overlay_opacity: float = 0.1
+    ) -> str:
+        """
+        Apply programmatic brand overlay (Logo + Color Tint).
+        Fix for "Logo Issue" - ensures brand presence on all generated assets.
+        """
+        if not PIL_AVAILABLE or not self.storage_client:
+            logger.warning("⚠️ PIL or GCS not available for brand overlay")
+            return base_image_url
+
+        try:
+            # 1. Download Base Image
+            import requests
+            response = requests.get(base_image_url)
+            base_img = Image.open(io.BytesIO(response.content)).convert("RGBA")
+            
+            # 2. Apply Subtle Color Overlay (Brand Tint)
+            # Create a solid color layer
+            overlay = Image.new("RGBA", base_img.size, primary_color)
+            # Blend it with very low opacity
+            base_img = Image.blend(base_img, overlay, overlay_opacity)
+
+            # 3. Apply Logo (Top-Right Safe Zone)
+            if logo_url:
+                try:
+                    logo_response = requests.get(logo_url)
+                    logo_img = Image.open(io.BytesIO(logo_response.content)).convert("RGBA")
+                    
+                    # Resize logo to ~15% of image width
+                    target_logo_width = int(base_img.width * 0.15)
+                    aspect_ratio = logo_img.height / logo_img.width
+                    target_logo_height = int(target_logo_width * aspect_ratio)
+                    
+                    logo_img = logo_img.resize((target_logo_width, target_logo_height), Image.Resampling.LANCZOS)
+                    
+                    # Position: Top-Right with padding (5% of width)
+                    padding = int(base_img.width * 0.05)
+                    x_pos = base_img.width - target_logo_width - padding
+                    y_pos = padding
+                    
+                    # Paste logo (using itself as mask for transparency)
+                    base_img.paste(logo_img, (x_pos, y_pos), logo_img)
+                except Exception as e:
+                    logger.warning(f"⚠️ Failed to apply logo overlay: {e}")
+
+            # 4. Save and Upload
+            output = io.BytesIO()
+            base_img = base_img.convert("RGB") # Convert back to RGB for JPEG
+            base_img.save(output, format="JPEG", quality=90)
+            processed_bytes = output.getvalue()
+            
+            # Generate a new path for the branded version
+            # extract filename from url roughly or just use a timestamp
+            import time
+            filename = f"branded_{int(time.time())}.jpg"
+            # We don't have user_id/asset_id easily here, so we might need to parse or just store in a temp/branded folder
+            # For now, let's try to extract user_id if possible, or just use a general 'branded' folder
+            # The original URL structure in process_image is: assets/{user_id}/{asset_id}/processed.jpg
+            # Let's try to maintain that structure if we can parse it, otherwise generic.
+            
+            destination_path = f"assets/branded/{filename}"
+            if "assets/" in base_image_url:
+                try:
+                    # Attempt to keep similar path
+                    parts = base_image_url.split("assets/")
+                    if len(parts) > 1:
+                        path_suffix = parts[1].split("?")[0] # remove query params
+                        destination_path = f"assets/{path_suffix.replace('.jpg', '')}_branded.jpg"
+                except:
+                    pass
+
+            return self.upload_to_gcs(processed_bytes, destination_path, "image/jpeg") or base_image_url
+
+        except Exception as e:
+            logger.error(f"❌ Brand overlay failed: {e}")
+            return base_image_url
+    
     # --- HEADLESS RENDERING (v2.2 §7.2: SVG/Mermaid → Raster Export) ---
     
     async def render_svg_to_raster(

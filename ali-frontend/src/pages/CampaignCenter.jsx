@@ -308,7 +308,10 @@ export default function CampaignCenter() {
         setChannelConfirmed(true);
         setStage('loading');
         try {
-            const res = await api.post('/campaign/initiate', { goal });
+            const res = await api.post('/campaign/initiate', {
+                goal,
+                selected_channels: selectedChannels // Pass selected channels to backend
+            });
             setQuestions(res.data.questions);
             isFinalizing.current = false;
             hasFinalized.current = false;
@@ -350,7 +353,8 @@ export default function CampaignCenter() {
     const handleApproveAsset = async (channel) => {
         if (!campaignId) return;
         try {
-            const draftId = `draft_${campaignId}_${channel}`;
+            const cleanChannel = channel.toLowerCase().replace(/ /g, "_").replace(/-/g, "_");
+            const draftId = `draft_${campaignId}_${cleanChannel}`;
             await api.post(`/api/creatives/${draftId}/publish`);
             setApprovedChannels(prev => [...prev, channel]);
         } catch (err) {
@@ -359,9 +363,9 @@ export default function CampaignCenter() {
         }
     };
 
-    // Open rejection modal for a channel
     const handleOpenRejection = (channel) => {
-        setRejectionModal({ open: true, channel, assetId: `draft_${campaignId}_${channel}` });
+        const cleanChannel = channel.toLowerCase().replace(/ /g, "_").replace(/-/g, "_");
+        setRejectionModal({ open: true, channel, assetId: `draft_${campaignId}_${cleanChannel}` });
         setRejectionFeedback('');
     };
 
@@ -883,7 +887,7 @@ export default function CampaignCenter() {
                     </div>
 
                     {/* Vertical Review Feed - Grouped by Channel */}
-                    <div className="space-y-6 max-h-[70vh] overflow-y-auto custom-scrollbar pr-2">
+                    <div className="space-y-6 pr-2">
                         {selectedChannels.map(channelId => {
                             const channel = AVAILABLE_CHANNELS.find(c => c.id === channelId) || { name: channelId, icon: '📊' };
                             const assetUrl = finalAssets.assets?.[channelId];
@@ -895,8 +899,8 @@ export default function CampaignCenter() {
 
                             return (
                                 <div key={channelId} className={`bg-white dark:bg-slate-800 rounded-[2rem] border-2 transition-all ${isApproved
-                                        ? 'border-green-200 dark:border-green-800 shadow-lg shadow-green-100 dark:shadow-green-900/20'
-                                        : 'border-slate-100 dark:border-slate-700 shadow-sm'
+                                    ? 'border-green-200 dark:border-green-800 shadow-lg shadow-green-100 dark:shadow-green-900/20'
+                                    : 'border-slate-100 dark:border-slate-700 shadow-sm'
                                     }`}>
                                     {/* Channel Header */}
                                     <div className="flex items-center justify-between p-6 border-b border-slate-100 dark:border-slate-700">
