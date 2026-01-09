@@ -64,8 +64,24 @@ FONT_PAIRINGS = {
         "link": "https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&family=Roboto+Mono:wght@400;500&display=swap",
         "fallback_header": "Helvetica, Arial, sans-serif",
         "fallback_body": "Courier New, monospace"
+    },
+    "aurora": {
+        "header": "Inter",
+        "body": "Roboto Flex",
+        "link": "https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=Roboto+Flex:opsz,wght@8..144,100..1000&display=swap",
+        "fallback_header": "sans-serif",
+        "fallback_body": "sans-serif"
+    },
+    "gridlock": {
+        "header": "Orbitron",
+        "body": "Rajdhani",
+        "link": "https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@400;500;600&display=swap",
+        "fallback_header": "Courier New, monospace",
+        "fallback_body": "Arial, sans-serif"
     }
 }
+
+FONT_MAP = FONT_PAIRINGS
 
 def get_font_pairing(template_name: str) -> dict:
     """Returns font pairing configuration for the given template."""
