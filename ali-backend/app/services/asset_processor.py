@@ -160,6 +160,66 @@ class AssetProcessor:
         
         return []
     
+    def analyze_luminance(self, image_bytes: bytes) -> str:
+        """
+        Analyze image brightness to determine text/logo contrast needs.
+        
+        V3.0 Intelligent Contrast Detection:
+        - Converts image to greyscale
+        - Calculates average pixel brightness (0-255)
+        - Returns mode for optimal text visibility
+        
+        Args:
+            image_bytes: Raw image data
+            
+        Returns:
+            'dark' if brightness < 128 (needs white text)
+            'light' if brightness >= 128 (needs black text)
+        """
+        if not PIL_AVAILABLE:
+            logger.warning("⚠️ PIL not available for luminance analysis")
+            return 'dark'  # Default to dark (white text)
+        
+        try:
+            # Open and convert to greyscale
+            img = Image.open(io.BytesIO(image_bytes)).convert("L")
+            
+            # Resize for faster calculation
+            img = img.resize((100, 100))
+            
+            # Calculate average brightness
+            pixels = list(img.getdata())
+            avg_brightness = sum(pixels) / len(pixels)
+            
+            mode = 'dark' if avg_brightness < 128 else 'light'
+            logger.info(f"🔍 Luminance analysis: avg={avg_brightness:.1f}, mode={mode}")
+            
+            return mode
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Luminance analysis failed: {e}")
+            return 'dark'  # Default to dark (white text)
+    
+    def analyze_luminance_from_url(self, image_url: str) -> str:
+        """
+        Analyze luminance from an image URL.
+        Downloads the image and delegates to analyze_luminance.
+        
+        Args:
+            image_url: URL of the image to analyze
+            
+        Returns:
+            'dark' or 'light' mode string
+        """
+        try:
+            import requests
+            response = requests.get(image_url, timeout=10)
+            response.raise_for_status()
+            return self.analyze_luminance(response.content)
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to fetch image for luminance analysis: {e}")
+            return 'dark'  # Default
+    
     def detect_focal_point(self, image_bytes: bytes) -> Tuple[float, float]:
         """
         Detect focal point of image using Cloud Vision.
@@ -445,11 +505,16 @@ class AssetProcessor:
         base_image_url: str,
         logo_url: Optional[str],
         primary_color: str = "#000000",
-        overlay_opacity: float = 0.1
+        overlay_opacity: float = 0.12
     ) -> str:
         """
         Apply programmatic brand overlay (Logo + Color Tint).
         Fix for "Logo Issue" - ensures brand presence on all generated assets.
+        
+        V3.0 Visual Fix:
+        - Hex colors parsed as RGBA layers (not text)
+        - Uses alpha_composite for proper blending
+        - Logo composited with transparency mask
         """
         if not PIL_AVAILABLE or not self.storage_client:
             logger.warning("⚠️ PIL or GCS not available for brand overlay")
@@ -461,11 +526,23 @@ class AssetProcessor:
             response = requests.get(base_image_url)
             base_img = Image.open(io.BytesIO(response.content)).convert("RGBA")
             
-            # 2. Apply Subtle Color Overlay (Brand Tint)
-            # Create a solid color layer
-            overlay = Image.new("RGBA", base_img.size, primary_color)
-            # Blend it with very low opacity
-            base_img = Image.blend(base_img, overlay, overlay_opacity)
+            # 2. Apply Subtle Color Overlay (Brand Tint) - V3.0 RGBA Fix
+            # Parse hex color string to RGB tuple
+            hex_color = primary_color.lstrip('#')
+            if len(hex_color) == 6:
+                r = int(hex_color[0:2], 16)
+                g = int(hex_color[2:4], 16)
+                b = int(hex_color[4:6], 16)
+            else:
+                # Fallback to black if hex parsing fails
+                r, g, b = 0, 0, 0
+            
+            # Create RGBA layer with ~12% opacity (alpha = 30 out of 255)
+            alpha_value = int(255 * overlay_opacity)  # ~30 for 12%
+            overlay = Image.new("RGBA", base_img.size, (r, g, b, alpha_value))
+            
+            # Use alpha_composite for proper RGBA blending
+            base_img = Image.alpha_composite(base_img, overlay)
 
             # 3. Apply Logo (Top-Right Safe Zone)
             if logo_url:
@@ -473,7 +550,7 @@ class AssetProcessor:
                     logo_response = requests.get(logo_url)
                     logo_img = Image.open(io.BytesIO(logo_response.content)).convert("RGBA")
                     
-                    # Resize logo to ~15% of image width
+                    # Resize logo to 15% of image width
                     target_logo_width = int(base_img.width * 0.15)
                     aspect_ratio = logo_img.height / logo_img.width
                     target_logo_height = int(target_logo_width * aspect_ratio)
@@ -485,25 +562,23 @@ class AssetProcessor:
                     x_pos = base_img.width - target_logo_width - padding
                     y_pos = padding
                     
-                    # Paste logo (using itself as mask for transparency)
-                    base_img.paste(logo_img, (x_pos, y_pos), logo_img)
+                    # Composite logo with proper transparency mask
+                    # Create a transparent layer the same size as base
+                    logo_layer = Image.new("RGBA", base_img.size, (0, 0, 0, 0))
+                    logo_layer.paste(logo_img, (x_pos, y_pos), mask=logo_img)
+                    base_img = Image.alpha_composite(base_img, logo_layer)
                 except Exception as e:
                     logger.warning(f"⚠️ Failed to apply logo overlay: {e}")
 
             # 4. Save and Upload
             output = io.BytesIO()
-            base_img = base_img.convert("RGB") # Convert back to RGB for JPEG
+            base_img = base_img.convert("RGB")  # Convert back to RGB for JPEG
             base_img.save(output, format="JPEG", quality=90)
             processed_bytes = output.getvalue()
             
             # Generate a new path for the branded version
-            # extract filename from url roughly or just use a timestamp
             import time
             filename = f"branded_{int(time.time())}.jpg"
-            # We don't have user_id/asset_id easily here, so we might need to parse or just store in a temp/branded folder
-            # For now, let's try to extract user_id if possible, or just use a general 'branded' folder
-            # The original URL structure in process_image is: assets/{user_id}/{asset_id}/processed.jpg
-            # Let's try to maintain that structure if we can parse it, otherwise generic.
             
             destination_path = f"assets/branded/{filename}"
             if "assets/" in base_image_url:
@@ -511,15 +586,178 @@ class AssetProcessor:
                     # Attempt to keep similar path
                     parts = base_image_url.split("assets/")
                     if len(parts) > 1:
-                        path_suffix = parts[1].split("?")[0] # remove query params
+                        path_suffix = parts[1].split("?")[0]  # remove query params
                         destination_path = f"assets/{path_suffix.replace('.jpg', '')}_branded.jpg"
                 except:
                     pass
 
             return self.upload_to_gcs(processed_bytes, destination_path, "image/jpeg") or base_image_url
-
         except Exception as e:
             logger.error(f"❌ Brand overlay failed: {e}")
+            return base_image_url
+
+    def analyze_image_context(self, keywords: list) -> str:
+        """
+        V3.0 Smart Selection: Returns best template based on content keywords.
+        """
+        keywords_str = " ".join([k.lower() for k in keywords])
+        
+        if any(w in keywords_str for w in ["food", "craft", "travel", "art", "nature", "handmade"]):
+            return "scrapbook"
+        elif any(w in keywords_str for w in ["sale", "event", "youth", "concert", "promo", "deal"]):
+            return "pop"
+        elif any(w in keywords_str for w in ["finance", "law", "b2b", "corporate", "office", "business"]):
+            return "swiss"
+        
+        return None  # No specific match
+
+    def apply_advanced_branding(
+        self,
+        base_image_url: str,
+        brand_dna: Dict[str, Any]
+    ) -> str:
+        """
+        V3.0 Advanced Branding with multiple layout styles.
+        Randomly selects a layout: Border, Split, or Watermark.
+        
+        Args:
+            base_image_url: URL of the base image
+            brand_dna: Brand DNA containing logo_url, color_palette, etc.
+        
+        Returns:
+            URL of the branded image
+        """
+        if not PIL_AVAILABLE or not self.storage_client:
+            logger.warning("⚠️ PIL or GCS not available for advanced branding")
+            return base_image_url
+        
+        import random
+        import requests
+        import time
+        
+        try:
+            # 1. Download Base Image
+            response = requests.get(base_image_url)
+            base_img = Image.open(io.BytesIO(response.content)).convert("RGBA")
+            
+            # Extract brand data
+            logo_url = brand_dna.get('logo_url')
+            color_palette = brand_dna.get('color_palette', {})
+            primary_color = color_palette.get('primary', '#000000')
+            
+            # Parse hex color
+            hex_color = primary_color.lstrip('#')
+            if len(hex_color) == 6:
+                r = int(hex_color[0:2], 16)
+                g = int(hex_color[2:4], 16)
+                b = int(hex_color[4:6], 16)
+            else:
+                r, g, b = 0, 0, 0
+            
+            # 2. Select Random Layout Style
+            layout = random.choice(['border', 'split', 'watermark'])
+            logger.info(f"🎨 Applying '{layout}' branding layout")
+            
+            if layout == 'border':
+                # BORDER: Fixed 20px professional border in brand color
+                border_width = 20
+                new_width = base_img.width + (border_width * 2)
+                new_height = base_img.height + (border_width * 2)
+                
+                bordered = Image.new("RGBA", (new_width, new_height), (r, g, b, 255))
+                bordered.paste(base_img, (border_width, border_width))
+                base_img = bordered
+                logo_position = 'top_right'
+                
+            elif layout == 'split':
+                # SPLIT: Gradient fade at bottom for text readability
+                gradient = Image.new("RGBA", base_img.size, (0, 0, 0, 0))
+                
+                # Create bottom gradient (last 40% of image height)
+                for y in range(int(base_img.height * 0.6), base_img.height):
+                    progress = (y - int(base_img.height * 0.6)) / (base_img.height * 0.4)
+                    alpha = int(180 * progress)  # Max ~70% opacity
+                    for x in range(base_img.width):
+                        gradient.putpixel((x, y), (r, g, b, alpha))
+                
+                base_img = Image.alpha_composite(base_img, gradient)
+                logo_position = 'bottom_center'
+                
+            else:  # watermark
+                # WATERMARK: Repeated logo tiles at 5% opacity
+                if logo_url:
+                    try:
+                        logo_response = requests.get(logo_url)
+                        logo_img = Image.open(io.BytesIO(logo_response.content)).convert("RGBA")
+                        
+                        # Make logo very transparent (5% opacity)
+                        logo_small = logo_img.resize(
+                            (int(base_img.width * 0.10), int(base_img.width * 0.10 * logo_img.height / logo_img.width)),
+                            Image.Resampling.LANCZOS
+                        )
+                        
+                        # Reduce opacity to 5%
+                        alpha = logo_small.split()[3]
+                        alpha = alpha.point(lambda p: int(p * 0.05))
+                        logo_small.putalpha(alpha)
+                        
+                        # Tile the logo
+                        watermark_layer = Image.new("RGBA", base_img.size, (0, 0, 0, 0))
+                        tile_spacing_x = int(base_img.width * 0.20)
+                        tile_spacing_y = int(base_img.height * 0.20)
+                        
+                        for y in range(0, base_img.height, tile_spacing_y):
+                            for x in range(0, base_img.width, tile_spacing_x):
+                                watermark_layer.paste(logo_small, (x, y), mask=logo_small)
+                        
+                        base_img = Image.alpha_composite(base_img, watermark_layer)
+                    except Exception as e:
+                        logger.warning(f"⚠️ Watermark logo failed: {e}")
+                
+                logo_position = 'top_right'
+            
+            # 3. Apply Main Logo (based on layout)
+            if logo_url and layout != 'watermark':  # Watermark already has logos
+                try:
+                    logo_response = requests.get(logo_url)
+                    logo_img = Image.open(io.BytesIO(logo_response.content)).convert("RGBA")
+                    
+                    # Resize logo to 18% of image width
+                    target_logo_width = int(base_img.width * 0.18)
+                    aspect_ratio = logo_img.height / logo_img.width
+                    target_logo_height = int(target_logo_width * aspect_ratio)
+                    logo_img = logo_img.resize((target_logo_width, target_logo_height), Image.Resampling.LANCZOS)
+                    
+                    # Position based on layout
+                    padding = int(base_img.width * 0.05)
+                    
+                    if logo_position == 'top_right':
+                        x_pos = base_img.width - target_logo_width - padding
+                        y_pos = padding
+                    else:  # bottom_center
+                        x_pos = (base_img.width - target_logo_width) // 2
+                        y_pos = base_img.height - target_logo_height - padding
+                    
+                    # Composite logo
+                    logo_layer = Image.new("RGBA", base_img.size, (0, 0, 0, 0))
+                    logo_layer.paste(logo_img, (x_pos, y_pos), mask=logo_img)
+                    base_img = Image.alpha_composite(base_img, logo_layer)
+                except Exception as e:
+                    logger.warning(f"⚠️ Logo placement failed: {e}")
+            
+            # 4. Save and Upload
+            output = io.BytesIO()
+            base_img = base_img.convert("RGB")
+            base_img.save(output, format="JPEG", quality=92)
+            processed_bytes = output.getvalue()
+            
+            filename = f"advanced_branded_{layout}_{int(time.time())}.jpg"
+            destination_path = f"assets/branded/{filename}"
+            
+            return self.upload_to_gcs(processed_bytes, destination_path, "image/jpeg") or base_image_url
+            
+        except Exception as e:
+            logger.error(f"❌ Advanced branding failed: {e}")
             return base_image_url
     
     # --- HEADLESS RENDERING (v2.2 §7.2: SVG/Mermaid → Raster Export) ---

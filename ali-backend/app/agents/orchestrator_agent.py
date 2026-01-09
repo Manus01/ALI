@@ -2,10 +2,12 @@ import asyncio
 import logging
 import base64
 import json
+import random
 from app.agents.base_agent import BaseAgent
 from app.agents.campaign_agent import CampaignAgent
 from app.services.image_agent import ImageAgent
 from app.core.security import db
+from app.core.templates import get_motion_template, get_template_for_tone, get_random_template, MOTION_TEMPLATES, FONT_MAP
 from firebase_admin import firestore
 
 logger = logging.getLogger("ali_platform.agents.orchestrator_agent")
@@ -115,9 +117,28 @@ class OrchestratorAgent(BaseAgent):
                     logger.warning(f"⚠️ Unknown channel '{channel}', skipping...")
                     continue
                 
-                # Use first format as primary for this channel
-                primary_format = spec["formats"][0]
-                width, height = primary_format["size"]
+                # V3.0: Generate BOTH Story (9:16) AND Feed (1:1) for social channels
+                formats_to_generate = []
+                if channel in ['instagram', 'facebook', 'tiktok']:
+                    # Find story format (9:16)
+                    story_format = next((f for f in spec["formats"] if f.get("ratio") == "9:16"), None)
+                    # Find feed format (1:1 or similar)
+                    feed_format = next((f for f in spec["formats"] if f.get("ratio") in ["1:1", "4:5"]), None)
+                    
+                    if story_format:
+                        formats_to_generate.append((story_format, 'story'))
+                    if feed_format:
+                        formats_to_generate.append((feed_format, 'feed'))
+                    
+                    # Fallback if no formats found
+                    if not formats_to_generate:
+                        formats_to_generate.append((spec["formats"][0], 'primary'))
+                else:
+                    formats_to_generate.append((spec["formats"][0], 'primary'))
+                
+                # Generate assets for each format
+                for primary_format, format_label in formats_to_generate:
+                    width, height = primary_format["size"]
                 tone = spec.get("tone", primary_format.get("tone", "professional"))
                 
                 # Build safe zone instruction for vertical formats
@@ -178,6 +199,7 @@ class OrchestratorAgent(BaseAgent):
                     task_metadata.append({
                         "channel": channel,
                         "format_type": "motion" if motion_supported else primary_format["type"],
+                        "format_label": format_label,
                         "motion_enabled": motion_supported,
                         "size": primary_format["size"],
                         "tone": tone
@@ -207,23 +229,18 @@ class OrchestratorAgent(BaseAgent):
                 # Extract URL if dict (new format), else use result (legacy string)
                 raw_url = result.get('url') if isinstance(result, dict) else result
                 
-                # FIX 1: Apply Programmatic Brand Overlay
-                # Enforce branding on all channels except text-heavy ones
+                # FIX 1: Apply Advanced Branding
+                # Use the new apply_advanced_branding with layout styles
                 if channel not in ['blog', 'email']:
                     try:
-                        # Get brand details
-                        logo_url = brand_dna.get('logo_url')
-                        primary_color = brand_dna.get('color_palette', {}).get('primary', '#000000')
-                        
-                        # Apply overlay (skip for motion base images if we are wrapping them later, but good for fallback)
+                        # Apply advanced branding with layout styles
                         final_url = await asyncio.to_thread(
-                            asset_processor.apply_brand_layer,
+                            asset_processor.apply_advanced_branding,
                             raw_url,
-                            logo_url,
-                            primary_color
+                            brand_dna
                         )
                     except Exception as e:
-                        logger.warning(f"⚠️ Brand overlay skipped for {channel}: {e}")
+                        logger.warning(f"⚠️ Advanced branding skipped for {channel}: {e}")
                         final_url = raw_url
                 else:
                     final_url = raw_url
@@ -235,18 +252,72 @@ class OrchestratorAgent(BaseAgent):
                     temp_carousel_storage[channel][meta["slide_index"]] = final_url
                     # We don't set assets[channel] yet, we wait until loop end
                     
-                # HANDLE MOTION
+                # HANDLE MOTION - Use Template Library
                 elif meta.get("motion_enabled"):
-                    # Generate HTML asset using the final_url as background
-                    channel_blueprint = blueprint.get(channel, {})
-                    copy_text = channel_blueprint.get("headlines", ["Brand Motion"])[0] 
+                    # Get brand details for motion
+                    logo_url = brand_dna.get('logo_url', '')
+                    primary_color = brand_dna.get('color_palette', {}).get('primary', '#000000')
                     
-                    html_asset = self._generate_html_motion_asset(final_url, logo_url, primary_color, copy_text)
-                    assets[channel] = html_asset
+                    # V3.0: Analyze luminance for intelligent contrast
+                    try:
+                        luminance_mode = asset_processor.analyze_luminance_from_url(final_url)
+                        logger.info(f"🔍 Luminance mode for {channel}: {luminance_mode}")
+                    except Exception as lum_err:
+                        logger.warning(f"⚠️ Luminance analysis failed, defaulting to 'dark': {lum_err}")
+                        luminance_mode = 'dark'
+                    
+                    # Generate HTML asset using template library
+                    channel_blueprint = blueprint.get(channel, {})
+                    copy_text = channel_blueprint.get("headlines", ["Brand Motion"])[0]
+                    
+                    # Select template - V3.0 Smart Priority System
+                    tone = meta.get("tone", "professional")
+                    template_name = None
+                    
+                    # 1. Smart Context Match (New Universal Templates)
+                    try:
+                        # Combine goal words and tone as keywords
+                        context_keywords = goal.split() + [tone]
+                        if brand_dna.get("industry"): 
+                            context_keywords.append(brand_dna.get("industry"))
+                            
+                        smart_match = asset_processor.analyze_image_context(context_keywords)
+                        if smart_match:
+                            template_name = smart_match
+                            logger.info(f"🧠 Smart Context Template Selected: {template_name}")
+                    except Exception as e:
+                        logger.warning(f"Smart selection failed: {e}")
+
+                    # 2. Key Tone Match (Existing Logic)
+                    if not template_name:
+                        # 40% chance to force tone match if not smart matched
+                        if random.random() < 0.4:
+                            template_name = get_template_for_tone(tone)
+                            logger.info(f"🎯 Using tone-matched template: {template_name}")
+                        else:
+                    # 3. Random Rotation (Variety)
+                            template_name = get_random_template()
+                            logger.info(f"🎲 Using random template: {template_name}")
+                    
+                    # Randomize Layout Variant
+                    layout_variant = random.choice(['hero-center', 'editorial-left', 'editorial-right'])
+                    
+                    # Generate motion HTML from template library with luminance mode and layout variant
+                    html_content = get_motion_template(template_name, final_url, logo_url, primary_color, copy_text, luminance_mode, layout_variant)
+                    encoded = base64.b64encode(html_content.encode('utf-8')).decode('utf-8')
+                    html_asset = f"data:text/html;charset=utf-8;base64,{encoded}"
+                    
+                    # Store with format label for multi-format support
+                    format_label = meta.get("format_label", "primary")
+                    asset_key = f"{channel}_{format_label}" if format_label != 'primary' else channel
+                    assets[asset_key] = html_asset
                     
                 # STANDARD IMAGE
                 else:
-                    assets[channel] = final_url
+                    # Store with format label for multi-format support
+                    format_label = meta.get("format_label", "primary")
+                    asset_key = f"{channel}_{format_label}" if format_label != 'primary' else channel
+                    assets[asset_key] = final_url
                 
                 # Save metadata (overwrite is fine for carousel as base props are same)
                 assets_metadata[channel] = meta
@@ -270,14 +341,24 @@ class OrchestratorAgent(BaseAgent):
             # Use set with merge=True to handle new campaign documents correctly
             self.db.collection('users').document(uid).collection('campaigns').document(campaign_id).set(final_data, merge=True)
             
-            # 5. Save drafts per channel for User Self-Approval (Review Feed)
-            for channel in target_channels:
-                # FIX: Ensure every channel gets a draft doc, even if generation failed
-                # Standardize ID: strictly lowercase, no spaces (matches frontend)
-                clean_channel = channel.lower().replace(" ", "_")
-                draft_id = f"draft_{campaign_id}_{clean_channel}"
+            # 5. Save drafts per channel + format for User Self-Approval (Review Feed)
+            # Collect all unique channel_format combinations from assets
+            for asset_key in assets.keys():
+                # Parse asset_key: could be 'instagram' or 'instagram_story'
+                if '_story' in asset_key or '_feed' in asset_key:
+                    parts = asset_key.rsplit('_', 1)
+                    channel = parts[0]
+                    format_label = parts[1]
+                else:
+                    channel = asset_key
+                    format_label = 'primary'
                 
-                asset_payload = assets.get(channel)
+                # FIX: Ensure every asset gets a draft doc, even if generation failed
+                # Updated ID format: draft_{campaign_id}_{channel}_{format}
+                clean_channel = channel.lower().replace(" ", "_")
+                draft_id = f"draft_{campaign_id}_{clean_channel}_{format_label}"
+                
+                asset_payload = assets.get(asset_key)
                 meta = assets_metadata.get(channel, {})
                 channel_blueprint = blueprint.get(channel, blueprint.get('instagram', {}))
 
@@ -339,10 +420,98 @@ class OrchestratorAgent(BaseAgent):
             "timestamp": firestore.SERVER_TIMESTAMP
         })
 
+    def _get_motion_template(self, style_name: str) -> dict:
+        """
+        V3.0 Animation Library: Returns CSS and GSAP code for the given style.
+        
+        Styles:
+        - cinematic: Luxury feel (coffee/fashion) - blur text, slow scale
+        - hype: Modern energy (sneakers/tech) - skew text, yoyo overlay
+        - float: Soft calm (services/wellness) - floating text, rotating logo
+        """
+        templates = {
+            "cinematic": {
+                "css_extra": """
+                    #card {
+                        position: absolute; bottom: 0; left: 0; right: 0;
+                        padding: 30px 20px; z-index: 50;
+                        background: rgba(255,255,255,0.15);
+                        backdrop-filter: blur(12px);
+                        -webkit-backdrop-filter: blur(12px);
+                        border-top: 1px solid rgba(255,255,255,0.2);
+                    }
+                """,
+                "gsap": """
+                    gsap.from("#text", {filter:"blur(20px)", opacity:0, duration:2});
+                    gsap.to("#bg", {scale:1.15, duration:10, ease:"none"});
+                    gsap.from("#logo", {opacity:0, y:-20, duration:1.5, delay:0.5});
+                """,
+                "text_wrapper": "card"
+            },
+            "hype": {
+                "css_extra": """
+                    #overlay {
+                        position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+                        background: linear-gradient(135deg, rgba(0,0,0,0.7) 0%, transparent 50%);
+                        z-index: 10;
+                    }
+                    #text {
+                        font-size: 32px; text-transform: uppercase; letter-spacing: 2px;
+                    }
+                """,
+                "gsap": """
+                    gsap.from("#text", {y:100, skewY:10, opacity:0, duration:0.8, ease:"back.out(1.7)"});
+                    gsap.to("#overlay", {opacity:0.3, duration:1, yoyo:true, repeat:-1, ease:"power1.inOut"});
+                    gsap.from("#logo", {scale:0.5, opacity:0, duration:0.6, delay:0.3, ease:"back.out"});
+                """,
+                "text_wrapper": None,
+                "has_overlay": True
+            },
+            "float": {
+                "css_extra": """
+                    #text {
+                        font-size: 22px; font-weight: 400; letter-spacing: 1px;
+                    }
+                    #logo {
+                        width: 60px;
+                    }
+                """,
+                "gsap": """
+                    gsap.to("#text", {y:-10, duration:2, yoyo:true, repeat:-1, ease:"sine.inOut"});
+                    gsap.from("#logo", {rotation:-10, opacity:0, duration:1, ease:"power2.out"});
+                    gsap.to("#bg", {scale:1.05, duration:8, ease:"none"});
+                """,
+                "text_wrapper": None
+            }
+        }
+        return templates.get(style_name, templates["cinematic"])
+
     def _generate_html_motion_asset(self, image_url, logo_url, color, text):
         """
-        Generates a lightweight HTML5 motion asset encoded as a Data URI.
+        V3.0: Generates HTML5 motion asset with dynamic style selection.
+        Randomly selects from 3 animation styles: cinematic, hype, float.
         """
+        # Select style randomly
+        style = random.choice(['cinematic', 'hype', 'float'])
+        template = self._get_motion_template(style)
+        
+        # Select layout variant randomly - NEW V3.1
+        layout_variant = random.choice(['hero-center', 'editorial-left', 'editorial-right'])
+        
+        css_extra = template.get("css_extra", "")
+        gsap_code = template.get("gsap", "")
+        has_overlay = template.get("has_overlay", False)
+        text_wrapper = template.get("text_wrapper")
+        
+        # Build overlay element if needed
+        overlay_html = '<div id="overlay"></div>' if has_overlay else ''
+        
+        # Build text element (wrapped in card for cinematic style)
+        if text_wrapper == "card":
+            text_html = f'<div id="card" class="variant-{layout_variant}"><div id="text">{text}</div></div>'
+        else:
+            text_html = f'<div id="text" class="variant-{layout_variant}">{text}</div>'
+        
         html_template = f"""
         <!DOCTYPE html>
         <html>
@@ -360,19 +529,21 @@ class OrchestratorAgent(BaseAgent):
                 }}
                 #text {{
                     position: absolute; bottom: 40px; left: 20px; right: 20px;
-                    color: white; font-family: sans-serif; font-size: 24px; font-weight: bold;
-                    text-shadow: 0 2px 4px rgba(0,0,0,0.7);
+                    color: white; font-family: 'Segoe UI', Arial, sans-serif; font-size: 24px; font-weight: bold;
+                    text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+                    z-index: 60;
                 }}
+                {css_extra}
             </style>
             <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
         </head>
         <body>
             <div id="bg"></div>
-            <img id="logo" src="{logo_url}">
-            <div id="text">{text}</div>
+            {overlay_html}
+            <img id="logo" src="{logo_url}" onerror="this.style.display='none'">
+            {text_html}
             <script>
-                gsap.from("#text", {{x: -100, opacity: 0, duration: 1}});
-                gsap.to("#bg", {{scale: 1.1, duration: 5}});
+                {gsap_code}
             </script>
         </body>
         </html>
