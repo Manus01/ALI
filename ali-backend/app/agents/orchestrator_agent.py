@@ -183,10 +183,6 @@ class OrchestratorAgent(BaseAgent):
             
             self._update_progress(uid, campaign_id, f"Generating {len(tasks)} Channel Assets...", 60)
             
-                })
-            
-            self._update_progress(uid, campaign_id, f"Generating {len(tasks)} Channel Assets...", 60)
-            
             # Execute all tasks concurrently
             results = await asyncio.gather(*tasks, return_exceptions=True)
             
