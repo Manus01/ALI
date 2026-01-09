@@ -187,22 +187,53 @@ async def export_campaign_zip(campaign_id: str, user: dict = Depends(verify_toke
         async with httpx.AsyncClient() as client:
             with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
                 for channel in approved_channels:
-                    asset_url = assets.get(channel)
+                    asset_payload = assets.get(channel)
                     channel_blueprint = blueprint.get(channel, {})
                     
-                    # Download and add image
-                    if asset_url:
-                        try:
-                            response = await client.get(asset_url)
-                            if response.status_code == 200:
-                                # Determine extension from content type
-                                content_type = response.headers.get("content-type", "image/png")
-                                ext = "jpg" if "jpeg" in content_type else "png"
-                                filename = f"{channel}-image.{ext}"
-                                zip_file.writestr(filename, response.content)
-                                logger.info(f"📦 Added {filename} to ZIP")
-                        except Exception as e:
-                            logger.warning(f"Failed to download {channel} asset: {e}")
+                    # Helper to process single file
+                    async def add_file_to_zip(payload, base_filename):
+                        if not payload:
+                            return
+                            
+                        # Case A: Data URI (HTML Motion)
+                        if isinstance(payload, str) and payload.startswith("data:"):
+                            try:
+                                header, encoded = payload.split(",", 1)
+                                import base64
+                                decoded = base64.b64decode(encoded)
+                                # Determine ext
+                                ext = "html" if "text/html" in header else "bin"
+                                filename = f"{base_filename}.{ext}"
+                                zip_file.writestr(filename, decoded)
+                                logger.info(f"📦 Added {filename} (DataURI) to ZIP")
+                            except Exception as e:
+                                logger.warning(f"Failed to process DataURI for {base_filename}: {e}")
+                                
+                        # Case B: Standard URL
+                        elif isinstance(payload, str) and payload.startswith("http"):
+                            try:
+                                response = await client.get(payload)
+                                if response.status_code == 200:
+                                    content_type = response.headers.get("content-type", "image/png")
+                                    ext = "jpg" if "jpeg" in content_type else "png"
+                                    # If HTML content type
+                                    if "text/html" in content_type:
+                                        ext = "html"
+                                    
+                                    filename = f"{base_filename}.{ext}"
+                                    zip_file.writestr(filename, response.content)
+                                    logger.info(f"📦 Added {filename} to ZIP")
+                            except Exception as e:
+                                logger.warning(f"Failed to download {base_filename}: {e}")
+
+                    # Handle Payload Type
+                    if isinstance(asset_payload, list):
+                        # Carousel (List of URLs)
+                        for idx, slide_url in enumerate(asset_payload):
+                            await add_file_to_zip(slide_url, f"{channel}-slide-{idx+1}")
+                    else:
+                        # Single Asset (Motion or Image)
+                        await add_file_to_zip(asset_payload, f"{channel}-asset")
                     
                     # Add text copy
                     text_content = ""
