@@ -269,5 +269,115 @@ async def export_campaign_zip(campaign_id: str, user: dict = Depends(verify_toke
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"❌ Export ZIP Failed: {e}")
+
+@router.post("/{draft_id}/remix")
+async def remix_draft(draft_id: str, background_tasks: BackgroundTasks, user: dict = Depends(verify_token)):
+    """
+    Trigger a REMIX (Generation Variant) for a specific draft.
+    
+    Logic:
+    1. Fetch draft to get original prompt & config
+    2. Check ownership
+    3. Trigger ImageAgent with same prompt but force new generation
+    4. Save as NEW draft (status=DRAFT, origin=remix)
+    5. Return new draft ID immediately
+    """
+    try:
+        from app.services.image_agent import ImageAgent
+        from app.agents.orchestrator_agent import CHANNEL_SPECS
+        
+        uid = user['uid']
+        
+        # 1. Fetch Original Draft
+        doc_ref = db.collection("creativeDrafts").document(draft_id)
+        doc = doc_ref.get()
+        
+        if not doc.exists:
+            raise HTTPException(status_code=404, detail="Original draft not found")
+            
+        data = doc.to_dict()
+        
+        # 2. Ownership Check
+        if data.get("userId") != uid:
+             raise HTTPException(status_code=403, detail="Unauthorized")
+             
+        # 3. Prepare Remix Data
+        campaign_id = data.get("campaignId")
+        channel = data.get("channel", "unknown")
+        
+        # Get specs for dimensions
+        spec = CHANNEL_SPECS.get(channel, {})
+        primary_format = spec.get("formats", [{}])[0]
+        size = primary_format.get("size", (1024, 1024))
+        
+        # Create NEW Draft Entry immediately (placeholder)
+        new_draft_ref = db.collection("creativeDrafts").document()
+        new_draft_id = new_draft_ref.id
+        
+        new_draft_data = {
+            "id": new_draft_id,
+            "userId": uid,
+            "campaignId": campaign_id,
+            "channel": channel,
+            "status": "DRAFT",  # Pending generation
+            "approvalStatus": "pending",
+            "type": "image",
+            "format": data.get("format", "feed-image"),
+            "size": f"{size[0]}x{size[1]}",
+            "createdAt": firestore.SERVER_TIMESTAMP,
+            "origin": "remix",
+            "originalDraftId": draft_id,
+            "thumbnailUrl": None, # Will be updated after generation
+            "title": f"{data.get('title', 'Remix')} (Variant)",
+            "campaignGoal": data.get("campaignGoal", "Remix")
+        }
+        
+        new_draft_ref.set(new_draft_data)
+        
+        # 4. Background Generation Task
+        async def generate_remix_task():
+            try:
+                # Re-instantiate agents
+                image_agent = ImageAgent()
+                brand_dna = db.collection('users').document(uid).collection('brand_profile').document('current').get().to_dict()
+                
+                # Construct Prompt
+                # We use the original visual prompt if available, or fall back to a generic one
+                visual_prompt = data.get("visualPrompt") or f"A creative asset for {channel} campaign: {data.get('campaignGoal')}"
+                
+                dna_str = f"Style {brand_dna.get('visual_styles', [])}. Colors {brand_dna.get('color_palette', {})}"
+                
+                logger.info(f"🎨 Remixing draft {draft_id} -> {new_draft_id} for channel {channel}")
+                
+                # Generate
+                result = image_agent.generate_image(
+                    prompt=visual_prompt,
+                    brand_dna=dna_str,
+                    folder=f"campaigns/{channel}/remix"
+                )
+                
+                new_url = result.get('url') if isinstance(result, dict) else result
+                
+                # Update the new draft with the image
+                if new_url:
+                    new_draft_ref.update({
+                        "thumbnailUrl": new_url,
+                        "status": "DRAFT" # It remains DRAFT until published
+                    })
+                    logger.info(f"✅ Remix complete: {new_draft_id}")
+                else:
+                    new_draft_ref.update({"status": "ERROR", "error": "Generation failed"})
+                    
+            except Exception as e:
+                logger.error(f"❌ Remix Generation Failed: {e}")
+                new_draft_ref.update({"status": "ERROR", "error": str(e)})
+
+        background_tasks.add_task(generate_remix_task)
+        
+        return {"new_draft_id": new_draft_id, "status": "remix_started"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Remix Endpoint Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))

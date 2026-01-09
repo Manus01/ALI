@@ -1,5 +1,7 @@
 import asyncio
 import logging
+import base64
+import json
 from app.agents.base_agent import BaseAgent
 from app.agents.campaign_agent import CampaignAgent
 from app.services.image_agent import ImageAgent
@@ -327,3 +329,50 @@ class OrchestratorAgent(BaseAgent):
             "status": "error" if failed else ("completed" if percent == 100 else "processing"),
             "timestamp": firestore.SERVER_TIMESTAMP
         })
+
+    def _generate_html_motion_asset(self, image_url, logo_url, color, text):
+        """
+        Generates a lightweight HTML5 motion asset encoded as a Data URI.
+        """
+        html_template = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body, html {{ margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }}
+                #bg {{
+                    position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+                    background-image: url('{image_url}');
+                    background-size: cover;
+                    background-position: center;
+                }}
+                #logo {{
+                    position: absolute; top: 20px; right: 20px; width: 80px; z-index: 100;
+                }}
+                #text {{
+                    position: absolute; bottom: 40px; left: 20px; right: 20px;
+                    color: white; font-family: sans-serif; font-size: 24px; font-weight: bold;
+                    text-shadow: 0 2px 4px rgba(0,0,0,0.7);
+                }}
+            </style>
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+        </head>
+        <body>
+            <div id="bg"></div>
+            <img id="logo" src="{logo_url}">
+            <div id="text">{text}</div>
+            <script>
+                gsap.from("#text", {{x: -100, opacity: 0, duration: 1}});
+                gsap.to("#bg", {{scale: 1.1, duration: 5}});
+            </script>
+        </body>
+        </html>
+        """
+        encoded = base64.b64encode(html_template.encode('utf-8')).decode('utf-8')
+        return f"data:text/html;charset=utf-8;base64,{encoded}"
+
+    def _generate_carousel_slides(self, image_url, logo_url, color, text):
+        """
+        Simulates a carousel by returning a list of the image repeated.
+        """
+        return [image_url, image_url, image_url]

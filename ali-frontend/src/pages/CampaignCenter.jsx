@@ -65,8 +65,11 @@ export default function CampaignCenter() {
 
     // --- USER DRAFT REVIEW STATES ---
     const [userDrafts, setUserDrafts] = useState([]);
+    const [userPublished, setUserPublished] = useState([]); // New for Library
     const [loadingDrafts, setLoadingDrafts] = useState(false);
     const [publishingId, setPublishingId] = useState(null);
+    const [remixingId, setRemixingId] = useState(null); // New for Remix
+    const [viewMode, setViewMode] = useState('wizard'); // 'wizard' or 'library'
 
     // --- CHANNEL CONFIGURATIONS (v3.0) ---
     const AVAILABLE_CHANNELS = [
@@ -101,10 +104,14 @@ export default function CampaignCenter() {
     const fetchUserDrafts = useCallback(async () => {
         setLoadingDrafts(true);
         try {
-            const res = await api.get('/api/creatives/my-drafts');
-            setUserDrafts(res.data.drafts || []);
+            const [draftsRes, publishedRes] = await Promise.all([
+                api.get('/api/creatives/my-drafts'),
+                api.get('/api/creatives/my-published')
+            ]);
+            setUserDrafts(draftsRes.data.drafts || []);
+            setUserPublished(publishedRes.data.published || []);
         } catch (err) {
-            console.error("Failed to fetch user drafts", err);
+            console.error("Failed to fetch user assets", err);
         } finally {
             setLoadingDrafts(false);
         }
@@ -129,6 +136,72 @@ export default function CampaignCenter() {
         } finally {
             setPublishingId(null);
         }
+    };
+
+    // --- REMIX FUNCTIONALITY (v3.5) ---
+    const handleRemix = async (asset) => {
+        setRemixingId(asset.id);
+        try {
+            const res = await api.post(`/api/creatives/${asset.id}/remix`);
+
+            // On success, switch to Review Feed / Results for this campaign (or newly created one)
+            // Ideally we want to see the new draft.
+            // Since remix creates a NEW draft, let's refresh drafts and maybe switch view?
+            await fetchUserDrafts();
+
+            // Optional: User feedback
+            alert("Remix started! Check your Drafts momentarily.");
+
+        } catch (err) {
+            console.error("Remix failed", err);
+            alert("Remix failed: " + (err.response?.data?.detail || err.message));
+        } finally {
+            setRemixingId(null);
+        }
+    };
+
+
+
+
+    // --- REVIEW NAVIGATION (v3.5) ---
+    const handleReview = async (asset) => {
+        if (!asset.campaignId) return;
+        setCampaignId(asset.campaignId);
+        // We need to set stage to 'results' to show the feed.
+        // fetchFinalResults will be called by the effect or manually here.
+        // But fetchFinalResults relies on campaignId state which is async.
+        // Alternatively, we can call the API and set state.
+
+        try {
+            const res = await api.get(`/campaign/results/${asset.campaignId}`);
+            setFinalAssets(res.data);
+            setStage('results');
+            setViewMode('wizard'); // Switch back to wizard view to see the results
+        } catch (err) {
+            console.error("Failed to load campaign for review", err);
+            // If results aren't ready (e.g. still generating), maybe show status? 
+            // For now, alert or fallback
+            alert("Could not load campaign results. It might still be processing.");
+        }
+    };
+
+    // Group Assets by Campaign (Goal)
+    const getGroupedAssets = () => {
+        const allAssets = [...userDrafts, ...userPublished];
+        const groups = {};
+
+        allAssets.forEach(asset => {
+            const key = asset.campaignGoal || "Unassigned";
+            if (!groups[key]) groups[key] = [];
+            groups[key].push(asset);
+        });
+
+        // Sort groups by most recent asset
+        return Object.entries(groups).sort(([, aAssets], [, bAssets]) => {
+            const aDate = new Date(aAssets[0].createdAt || 0);
+            const bDate = new Date(bAssets[0].createdAt || 0);
+            return bDate - aDate;
+        });
     };
 
     useEffect(() => {
@@ -639,8 +712,134 @@ export default function CampaignCenter() {
                 )}
             </header>
 
+            {/* VIEW MODE TOGGLE */}
+            <div className="flex justify-center mb-8">
+                <div className="bg-slate-100 dark:bg-slate-700 p-1 rounded-2xl inline-flex">
+                    <button
+                        onClick={() => setViewMode('wizard')}
+                        className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${viewMode === 'wizard'
+                            ? 'bg-white dark:bg-slate-600 text-slate-800 dark:text-white shadow-sm'
+                            : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                            }`}
+                    >
+                        <FaMagic className="inline mr-2" /> Campaign Wizard
+                    </button>
+                    <button
+                        onClick={() => setViewMode('library')}
+                        className={`px-6 py-2 rounded-xl text-sm font-bold transition-all ${viewMode === 'library'
+                            ? 'bg-white dark:bg-slate-600 text-slate-800 dark:text-white shadow-sm'
+                            : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                            }`}
+                    >
+                        <FaPalette className="inline mr-2" /> Asset Library
+                    </button>
+                </div>
+            </div>
+
+            {/* ASSET LIBRARY VIEW */}
+            {viewMode === 'library' && (
+                <div className="space-y-8 animate-fade-in">
+                    {getGroupedAssets().map(([groupName, assets]) => (
+                        <div key={groupName} className="bg-white dark:bg-slate-800 rounded-[2rem] border border-slate-100 dark:border-slate-700 overflow-hidden shadow-sm">
+                            <div className="bg-slate-50 dark:bg-slate-900/50 p-6 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center">
+                                <div>
+                                    <h3 className="font-black text-slate-800 dark:text-white text-lg truncate max-w-md" title={groupName}>
+                                        {groupName}
+                                    </h3>
+                                    <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mt-1">
+                                        {assets.length} assets
+                                    </p>
+                                </div>
+                                <div className="text-xs text-slate-400">
+                                    Last active: {new Date(assets[0].createdAt).toLocaleDateString()}
+                                </div>
+                            </div>
+
+                            <div className="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                                {assets.map(asset => (
+                                    <div key={asset.id} className="relative group bg-slate-50 dark:bg-slate-700/30 rounded-2xl overflow-hidden border border-slate-100 dark:border-slate-700 hover:border-primary/50 transition-all">
+                                        {/* Thumbnail */}
+                                        <div className="aspect-square relative overflow-hidden">
+                                            {asset.thumbnailUrl ? (
+                                                <img src={asset.thumbnailUrl} alt={asset.title} className={`w-full h-full object-cover transition-all duration-500 group-hover:scale-110 ${asset.status !== 'PUBLISHED' ? 'opacity-80 grayscale' : ''}`} />
+                                            ) : (
+                                                <div className="w-full h-full flex items-center justify-center bg-slate-100 dark:bg-slate-700 text-slate-300">
+                                                    <FaPalette className="text-4xl" />
+                                                </div>
+                                            )}
+
+                                            {/* Hover Overlay */}
+                                            <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-3 p-4">
+                                                {asset.status === 'PUBLISHED' ? (
+                                                    <>
+                                                        <a
+                                                            href={asset.thumbnailUrl}
+                                                            download
+                                                            target="_blank"
+                                                            rel="noopener noreferrer"
+                                                            className="bg-white text-slate-900 px-4 py-2 rounded-full text-xs font-bold flex items-center gap-2 hover:scale-105 transition-transform"
+                                                        >
+                                                            <FaDownload /> Download
+                                                        </a>
+                                                        <button
+                                                            onClick={() => handleRemix(asset)}
+                                                            disabled={remixingId === asset.id}
+                                                            className="bg-primary/90 text-white px-4 py-2 rounded-full text-xs font-bold flex items-center gap-2 hover:scale-105 transition-transform backdrop-blur"
+                                                        >
+                                                            {remixingId === asset.id ? <FaSpinner className="animate-spin" /> : <FaMagic />}
+                                                            Remix Variant
+                                                        </button>
+                                                    </>
+                                                ) : (
+                                                    <button
+                                                        onClick={() => handleReview(asset)}
+                                                        className="bg-amber-500 text-white px-4 py-2 rounded-full text-xs font-bold flex items-center gap-2 hover:scale-105 transition-transform"
+                                                    >
+                                                        Review Pending
+                                                    </button>
+                                                )}
+                                            </div>
+
+                                            {/* Status Badge */}
+                                            <div className="absolute top-2 right-2 px-2 py-1 rounded-md text-[10px] font-black uppercase tracking-wider backdrop-blur-sm bg-white/90 dark:bg-slate-900/90 text-slate-800 dark:text-white shadow-sm">
+                                                {asset.channel || 'Asset'}
+                                            </div>
+                                        </div>
+
+                                        {/* Info */}
+                                        <div className="p-4">
+                                            <h4 className="font-bold text-slate-800 dark:text-white text-sm truncate mb-1">{asset.title || 'Untitled'}</h4>
+                                            <div className="flex justify-between items-center text-[10px] text-slate-400 uppercase tracking-wider font-bold">
+                                                <span>{asset.format}</span>
+                                                <span className={asset.status === 'PUBLISHED' ? 'text-green-500' : 'text-amber-500'}>
+                                                    {asset.status}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    ))}
+
+                    {getGroupedAssets().length === 0 && (
+                        <div className="text-center py-20 bg-slate-50 dark:bg-slate-800/50 rounded-[3rem] border-2 border-dashed border-slate-200 dark:border-slate-700">
+                            <FaPalette className="text-6xl text-slate-200 dark:text-slate-600 mx-auto mb-4" />
+                            <h3 className="text-xl font-black text-slate-400 dark:text-slate-500">Asset Library Empty</h3>
+                            <p className="text-slate-400 mt-2 text-sm">Create your first campaign to build your library.</p>
+                            <button
+                                onClick={() => setViewMode('wizard')}
+                                className="mt-6 text-primary font-bold hover:underline"
+                            >
+                                Start Campaign Wizard
+                            </button>
+                        </div>
+                    )}
+                </div>
+            )}
+
             {/* DRAFT REVIEW SECTION */}
-            {userDrafts.length > 0 && stage === 'input' && (
+            {viewMode === 'wizard' && userDrafts.length > 0 && stage === 'input' && (
                 <div className="bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 p-8 rounded-[2.5rem] border border-amber-200 dark:border-amber-800">
                     <div className="flex justify-between items-center mb-6">
                         <div>
