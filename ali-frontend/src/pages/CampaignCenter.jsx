@@ -15,7 +15,7 @@ export default function CampaignCenter() {
     const { currentUser, userProfile, refreshProfile } = useAuth();
     const location = useLocation();
     const [goal, setGoal] = useState('');
-    const [stage, setStage] = useState('input'); // input, loading, questioning, generating, results, error
+    const [stage, setStage] = useState('input'); // input, channels, loading, questioning, generating, results, error
     const [questions, setQuestions] = useState([]);
     const [answers, setAnswers] = useState({});
     const [campaignId, setCampaignId] = useState(null);
@@ -31,6 +31,16 @@ export default function CampaignCenter() {
     const [recyclingAsset, setRecyclingAsset] = useState(null);
     const [recyclePrompt, setRecyclePrompt] = useState('');
     const [isRecycling, setIsRecycling] = useState(false);
+
+    // --- CHANNEL SELECTOR STATES (v3.0) ---
+    const [selectedChannels, setSelectedChannels] = useState([]);
+    const [channelConfirmed, setChannelConfirmed] = useState(false);
+
+    // --- REVIEW FEED STATES (v3.0) ---
+    const [rejectionModal, setRejectionModal] = useState({ open: false, channel: null, assetId: null });
+    const [rejectionFeedback, setRejectionFeedback] = useState('');
+    const [isRegenerating, setIsRegenerating] = useState(false);
+    const [approvedChannels, setApprovedChannels] = useState([]);
 
     // --- BRAND DNA STATES (Merged from BrandOnboarding) ---
     const [dnaStep, setDnaStep] = useState('input'); // input, loading, results
@@ -57,6 +67,19 @@ export default function CampaignCenter() {
     const [userDrafts, setUserDrafts] = useState([]);
     const [loadingDrafts, setLoadingDrafts] = useState(false);
     const [publishingId, setPublishingId] = useState(null);
+
+    // --- CHANNEL CONFIGURATIONS (v3.0) ---
+    const AVAILABLE_CHANNELS = [
+        { id: 'linkedin', name: 'LinkedIn', icon: '💼', color: '#0A66C2' },
+        { id: 'instagram', name: 'Instagram', icon: '📸', color: '#E4405F' },
+        { id: 'facebook', name: 'Facebook', icon: '📘', color: '#1877F2' },
+        { id: 'tiktok', name: 'TikTok', icon: '🎵', color: '#000000' },
+        { id: 'google_display', name: 'Google Display', icon: '🎯', color: '#4285F4' },
+        { id: 'pinterest', name: 'Pinterest', icon: '📌', color: '#E60023' },
+        { id: 'threads', name: 'Threads', icon: '🧵', color: '#000000' },
+        { id: 'email', name: 'Email', icon: '📧', color: '#EA4335' },
+        { id: 'blog', name: 'Blog', icon: '📝', color: '#14B8A6' }
+    ];
 
     useEffect(() => {
         // Fetch User Integrations on Mount to show "Smart Mode" status
@@ -257,13 +280,36 @@ export default function CampaignCenter() {
         }
     };
 
-    // --- 2. HANDLERS ---
-    const handleStart = async () => {
+    // --- 2. HANDLERS (v3.0 Channel-Aware) ---
+
+    // Step 1: User enters goal → Go to Channel Selector
+    const handleGoToChannels = () => {
+        if (!goal.trim()) return;
+        // Smart defaults: pre-select detected platforms
+        if (detectedPlatforms.length > 0) {
+            const normalizedPlatforms = detectedPlatforms.map(p => p.toLowerCase().replace(' ', '_'));
+            setSelectedChannels(normalizedPlatforms);
+        }
+        setStage('channels');
+    };
+
+    // Step 2: Toggle channel selection
+    const toggleChannel = (channelId) => {
+        setSelectedChannels(prev =>
+            prev.includes(channelId)
+                ? prev.filter(c => c !== channelId)
+                : [...prev, channelId]
+        );
+    };
+
+    // Step 3: Confirm channel selection → Initiate campaign
+    const handleChannelsConfirm = async () => {
+        if (selectedChannels.length === 0) return;
+        setChannelConfirmed(true);
         setStage('loading');
         try {
             const res = await api.post('/campaign/initiate', { goal });
             setQuestions(res.data.questions);
-            // Reset finalization tracking for new campaign
             isFinalizing.current = false;
             hasFinalized.current = false;
             setStage('questioning');
@@ -273,8 +319,8 @@ export default function CampaignCenter() {
         }
     };
 
+    // Step 4: Confirm strategy → Finalize with selected channels
     const handleConfirmStrategy = useCallback(async () => {
-        // CRITICAL FIX: Prevent double submission that causes the loop
         if (isFinalizing.current || hasFinalized.current) {
             console.warn("Finalization already in progress or completed, ignoring duplicate call");
             return;
@@ -284,17 +330,83 @@ export default function CampaignCenter() {
         setStage('generating');
 
         try {
-            const res = await api.post('/campaign/finalize', { goal, answers });
+            const res = await api.post('/campaign/finalize', {
+                goal,
+                answers,
+                selected_channels: selectedChannels  // v3.0: Pass user-selected channels
+            });
             setCampaignId(res.data.campaign_id);
             hasFinalized.current = true;
-            // Stage remains 'generating' - the progress listener will transition to results
         } catch (err) {
             console.error("Finalization failed", err);
             isFinalizing.current = false;
-            // Don't go back to questioning - show error stage instead to prevent loop
             setStage('error');
         }
-    }, [goal, answers]);
+    }, [goal, answers, selectedChannels]);
+
+    // --- REVIEW FEED HANDLERS (v3.0) ---
+
+    // Approve a channel's asset
+    const handleApproveAsset = async (channel) => {
+        if (!campaignId) return;
+        try {
+            const draftId = `draft_${campaignId}_${channel}`;
+            await api.post(`/api/creatives/${draftId}/publish`);
+            setApprovedChannels(prev => [...prev, channel]);
+        } catch (err) {
+            console.error("Approval failed", err);
+            alert("Failed to approve asset: " + (err.response?.data?.detail || err.message));
+        }
+    };
+
+    // Open rejection modal for a channel
+    const handleOpenRejection = (channel) => {
+        setRejectionModal({ open: true, channel, assetId: `draft_${campaignId}_${channel}` });
+        setRejectionFeedback('');
+    };
+
+    // Submit rejection with feedback → Trigger regeneration
+    const handleRegenerate = async () => {
+        if (!rejectionFeedback.trim() || !rejectionModal.channel) return;
+        setIsRegenerating(true);
+        try {
+            await api.post('/campaign/regenerate', {
+                campaign_id: campaignId,
+                channel: rejectionModal.channel,
+                feedback: rejectionFeedback
+            });
+            // Refresh results
+            const res = await api.get(`/campaign/results/${campaignId}`);
+            setFinalAssets(res.data);
+            setRejectionModal({ open: false, channel: null, assetId: null });
+            setRejectionFeedback('');
+        } catch (err) {
+            console.error("Regeneration failed", err);
+            alert("Regeneration failed: " + (err.response?.data?.detail || err.message));
+        } finally {
+            setIsRegenerating(false);
+        }
+    };
+
+    // Export all approved assets as ZIP
+    const handleExportZip = async () => {
+        if (!campaignId) return;
+        try {
+            const response = await api.post(`/api/creatives/${campaignId}/export-zip`, {}, {
+                responseType: 'blob'
+            });
+            const url = window.URL.createObjectURL(new Blob([response.data]));
+            const link = document.createElement('a');
+            link.href = url;
+            link.setAttribute('download', `campaign_${campaignId}_assets.zip`);
+            document.body.appendChild(link);
+            link.click();
+            link.remove();
+        } catch (err) {
+            console.error("Export failed", err);
+            alert("Export failed: " + (err.response?.data?.detail || err.message));
+        }
+    };
 
     const handleRecycleSubmit = async () => {
         if (!recyclePrompt) return;
@@ -611,12 +723,88 @@ export default function CampaignCenter() {
                         value={goal} onChange={(e) => setGoal(e.target.value)}
                     />
                     <button
-                        onClick={handleStart}
+                        onClick={handleGoToChannels}
+                        disabled={!goal.trim()}
                         style={{ backgroundColor: primaryColor }}
-                        className="text-white px-12 py-5 rounded-2xl font-black hover:scale-105 transition-all flex items-center gap-3 mx-auto shadow-xl shadow-blue-500/20"
+                        className="text-white px-12 py-5 rounded-2xl font-black hover:scale-105 transition-all flex items-center gap-3 mx-auto shadow-xl shadow-blue-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                        Deploy Agents <FaPaperPlane />
+                        Select Channels <FaArrowRight />
                     </button>
+                </div>
+            )}
+
+            {/* STAGE 1.5: CHANNEL SELECTOR (v3.0) */}
+            {stage === 'channels' && (
+                <div className="bg-white dark:bg-slate-800 p-12 border border-slate-100 dark:border-slate-700 shadow-xl rounded-[3rem] animate-slide-up">
+                    <div className="text-center mb-10">
+                        <div className="w-20 h-20 bg-blue-50 dark:bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
+                            <FaGlobe className="text-4xl text-primary" style={{ color: primaryColor }} />
+                        </div>
+                        <h2 className="text-3xl font-black text-slate-800 dark:text-white tracking-tight mb-3">Select Your Channels</h2>
+                        <p className="text-slate-500 dark:text-slate-400 max-w-lg mx-auto font-medium">
+                            Choose where you want your campaign to appear. We'll generate dimension-accurate assets for each platform.
+                        </p>
+                    </div>
+
+                    {/* Goal Preview */}
+                    <div className="bg-slate-50 dark:bg-slate-700 p-4 rounded-2xl mb-8 border border-slate-100 dark:border-slate-600">
+                        <p className="text-sm text-slate-600 dark:text-slate-300 font-medium">
+                            <span className="text-slate-400 dark:text-slate-500 text-xs uppercase tracking-wider">Goal: </span>
+                            {goal}
+                        </p>
+                    </div>
+
+                    {/* Channel Grid */}
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-10">
+                        {AVAILABLE_CHANNELS.map(channel => (
+                            <button
+                                key={channel.id}
+                                onClick={() => toggleChannel(channel.id)}
+                                className={`group p-6 rounded-2xl border-2 transition-all text-left ${selectedChannels.includes(channel.id)
+                                    ? 'border-primary bg-blue-50 dark:bg-blue-900/30 shadow-lg'
+                                    : 'border-slate-100 dark:border-slate-600 bg-white dark:bg-slate-700 hover:border-slate-300 dark:hover:border-slate-500'
+                                    }`}
+                            >
+                                <div className="flex items-center gap-3 mb-2">
+                                    <span className="text-2xl">{channel.icon}</span>
+                                    <span className="font-black text-slate-800 dark:text-white">{channel.name}</span>
+                                </div>
+                                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all ${selectedChannels.includes(channel.id)
+                                    ? 'bg-primary border-primary'
+                                    : 'border-slate-300 dark:border-slate-500'
+                                    }`}>
+                                    {selectedChannels.includes(channel.id) && (
+                                        <FaCheckCircle className="text-white text-xs" />
+                                    )}
+                                </div>
+                            </button>
+                        ))}
+                    </div>
+
+                    {/* Selection Summary */}
+                    <div className="text-center mb-8">
+                        <p className="text-sm text-slate-500 dark:text-slate-400">
+                            <span className="font-black text-primary">{selectedChannels.length}</span> channel{selectedChannels.length !== 1 ? 's' : ''} selected
+                        </p>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex gap-4 justify-center">
+                        <button
+                            onClick={() => setStage('input')}
+                            className="px-8 py-4 rounded-2xl font-bold text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-slate-600 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all flex items-center gap-2"
+                        >
+                            <FaArrowLeft /> Back
+                        </button>
+                        <button
+                            onClick={handleChannelsConfirm}
+                            disabled={selectedChannels.length === 0}
+                            style={{ backgroundColor: primaryColor }}
+                            className="px-12 py-4 rounded-2xl font-black text-white shadow-xl hover:scale-105 transition-all flex items-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            Confirm & Deploy <FaRocket />
+                        </button>
+                    </div>
                 </div>
             )}
 
@@ -671,92 +859,152 @@ export default function CampaignCenter() {
                 </div>
             )}
 
-            {/* STAGE 4: RESULTS */}
+            {/* STAGE 4: RESULTS - CHANNEL REVIEW FEED (v3.0) */}
             {stage === 'results' && finalAssets && (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 animate-fade-in">
-                    <div className="space-y-8">
-                        <div className="bg-green-50 p-8 rounded-[2rem] border border-green-100">
-                            <h3 className="text-green-800 font-black flex items-center gap-3 uppercase text-sm tracking-widest">
-                                <FaCheckCircle /> Strategy Implemented
-                            </h3>
-                            <p className="text-green-700 text-sm mt-2 font-medium">Multi-channel campaign live for: {finalAssets.theme}</p>
-                        </div>
-
-                        {/* Visual Asset Card */}
-                        <div className="bg-white p-8 border border-slate-100 rounded-[3rem] shadow-sm space-y-6">
-                            <div className="flex justify-between items-center">
-                                <span className="text-[10px] font-black bg-slate-100 px-4 py-1.5 rounded-full uppercase tracking-widest">Master Asset</span>
-                                <div className="flex gap-3">
-                                    <button
-                                        onClick={() => { setRecyclingAsset({ url: finalAssets.assets.instagram }); setShowRecycleModal(true); }}
-                                        aria-label="Recycle Asset"
-                                        title="Recycle Asset"
-                                        className="p-2.5 text-slate-400 hover:text-primary transition-colors bg-slate-50 rounded-xl"
-                                    >
-                                        <FaSyncAlt size={14} />
-                                    </button>
-                                    <button
-                                        aria-label="Download Asset"
-                                        title="Download Asset"
-                                        className="p-2.5 text-slate-400 hover:text-green-500 transition-colors bg-slate-50 rounded-xl"
-                                    >
-                                        <FaDownload size={14} />
-                                    </button>
-                                </div>
+                <div className="space-y-8 animate-fade-in">
+                    {/* Header */}
+                    <div className="flex justify-between items-center">
+                        <div>
+                            <div className="inline-flex items-center gap-2 px-4 py-2 bg-green-50 text-green-700 rounded-full text-xs font-black mb-3 border border-green-200 uppercase tracking-widest">
+                                <FaCheckCircle /> Campaign Generated
                             </div>
-                            <div className="aspect-square bg-slate-50 rounded-[2rem] overflow-hidden border border-slate-100">
-                                <img src={finalAssets.assets.instagram} alt="Generated" className="w-full h-full object-cover" />
-                            </div>
-                            <p className="text-slate-600 text-sm italic font-medium leading-relaxed">"{finalAssets.blueprint.instagram.caption}"</p>
+                            <h3 className="text-2xl font-black text-slate-800 dark:text-white tracking-tight">{finalAssets.blueprint?.theme || 'Campaign Assets'}</h3>
+                            <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">
+                                {selectedChannels.length} channels • {approvedChannels.length} approved
+                            </p>
                         </div>
+                        <button
+                            onClick={handleExportZip}
+                            disabled={approvedChannels.length === 0}
+                            className="bg-gradient-to-r from-green-600 to-emerald-600 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:scale-105 transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            <FaDownload /> Export ZIP
+                        </button>
                     </div>
 
-                    <div className="space-y-8">
-                        <div className="bg-white p-8 border border-slate-100 rounded-[3rem] shadow-sm h-full">
-                            <h4 className="font-black text-slate-400 uppercase text-[10px] tracking-[0.2em] mb-6">Direct Outreach Blueprint</h4>
-                            <div className="p-6 bg-slate-50 rounded-2xl border border-slate-100">
-                                <p className="font-black text-slate-800 mb-4 text-lg tracking-tight">{finalAssets.blueprint.email.subject}</p>
-                                <p className="text-slate-600 text-sm whitespace-pre-line leading-loose">{finalAssets.blueprint.email.body}</p>
-                            </div>
-                        </div>
+                    {/* Vertical Review Feed - Grouped by Channel */}
+                    <div className="space-y-6 max-h-[70vh] overflow-y-auto custom-scrollbar pr-2">
+                        {selectedChannels.map(channelId => {
+                            const channel = AVAILABLE_CHANNELS.find(c => c.id === channelId) || { name: channelId, icon: '📊' };
+                            const assetUrl = finalAssets.assets?.[channelId];
+                            const channelBlueprint = finalAssets.blueprint?.[channelId] || {};
+                            const isApproved = approvedChannels.includes(channelId);
+                            const textCopy = channelBlueprint.caption || channelBlueprint.body ||
+                                (channelBlueprint.headlines ? channelBlueprint.headlines.join(' | ') : '') ||
+                                channelBlueprint.video_script || '';
 
-                        {/* GOOGLE ADS KIT */}
-                        {finalAssets.blueprint.google_ads && (
-                            <div className="bg-white p-8 border border-slate-100 rounded-[3rem] shadow-sm">
-                                <h4 className="font-black text-slate-400 uppercase text-[10px] tracking-[0.2em] mb-6">Google Ads Kit</h4>
-
-                                {/* Display Ad Visual */}
-                                {finalAssets.assets.google_ads && (
-                                    <div className="mb-6">
-                                        <p className="text-xs font-bold text-slate-500 mb-2">Display Ad (Landscape)</p>
-                                        <div className="aspect-video bg-slate-50 rounded-2xl overflow-hidden border border-slate-100">
-                                            <img src={finalAssets.assets.google_ads} alt="Display Ad" className="w-full h-full object-cover" />
+                            return (
+                                <div key={channelId} className={`bg-white dark:bg-slate-800 rounded-[2rem] border-2 transition-all ${isApproved
+                                        ? 'border-green-200 dark:border-green-800 shadow-lg shadow-green-100 dark:shadow-green-900/20'
+                                        : 'border-slate-100 dark:border-slate-700 shadow-sm'
+                                    }`}>
+                                    {/* Channel Header */}
+                                    <div className="flex items-center justify-between p-6 border-b border-slate-100 dark:border-slate-700">
+                                        <div className="flex items-center gap-3">
+                                            <span className="text-2xl">{channel.icon}</span>
+                                            <span className="font-black text-slate-800 dark:text-white text-lg">{channel.name}</span>
+                                            {isApproved && (
+                                                <span className="px-3 py-1 bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-400 rounded-full text-xs font-bold uppercase">
+                                                    Approved
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className="text-xs text-slate-400 dark:text-slate-500">
+                                            {finalAssets.assets_metadata?.[channelId]?.size || 'Standard'}
                                         </div>
                                     </div>
-                                )}
 
-                                <div className="space-y-4">
-                                    <div>
-                                        <p className="text-xs font-bold text-slate-500 uppercase mb-2">Headlines</p>
-                                        <div className="grid gap-2">
-                                            {finalAssets.blueprint.google_ads.headlines?.map((h, i) => (
-                                                <div key={i} className="bg-slate-50 p-3 rounded-xl text-sm font-bold text-slate-700 border border-slate-100 flex justify-between items-center group cursor-pointer hover:border-primary transition-colors">
-                                                    {h} <span className="text-[10px] text-slate-300 group-hover:text-primary">COPY</span>
+                                    {/* Split View: Asset + Copy */}
+                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6">
+                                        {/* Visual Asset */}
+                                        <div className="space-y-4">
+                                            <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Visual Asset</p>
+                                            {assetUrl ? (
+                                                <div className="aspect-video bg-slate-50 dark:bg-slate-700 rounded-2xl overflow-hidden border border-slate-100 dark:border-slate-600">
+                                                    <img src={assetUrl} alt={channel.name} className="w-full h-full object-cover" />
                                                 </div>
-                                            ))}
+                                            ) : (
+                                                <div className="aspect-video bg-slate-100 dark:bg-slate-700 rounded-2xl flex items-center justify-center">
+                                                    <FaSpinner className="text-3xl text-slate-300 dark:text-slate-500 animate-spin" />
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {/* Text Copy */}
+                                        <div className="space-y-4">
+                                            <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Text Copy</p>
+                                            <div className="bg-slate-50 dark:bg-slate-700 p-5 rounded-2xl border border-slate-100 dark:border-slate-600 min-h-[120px]">
+                                                <p className="text-slate-700 dark:text-slate-300 text-sm leading-relaxed whitespace-pre-wrap">
+                                                    {textCopy || 'No copy generated for this channel.'}
+                                                </p>
+                                            </div>
                                         </div>
                                     </div>
-                                    <div>
-                                        <p className="text-xs font-bold text-slate-500 uppercase mb-2">Descriptions</p>
-                                        <div className="grid gap-2">
-                                            {finalAssets.blueprint.google_ads.descriptions?.map((d, i) => (
-                                                <div key={i} className="bg-slate-50 p-3 rounded-xl text-sm text-slate-600 border border-slate-100">{d}</div>
-                                            ))}
-                                        </div>
+
+                                    {/* Action Footer */}
+                                    <div className="flex justify-end gap-3 p-6 pt-0">
+                                        {!isApproved && (
+                                            <>
+                                                <button
+                                                    onClick={() => handleOpenRejection(channelId)}
+                                                    className="px-5 py-3 rounded-xl font-bold text-red-600 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-900/50 transition-all flex items-center gap-2"
+                                                >
+                                                    <FaTimes /> Reject
+                                                </button>
+                                                <button
+                                                    onClick={() => handleApproveAsset(channelId)}
+                                                    className="px-6 py-3 rounded-xl font-bold text-white bg-green-600 hover:bg-green-700 transition-all flex items-center gap-2 shadow-lg"
+                                                >
+                                                    <FaCheckCircle /> Approve
+                                                </button>
+                                            </>
+                                        )}
+                                        {isApproved && (
+                                            <div className="flex items-center gap-2 text-green-600 dark:text-green-400 font-bold">
+                                                <FaCheckCircle /> Locked & Approved
+                                            </div>
+                                        )}
                                     </div>
                                 </div>
-                            </div>
-                        )}
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+
+            {/* REJECTION MODAL (v3.0) */}
+            {rejectionModal.open && (
+                <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-50 flex items-center justify-center p-6">
+                    <div className="bg-white dark:bg-slate-800 rounded-[3rem] w-full max-w-xl overflow-hidden shadow-2xl animate-scale-up border border-white/20">
+                        <div className="p-8 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900/50">
+                            <h3 className="font-black text-slate-800 dark:text-white uppercase tracking-tight">Request Revision</h3>
+                            <button onClick={() => setRejectionModal({ open: false, channel: null, assetId: null })} aria-label="Close Modal" className="p-2 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-all">
+                                <FaTimes className="text-slate-400" />
+                            </button>
+                        </div>
+                        <div className="p-10">
+                            <p className="text-sm text-slate-500 dark:text-slate-400 font-medium mb-4">
+                                Tell us what needs to change for the <strong className="text-slate-800 dark:text-white">{rejectionModal.channel}</strong> asset. We'll regenerate it based on your feedback.
+                            </p>
+                            <textarea
+                                name="rejectionFeedback"
+                                id="rejectionFeedback"
+                                aria-label="Rejection Feedback"
+                                className="w-full p-6 rounded-2xl border-2 border-slate-100 dark:border-slate-600 bg-slate-50 dark:bg-slate-700 focus:bg-white dark:focus:bg-slate-600 focus:border-primary outline-none transition-all mb-6 h-40 text-lg text-slate-800 dark:text-white"
+                                placeholder="e.g., 'Make the colors more vibrant', 'Add more whitespace', 'Change the headline tone'..."
+                                value={rejectionFeedback}
+                                onChange={(e) => setRejectionFeedback(e.target.value)}
+                            />
+                            <button
+                                onClick={handleRegenerate}
+                                disabled={isRegenerating || !rejectionFeedback.trim()}
+                                style={{ backgroundColor: primaryColor }}
+                                className="w-full py-5 text-white rounded-2xl font-black flex items-center justify-center gap-3 shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {isRegenerating ? <FaSpinner className="animate-spin" /> : <FaSyncAlt />}
+                                {isRegenerating ? "Regenerating..." : "Submit & Regenerate"}
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

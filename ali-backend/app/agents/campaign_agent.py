@@ -51,29 +51,35 @@ class CampaignAgent(BaseAgent):
         except Exception as e:
             self.handle_error(e)
 
-    async def create_campaign_blueprint(self, goal: str, brand_dna: dict, answers: dict):
+    async def create_campaign_blueprint(self, goal: str, brand_dna: dict, answers: dict, selected_channels: list = None):
         """Create the full multi-channel plan once questions are answered."""
         self.log_task("Formulating final campaign blueprint...")
+        
+        # Build channel-specific instructions
+        channels = selected_channels if selected_channels else ["instagram", "linkedin"]
+        channel_instructions = self._build_channel_instructions(channels)
         
         prompt = f"""
         Based on:
         Brand DNA: {json.dumps(brand_dna)}
         Goal: {goal}
         User Clarifications: {json.dumps(answers)}
+        Target Channels: {', '.join(channels)}
 
         Create a Campaign Blueprint. 
-        Include:
-        1. 'theme': A 1-sentence title for the campaign.
-        2. 'instagram': A 'caption' and a 'visual_prompt'.
-        3. 'tiktok': A 'video_script' and 'audio_style'.
-        5. 'google_ads': {{
-            'headlines': ["Headline 1 (max 30 chars)", ...],
-            'descriptions': ["Desc 1 (max 90 chars)", ...],
-            'keywords': ["keyword1", "keyword2", ...]
-        }}
-
+        
+        CRITICAL: You MUST create content for EACH of these channels: {', '.join(channels)}
+        
+        {channel_instructions}
+        
+        For EVERY channel, include at minimum:
+        - 'visual_prompt': A detailed image generation prompt
+        - 'caption' or 'body' or 'headlines': Platform-appropriate text copy
+        
+        Also include a general 'theme': A 1-sentence title for the campaign.
+        
         Ensure the tone strictly follows the Brand DNA and respects the cultural target.
-        Return ONLY a JSON object.
+        Return ONLY a JSON object with keys for 'theme' and each channel.
         """
         
         try:
@@ -82,3 +88,25 @@ class CampaignAgent(BaseAgent):
             return json.loads(raw_text)
         except Exception as e:
             self.handle_error(e)
+    
+    def _build_channel_instructions(self, channels: list) -> str:
+        """Build channel-specific prompting instructions based on platform tones."""
+        instructions = []
+        
+        channel_tones = {
+            "linkedin": "Professional, thought-leadership tone. Target 150-300 characters. Include industry insights.",
+            "instagram": "Visual-heavy with strategic hashtags. Engaging, lifestyle-focused caption.",
+            "facebook": "Conversational and community-focused. Encourage engagement and sharing.",
+            "tiktok": "Trendy, short, punchy. Script format with hook in first 3 seconds.",
+            "google_display": "Direct response focused. Headlines max 30 chars, descriptions max 90 chars. Include keywords.",
+            "pinterest": "Aspirational, visual. Focus on inspiration and lifestyle outcomes.",
+            "threads": "Minimal, conversational. Think Twitter-style brevity with personality.",
+            "email": "Persuasive with clear CTA. Subject line + body format.",
+            "blog": "Informative, SEO-friendly. Include meta description and key points."
+        }
+        
+        for channel in channels:
+            tone_guide = channel_tones.get(channel, "Professional and on-brand.")
+            instructions.append(f"'{channel}': {tone_guide}")
+        
+        return "TONE GUIDELINES PER CHANNEL:\n" + "\n".join(instructions)

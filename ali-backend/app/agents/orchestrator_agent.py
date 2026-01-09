@@ -8,77 +8,177 @@ from firebase_admin import firestore
 
 logger = logging.getLogger("ali_platform.agents.orchestrator_agent")
 
+# ============================================================================
+# 2025/2026 MASTER CHANNEL SPECIFICATIONS
+# Enforces dimension-accurate, platform-compliant asset generation
+# ============================================================================
+CHANNEL_SPECS = {
+    "linkedin": {
+        "formats": [
+            {"type": "feed", "size": (1200, 627), "ratio": "1.91:1", "tone": "professional"},
+            {"type": "square", "size": (1080, 1080), "ratio": "1:1", "tone": "professional"}
+        ],
+        "text_limit": 3000,  # Character limit, but target 150-300 chars for engagement
+        "tone": "professional"
+    },
+    "instagram": {
+        "formats": [
+            {"type": "story", "size": (1080, 1920), "ratio": "9:16", "safe_zone_bottom": 250},
+            {"type": "feed_portrait", "size": (1080, 1350), "ratio": "4:5"}
+        ],
+        "tone": "visual_heavy_hashtags"
+    },
+    "facebook": {
+        "formats": [
+            {"type": "feed", "size": (1080, 1080), "ratio": "1:1"},
+            {"type": "link", "size": (1200, 628), "ratio": "1.91:1"}
+        ],
+        "tone": "conversational"
+    },
+    "tiktok": {
+        "formats": [
+            {"type": "feed_video_placeholder", "size": (1080, 1920), "ratio": "9:16", "safe_zone_bottom": 420, "safe_zone_right": 120}
+        ],
+        "tone": "trendy_short"
+    },
+    "google_display": {
+        "formats": [
+            {"type": "medium_rect", "size": (300, 250)},
+            {"type": "leaderboard", "size": (728, 90)},
+            {"type": "mobile_leaderboard", "size": (320, 50)}
+        ],
+        "tone": "direct_response"
+    },
+    "pinterest": {
+        "formats": [
+            {"type": "pin", "size": (1000, 1500), "ratio": "2:3"}
+        ],
+        "tone": "aspirational_visual"
+    },
+    "threads": {
+        "formats": [
+            {"type": "feed", "size": (1080, 1080), "ratio": "1:1"}
+        ],
+        "tone": "minimal_conversational"
+    },
+    "email": {
+        "formats": [{"type": "header", "size": (600, 200)}],
+        "tone": "persuasive"
+    },
+    "blog": {
+        "formats": [{"type": "hero", "size": (1200, 630)}],
+        "tone": "informative"
+    }
+}
+
 class OrchestratorAgent(BaseAgent):
     def __init__(self):
         super().__init__("Orchestrator")
         self.db = db
 
-    async def run_full_campaign_flow(self, uid, campaign_id, goal, brand_dna, answers, connected_platforms: list = None):
+    async def run_full_campaign_flow(self, uid, campaign_id, goal, brand_dna, answers, selected_channels: list = None):
+        """
+        Channel-Aware Campaign Orchestrator v3.0
+        Generates dimension-accurate, platform-compliant assets for each selected channel.
+        """
         try:
             # 1. Update Notification: Start
             self._update_progress(uid, campaign_id, "Analyzing Cultural Context...", 10)
 
-            # 2. Generate Blueprint
+            # Resolve channels - use selected_channels if provided, fallback to connected_platforms detection
+            target_channels = selected_channels if selected_channels else ["instagram", "linkedin"]
+            # Normalize channel names (lowercase, underscores)
+            target_channels = [c.lower().replace(" ", "_").replace("-", "_") for c in target_channels]
+            logger.info(f"🎯 Channel-Aware Orchestration for: {target_channels}")
+
+            # 2. Generate Blueprint with channel context
             planner = CampaignAgent()
-            blueprint = await planner.create_campaign_blueprint(goal, brand_dna, answers)
+            blueprint = await planner.create_campaign_blueprint(goal, brand_dna, answers, selected_channels=target_channels)
             self._update_progress(uid, campaign_id, "Creative Blueprint Ready.", 30)
 
-            # 3. Parallel Execution: Visuals & Copy
-            # Initialize robust services - VideoAgent deprecated, using ImageAgent only
+            # 3. Channel-Aware Asset Generation Loop
             image_agent = ImageAgent()
             
-            # Determine target platforms
-            target_platforms = connected_platforms if connected_platforms else ["instagram", "google_ads"]
-            logger.info(f"🎯 Orchestrating for platforms: {target_platforms}")
-
             tasks = []
-            platform_map = {} # To map result back to platform name
-            task_index = 0
-
-            # A. Instagram/Social Image Generation
-            if any(p in target_platforms for p in ['instagram', 'facebook', 'tiktok']):
-                ig_data = blueprint.get('instagram', {})
-                visual_prompt = ig_data.get('visual_prompt', 'Professional brand promotional image')
+            task_metadata = []  # Track (channel, format_type, specs) for each task
+            
+            for channel in target_channels:
+                spec = CHANNEL_SPECS.get(channel)
+                if not spec:
+                    logger.warning(f"⚠️ Unknown channel '{channel}', skipping...")
+                    continue
+                
+                # Use first format as primary for this channel
+                primary_format = spec["formats"][0]
+                width, height = primary_format["size"]
+                tone = spec.get("tone", primary_format.get("tone", "professional"))
+                
+                # Build safe zone instruction for vertical formats
+                safe_zone_instruction = ""
+                if primary_format.get("safe_zone_bottom"):
+                    safe_zone_instruction = f" CRITICAL: Leave bottom {primary_format['safe_zone_bottom']}px clear of text/logos (UI overlay zone)."
+                if primary_format.get("safe_zone_right"):
+                    safe_zone_instruction += f" Leave right {primary_format['safe_zone_right']}px clear."
+                
+                # Get channel-specific visual prompt from blueprint, fallback to instagram
+                channel_data = blueprint.get(channel, blueprint.get('instagram', {}))
+                visual_prompt = channel_data.get('visual_prompt', 'Professional brand promotional image')
+                
+                # Enhance prompt with dimension awareness and safe zones
+                enhanced_prompt = (
+                    f"{visual_prompt}. "
+                    f"DIMENSIONS: {width}x{height}px ({primary_format.get('ratio', 'custom')}). "
+                    f"TONE: {tone}.{safe_zone_instruction}"
+                )
                 
                 dna_str = f"Style {brand_dna.get('visual_styles', [])}. Colors {brand_dna.get('color_palette', {})}"
-                task = asyncio.to_thread(image_agent.generate_image, visual_prompt, brand_dna=dna_str, folder="campaigns")
-                tasks.append(task)
-                platform_map[task_index] = 'instagram'
-                task_index += 1
-            
-            # B. Google Display Ads (Landscape Image)
-            if any(p in target_platforms for p in ['google_ads', 'google']):
-                ig_data = blueprint.get('instagram', {})
-                visual_prompt = ig_data.get('visual_prompt', 'Professional product shot')
                 
-                # Wrap sync call
-                dna_str = f"Style {brand_dna.get('visual_styles', [])}"
-                task = asyncio.to_thread(image_agent.generate_image, visual_prompt, brand_dna=dna_str, folder="campaigns")
+                # Queue async task
+                task = asyncio.to_thread(
+                    image_agent.generate_image, 
+                    enhanced_prompt, 
+                    brand_dna=dna_str, 
+                    folder=f"campaigns/{channel}"
+                )
                 tasks.append(task)
-                platform_map[task_index] = 'google_ads'
-                task_index += 1
-
-            self._update_progress(uid, campaign_id, "Generating Visual Assets...", 60)
+                task_metadata.append({
+                    "channel": channel,
+                    "format_type": primary_format["type"],
+                    "size": primary_format["size"],
+                    "tone": tone
+                })
+            
+            self._update_progress(uid, campaign_id, f"Generating {len(tasks)} Channel Assets...", 60)
             
             # Execute all tasks concurrently
-            results = await asyncio.gather(*tasks)
+            results = await asyncio.gather(*tasks, return_exceptions=True)
             
             # Map results back to structured assets
             assets = {}
+            assets_metadata = {}
             for i, result in enumerate(results):
-                key = platform_map.get(i)
-                if key and result:
-                    # Extract URL if dict (new format), else use result (legacy string)
-                    if isinstance(result, dict):
-                         assets[key] = result.get('url')
-                    else:
-                         assets[key] = result
+                meta = task_metadata[i]
+                channel = meta["channel"]
+                
+                if isinstance(result, Exception):
+                    logger.error(f"❌ Failed to generate asset for {channel}: {result}")
+                    continue
+                    
+                # Extract URL if dict (new format), else use result (legacy string)
+                if isinstance(result, dict):
+                    assets[channel] = result.get('url')
+                else:
+                    assets[channel] = result
+                
+                assets_metadata[channel] = meta
             
             # 4. Finalize & Package
             final_data = {
                 "status": "completed",
                 "blueprint": blueprint,
                 "assets": assets,
+                "assets_metadata": assets_metadata,
+                "selected_channels": target_channels,
                 "goal": goal,
                 "campaign_id": campaign_id
             }
@@ -86,23 +186,33 @@ class OrchestratorAgent(BaseAgent):
             # Use set with merge=True to handle new campaign documents correctly
             self.db.collection('users').document(uid).collection('campaigns').document(campaign_id).set(final_data, merge=True)
             
-            # 5. Also save assets to creative_drafts for User Self-Approval (Stage 4)
-            for platform_key, asset_url in assets.items():
+            # 5. Save drafts per channel for User Self-Approval (Review Feed)
+            for channel, asset_url in assets.items():
                 if asset_url:
-                    draft_id = f"draft_{campaign_id}_{platform_key}"
+                    meta = assets_metadata.get(channel, {})
+                    draft_id = f"draft_{campaign_id}_{channel}"
+                    
+                    # Get channel-specific copy from blueprint
+                    channel_blueprint = blueprint.get(channel, blueprint.get('instagram', {}))
+                    
                     draft_data = {
                         "userId": uid,
                         "campaignId": campaign_id,
-                        "platform": platform_key,
+                        "channel": channel,
                         "thumbnailUrl": asset_url,
                         "title": f"{goal[:50]}..." if len(goal) > 50 else goal,
-                        "format": "Image",
+                        "format": meta.get("format_type", "Image"),
+                        "size": f"{meta.get('size', (0,0))[0]}x{meta.get('size', (0,0))[1]}",
+                        "tone": meta.get("tone", "professional"),
                         "status": "DRAFT",
+                        "approvalStatus": "pending",
                         "createdAt": firestore.SERVER_TIMESTAMP,
-                        "blueprint": blueprint.get(platform_key, blueprint.get('instagram', {}))
+                        "blueprint": channel_blueprint,
+                        # Store text copy separately for review feed
+                        "textCopy": channel_blueprint.get("caption") or channel_blueprint.get("body") or channel_blueprint.get("headlines", [""])[0]
                     }
                     self.db.collection('creative_drafts').document(draft_id).set(draft_data)
-                    logger.info(f"📦 Saved draft {draft_id} for user {uid}")
+                    logger.info(f"📦 Saved draft {draft_id} for user {uid} (channel: {channel})")
             
             self._update_progress(uid, campaign_id, "Campaign Ready!", 100)
 
