@@ -354,9 +354,13 @@ class OrchestratorAgent(BaseAgent):
                     format_label = 'primary'
                 
                 # FIX: Ensure every asset gets a draft doc, even if generation failed
-                # Updated ID format: draft_{campaign_id}_{channel}_{format}
                 clean_channel = channel.lower().replace(" ", "_")
-                draft_id = f"draft_{campaign_id}_{clean_channel}_{format_label}"
+                
+                # ID Logic: No suffix for primary/feed, suffix for others (story, etc.)
+                if format_label in ['primary', 'feed']:
+                     draft_id = f"draft_{campaign_id}_{clean_channel}"
+                else:
+                     draft_id = f"draft_{campaign_id}_{clean_channel}_{format_label}"
                 
                 asset_payload = assets.get(asset_key)
                 meta = assets_metadata.get(channel, {})
@@ -377,6 +381,13 @@ class OrchestratorAgent(BaseAgent):
                     thumbnail_url = "https://placehold.co/600x400?text=Generation+Failed"
                     asset_payload = None # Explicit null
 
+                # Ensure copy_text is never None
+                text_copy = channel_blueprint.get("caption") or channel_blueprint.get("body")
+                if not text_copy and channel_blueprint.get("headlines"):
+                    text_copy = channel_blueprint["headlines"][0]
+                if not text_copy:
+                    text_copy = goal or "Brand Campaign Asset"
+
                 # WRAP IN TRY/EXCEPT FOR ROBUSTNESS
                 try:
                     draft_data = {
@@ -393,7 +404,7 @@ class OrchestratorAgent(BaseAgent):
                         "approvalStatus": "pending",
                         "createdAt": firestore.SERVER_TIMESTAMP,
                         "blueprint": channel_blueprint,
-                        "textCopy": channel_blueprint.get("caption") or channel_blueprint.get("body") or (channel_blueprint.get("headlines", [""])[0] if channel_blueprint.get("headlines") else "")
+                        "textCopy": text_copy
                     }
                     
                     self.db.collection('creative_drafts').document(draft_id).set(draft_data)

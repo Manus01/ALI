@@ -41,10 +41,10 @@ def get_my_drafts(user: dict = Depends(verify_token)):
             data["id"] = doc.id
             drafts.append(data)
         
-        return {"drafts": drafts}
+        return drafts
     except Exception as e:
         logger.error(f"❌ Fetch My Drafts Error: {e}")
-        return {"drafts": [], "error": str(e)}
+        return []
 
 
 @router.post("/{draft_id}/publish")
@@ -128,10 +128,10 @@ def get_my_published(user: dict = Depends(verify_token)):
             data["id"] = doc.id
             published.append(data)
         
-        return {"published": published}
+        return published
     except Exception as e:
         logger.error(f"❌ Fetch My Published Error: {e}")
-        return {"published": [], "error": str(e)}
+        return []
 
 
 @router.post("/{campaign_id}/export-zip")

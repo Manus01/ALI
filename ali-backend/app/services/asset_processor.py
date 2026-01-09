@@ -562,8 +562,8 @@ class AssetProcessor:
                     x_pos = base_img.width - target_logo_width - padding
                     y_pos = padding
                     
-                    # Composite logo with proper transparency mask
-                    # Create a transparent layer the same size as base
+                    # Composite logo with proper transparency mask using Image.paste
+                    # Create a transparent layer for the logo to ensure clean composition
                     logo_layer = Image.new("RGBA", base_img.size, (0, 0, 0, 0))
                     logo_layer.paste(logo_img, (x_pos, y_pos), mask=logo_img)
                     base_img = Image.alpha_composite(base_img, logo_layer)
