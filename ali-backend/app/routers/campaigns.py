@@ -87,6 +87,18 @@ async def finalize_campaign(payload: dict, background_tasks: BackgroundTasks, us
             orchestrator.run_full_campaign_flow, 
             uid, campaign_id, goal, brand_dna, answers, connected_platforms
         )
+        
+        # ATOMIC INCREMENT: Track ads_generated for user leaderboard (Admin Hub)
+        try:
+            user_ref = db.collection('users').document(uid)
+            user_ref.update({
+                "stats.ads_generated": firestore.Increment(1)
+            })
+            logger.info(f"📊 Incremented ads_generated for user {uid}")
+        except Exception as stats_err:
+            # Non-fatal - don't block campaign if stats update fails
+            logger.warning(f"⚠️ Failed to increment ads_generated for {uid}: {stats_err}")
+        
         return {"campaign_id": campaign_id}
     except Exception as e:
         logger.error(f"Campaign Finalization Failed: {e}")

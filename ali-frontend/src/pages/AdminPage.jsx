@@ -5,7 +5,7 @@ import Logger from '../services/Logger';
 import {
     FaUserCog, FaDatabase, FaPlay, FaBell, FaLink,
     FaSync, FaInstagram, FaLinkedin, FaFacebook, FaTiktok, FaSpinner, FaFileCsv, FaSearch, FaExclamationTriangle,
-    FaCheckCircle, FaTimesCircle, FaPalette, FaLightbulb, FaThList
+    FaCheckCircle, FaTimesCircle, FaLightbulb, FaThList
 } from 'react-icons/fa';
 
 const CHANNEL_ICONS = {
@@ -18,7 +18,6 @@ const CHANNEL_ICONS = {
 // Tab configuration for Orchestration Hub
 const ORCHESTRATION_TABS = [
     { id: 'tutorials', label: 'Tutorial Approvals', icon: <FaPlay /> },
-    { id: 'creatives', label: 'Creative Staging', icon: <FaPalette /> },
     { id: 'actions', label: 'Action Center', icon: <FaLightbulb /> },
     { id: 'alerts', label: 'Research Alerts', icon: <FaBell /> }
 ];
@@ -30,11 +29,9 @@ export default function AdminPage() {
 
     // Orchestration Hub data states
     const [tutorialRequests, setTutorialRequests] = useState([]);
-    const [creativeDrafts, setCreativeDrafts] = useState([]);
     const [recommendations, setRecommendations] = useState([]);
     const [researchAlerts, setResearchAlerts] = useState([]);
     const [loadingRequests, setLoadingRequests] = useState(false);
-    const [loadingDrafts, setLoadingDrafts] = useState(false);
     const [loadingRecommendations, setLoadingRecommendations] = useState(false);
     const [loadingAlerts, setLoadingAlerts] = useState(false);
 
@@ -71,7 +68,6 @@ export default function AdminPage() {
             fetchConnections();
             // Orchestration Hub data
             fetchTutorialRequests();
-            fetchCreativeDrafts();
             fetchRecommendations();
             fetchResearchAlerts();
         }
@@ -99,15 +95,6 @@ export default function AdminPage() {
             setTutorialRequests(res.data.requests || []);
         } catch (err) { console.error("Failed to fetch tutorial requests", err); }
         finally { setLoadingRequests(false); }
-    };
-
-    const fetchCreativeDrafts = async () => {
-        setLoadingDrafts(true);
-        try {
-            const res = await api.get('/api/admin/creative-drafts');
-            setCreativeDrafts(res.data.drafts || []);
-        } catch (err) { console.error("Failed to fetch creative drafts", err); }
-        finally { setLoadingDrafts(false); }
     };
 
     const fetchRecommendations = async () => {
@@ -160,17 +147,6 @@ export default function AdminPage() {
         } catch (err) {
             console.error(err);
             alert("Generation trigger failed: " + (err.response?.data?.detail || err.message));
-        }
-    };
-
-    const handlePublishDraft = async (draftId) => {
-        try {
-            await api.post(`/api/admin/creative-drafts/${draftId}/publish`);
-            setActionMsg("✅ Creative Published!");
-            fetchCreativeDrafts();
-        } catch (err) {
-            console.error(err);
-            alert("Publish failed: " + (err.response?.data?.detail || err.message));
         }
     };
 
@@ -319,7 +295,7 @@ export default function AdminPage() {
     const handleExportCSV = () => {
         if (!researchUsers.length) return;
 
-        const headers = ["UID", "Name", "Email", "Cognitive Style", "Marketing Level", "Platforms", "Active Channels", "Total Spend", "Data Points"];
+        const headers = ["UID", "Name", "Email", "Cognitive Style", "Marketing Level", "Platforms", "Active Channels", "Ads Created", "Total Spend", "Data Points"];
         const rows = researchUsers.map(u => [
             u.uid,
             `"${u.name || ''}"`,
@@ -328,6 +304,7 @@ export default function AdminPage() {
             u.marketing_level,
             `"${u.connected_platforms.join(', ')}"`,
             `"${u.active_channels ? u.active_channels.join(', ') : ''}"`,
+            u.stats?.ads_generated || 0,
             u.stats.total_spend,
             u.stats.data_points
         ]);
@@ -404,8 +381,8 @@ export default function AdminPage() {
                             key={tab.id}
                             onClick={() => setActiveTab(tab.id)}
                             className={`flex-1 py-4 px-6 text-sm font-bold flex items-center justify-center gap-2 transition-all ${activeTab === tab.id
-                                    ? 'bg-indigo-600 text-white'
-                                    : 'text-slate-500 hover:bg-slate-50'
+                                ? 'bg-indigo-600 text-white'
+                                : 'text-slate-500 hover:bg-slate-50'
                                 }`}
                         >
                             {tab.icon} {tab.label}
@@ -438,10 +415,10 @@ export default function AdminPage() {
                                                     <h4 className="font-bold text-slate-800">{req.topic || "Untitled"}</h4>
                                                     <p className="text-xs text-slate-400 mt-1">User: {req.userId || "Unknown"}</p>
                                                     <span className={`inline-block mt-2 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${req.status === 'PENDING' ? 'bg-amber-100 text-amber-700' :
-                                                            req.status === 'APPROVED' ? 'bg-green-100 text-green-700' :
-                                                                req.status === 'GENERATING' ? 'bg-blue-100 text-blue-700' :
-                                                                    req.status === 'COMPLETED' ? 'bg-indigo-100 text-indigo-700' :
-                                                                        'bg-red-100 text-red-700'
+                                                        req.status === 'APPROVED' ? 'bg-green-100 text-green-700' :
+                                                            req.status === 'GENERATING' ? 'bg-blue-100 text-blue-700' :
+                                                                req.status === 'COMPLETED' ? 'bg-indigo-100 text-indigo-700' :
+                                                                    'bg-red-100 text-red-700'
                                                         }`}>
                                                         {req.status}
                                                     </span>
@@ -471,46 +448,7 @@ export default function AdminPage() {
                         </div>
                     )}
 
-                    {/* TAB 2: Creative Staging */}
-                    {activeTab === 'creatives' && (
-                        <div>
-                            <div className="flex justify-between items-center mb-6">
-                                <h3 className="text-lg font-black text-slate-800">Creative Drafts Staging</h3>
-                                <button onClick={fetchCreativeDrafts} className="text-xs font-bold text-indigo-600 hover:bg-indigo-50 px-3 py-2 rounded-xl flex items-center gap-1">
-                                    {loadingDrafts ? <FaSpinner className="animate-spin" /> : <FaSync />} Refresh
-                                </button>
-                            </div>
-                            {creativeDrafts.length === 0 ? (
-                                <div className="text-center py-12 text-slate-400 text-sm">
-                                    <FaPalette className="mx-auto text-4xl mb-4 opacity-20" />
-                                    <p>No creative drafts awaiting review</p>
-                                </div>
-                            ) : (
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                                    {creativeDrafts.map(draft => (
-                                        <div key={draft.id} className="p-6 rounded-2xl border border-slate-100 bg-white hover:shadow-lg transition-all">
-                                            <div className="aspect-video bg-gradient-to-br from-slate-100 to-slate-200 rounded-xl mb-4 flex items-center justify-center">
-                                                <FaPalette className="text-4xl text-slate-300" />
-                                            </div>
-                                            <h4 className="font-bold text-slate-800 truncate">{draft.title || "Untitled Draft"}</h4>
-                                            <p className="text-xs text-slate-400 mt-1">{draft.format || "Unknown format"} • {draft.size || "N/A"}</p>
-                                            <div className="flex justify-between items-center mt-4">
-                                                <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${draft.status === 'DRAFT' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'
-                                                    }`}>
-                                                    {draft.status}
-                                                </span>
-                                                <button onClick={() => handlePublishDraft(draft.id)} className="bg-green-600 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-green-700">
-                                                    Publish
-                                                </button>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
-                        </div>
-                    )}
-
-                    {/* TAB 3: Action Center */}
+                    {/* TAB 2: Action Center */}
                     {activeTab === 'actions' && (
                         <div>
                             <div className="flex justify-between items-center mb-6">
@@ -532,8 +470,8 @@ export default function AdminPage() {
                                                 <div className="flex-1">
                                                     <div className="flex items-center gap-2 mb-2">
                                                         <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase ${rec.priority === 'HIGH' ? 'bg-red-100 text-red-600' :
-                                                                rec.priority === 'MEDIUM' ? 'bg-amber-100 text-amber-600' :
-                                                                    'bg-slate-100 text-slate-500'
+                                                            rec.priority === 'MEDIUM' ? 'bg-amber-100 text-amber-600' :
+                                                                'bg-slate-100 text-slate-500'
                                                             }`}>
                                                             {rec.priority || 'MEDIUM'}
                                                         </span>
@@ -553,7 +491,7 @@ export default function AdminPage() {
                         </div>
                     )}
 
-                    {/* TAB 4: Research Alerts */}
+                    {/* TAB 3: Research Alerts */}
                     {activeTab === 'alerts' && (
                         <div>
                             <div className="flex justify-between items-center mb-6">
@@ -571,15 +509,15 @@ export default function AdminPage() {
                                 <div className="space-y-4">
                                     {researchAlerts.map(alert => (
                                         <div key={alert.id} className={`p-6 rounded-2xl border transition-all ${alert.severity === 'CRITICAL' ? 'border-red-200 bg-red-50/50' :
-                                                alert.severity === 'IMPORTANT' ? 'border-amber-200 bg-amber-50/50' :
-                                                    'border-slate-200 bg-slate-50/50'
+                                            alert.severity === 'IMPORTANT' ? 'border-amber-200 bg-amber-50/50' :
+                                                'border-slate-200 bg-slate-50/50'
                                             }`}>
                                             <div className="flex justify-between items-start">
                                                 <div className="flex-1">
                                                     <div className="flex items-center gap-3 mb-2">
                                                         <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${alert.severity === 'CRITICAL' ? 'bg-red-500 text-white' :
-                                                                alert.severity === 'IMPORTANT' ? 'bg-amber-500 text-white' :
-                                                                    'bg-slate-300 text-slate-700'
+                                                            alert.severity === 'IMPORTANT' ? 'bg-amber-500 text-white' :
+                                                                'bg-slate-300 text-slate-700'
                                                             }`}>
                                                             {alert.severity}
                                                         </span>
@@ -709,13 +647,14 @@ export default function AdminPage() {
                                 <th className="pb-4 pl-4">User</th>
                                 <th className="pb-4">Cognitive Style</th>
                                 <th className="pb-4">Active Data</th>
+                                <th className="pb-4">Ads Created</th>
                                 <th className="pb-4">Spend (Est.)</th>
                                 <th className="pb-4">Data Points</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-50">
                             {filteredUsers.length === 0 ? (
-                                <tr><td colSpan="5" className="p-6 text-center text-slate-400 text-xs">No matching users found.</td></tr>
+                                <tr><td colSpan="6" className="p-6 text-center text-slate-400 text-xs">No matching users found.</td></tr>
                             ) : (
                                 filteredUsers.map((u, i) => (
                                     <tr key={i} className="hover:bg-slate-50 transition-colors">
@@ -745,6 +684,15 @@ export default function AdminPage() {
                                                     )) : <span className="text-slate-300 text-xs italic">None</span>
                                                 )}
                                             </div>
+                                        </td>
+                                        <td className="py-4">
+                                            <span className={`inline-flex items-center justify-center min-w-[32px] px-2 py-1 rounded-full text-xs font-black ${(u.stats?.ads_generated || 0) >= 10 ? 'bg-green-100 text-green-700' :
+                                                (u.stats?.ads_generated || 0) >= 5 ? 'bg-blue-100 text-blue-700' :
+                                                    (u.stats?.ads_generated || 0) > 0 ? 'bg-slate-100 text-slate-600' :
+                                                        'bg-slate-50 text-slate-300'
+                                                }`}>
+                                                {u.stats?.ads_generated || 0}
+                                            </span>
                                         </td>
                                         <td className="py-4 font-mono text-xs font-bold text-slate-700">${u.stats.total_spend}</td>
                                         <td className="py-4 text-xs text-slate-400">{u.stats.data_points} logs</td>

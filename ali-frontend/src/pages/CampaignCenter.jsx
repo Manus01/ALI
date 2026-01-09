@@ -49,6 +49,11 @@ export default function CampaignCenter() {
     const [forceEditDna, setForceEditDna] = useState(false);
     const [detectedPlatforms, setDetectedPlatforms] = useState([]);
 
+    // --- USER DRAFT REVIEW STATES ---
+    const [userDrafts, setUserDrafts] = useState([]);
+    const [loadingDrafts, setLoadingDrafts] = useState(false);
+    const [publishingId, setPublishingId] = useState(null);
+
     useEffect(() => {
         // Fetch User Integrations on Mount to show "Smart Mode" status
         const fetchIntegrations = async () => {
@@ -64,6 +69,40 @@ export default function CampaignCenter() {
         };
         fetchIntegrations();
     }, []);
+
+    // Fetch user's draft creatives on mount
+    useEffect(() => {
+        if (currentUser && hasBrandDna) {
+            fetchUserDrafts();
+        }
+    }, [currentUser, hasBrandDna]);
+
+    // --- USER DRAFT REVIEW FUNCTIONS ---
+    const fetchUserDrafts = async () => {
+        setLoadingDrafts(true);
+        try {
+            const res = await api.get('/api/creatives/my-drafts');
+            setUserDrafts(res.data.drafts || []);
+        } catch (err) {
+            console.error("Failed to fetch user drafts", err);
+        } finally {
+            setLoadingDrafts(false);
+        }
+    };
+
+    const handleApproveAndPublish = async (draftId) => {
+        setPublishingId(draftId);
+        try {
+            await api.post(`/api/creatives/${draftId}/publish`);
+            // Refetch to update UI - draft moves from drafts to published
+            await fetchUserDrafts();
+        } catch (err) {
+            console.error("Publish failed", err);
+            alert("Publish failed: " + (err.response?.data?.detail || err.message));
+        } finally {
+            setPublishingId(null);
+        }
+    };
 
     useEffect(() => {
         if (location.state?.editDna) {
@@ -438,7 +477,70 @@ export default function CampaignCenter() {
                     <h1 className="text-3xl font-black text-slate-800 dark:text-white tracking-tight uppercase">Orchestrator</h1>
                     <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1">Goal: {goal || "Unassigned"}</p>
                 </div>
+                {/* User Campaign Counter */}
+                {userProfile?.stats?.ads_generated > 0 && (
+                    <div className="flex items-center gap-2 px-4 py-2 bg-indigo-50 dark:bg-indigo-900/30 rounded-full border border-indigo-100 dark:border-indigo-800">
+                        <FaRocket className="text-indigo-500 text-xs" />
+                        <span className="text-xs font-black text-indigo-700 dark:text-indigo-400">
+                            Total Campaigns: {userProfile.stats.ads_generated}
+                        </span>
+                    </div>
+                )}
             </header>
+
+            {/* DRAFT REVIEW SECTION */}
+            {userDrafts.length > 0 && stage === 'input' && (
+                <div className="bg-gradient-to-br from-amber-50 to-orange-50 dark:from-amber-900/20 dark:to-orange-900/20 p-8 rounded-[2.5rem] border border-amber-200 dark:border-amber-800">
+                    <div className="flex justify-between items-center mb-6">
+                        <div>
+                            <h3 className="text-lg font-black text-slate-800 dark:text-white flex items-center gap-2">
+                                <FaPalette className="text-amber-500" /> Draft Review
+                            </h3>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Review and publish your pending ad creatives</p>
+                        </div>
+                        <button
+                            onClick={fetchUserDrafts}
+                            disabled={loadingDrafts}
+                            className="text-xs font-bold text-amber-600 hover:bg-amber-100 dark:hover:bg-amber-900/30 px-3 py-2 rounded-xl flex items-center gap-1 transition-all"
+                        >
+                            {loadingDrafts ? <FaSpinner className="animate-spin" /> : <FaSyncAlt />} Refresh
+                        </button>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        {userDrafts.map(draft => (
+                            <div key={draft.id} className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm hover:shadow-lg transition-all">
+                                <div className="aspect-video bg-gradient-to-br from-slate-100 to-slate-200 dark:from-slate-700 dark:to-slate-600 rounded-xl mb-4 flex items-center justify-center overflow-hidden">
+                                    {draft.thumbnailUrl ? (
+                                        <img src={draft.thumbnailUrl} alt={draft.title} className="w-full h-full object-cover" />
+                                    ) : (
+                                        <FaPalette className="text-4xl text-slate-300 dark:text-slate-500" />
+                                    )}
+                                </div>
+                                <h4 className="font-bold text-slate-800 dark:text-white truncate">{draft.title || "Untitled Draft"}</h4>
+                                <p className="text-xs text-slate-400 mt-1">{draft.format || "Unknown format"} • {draft.size || "N/A"}</p>
+                                <div className="flex justify-between items-center mt-4">
+                                    <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase ${draft.status === 'DRAFT' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-400' :
+                                        'bg-blue-100 text-blue-700 dark:bg-blue-900/50 dark:text-blue-400'
+                                        }`}>
+                                        {draft.status}
+                                    </span>
+                                    <button
+                                        onClick={() => handleApproveAndPublish(draft.id)}
+                                        disabled={publishingId === draft.id}
+                                        className="bg-green-600 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-green-700 disabled:opacity-50 flex items-center gap-1 transition-all"
+                                    >
+                                        {publishingId === draft.id ? (
+                                            <><FaSpinner className="animate-spin" /> Publishing...</>
+                                        ) : (
+                                            <><FaCheckCircle /> Approve & Publish</>
+                                        )}
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
 
             {/* STAGE: LOADING */}
             {stage === 'loading' && (

@@ -183,6 +183,10 @@ def get_research_users(admin: dict = Depends(verify_admin)):
             # Better: Total Clicks / Total Impressions (if we had impressions)
             pass 
 
+        # 3. Get ads_generated from root-level stats (Atomic Counter)
+        user_stats = data.get("stats", {})
+        ads_generated = user_stats.get("ads_generated", 0)
+        
         results.append({
             "uid": uid,
             "email": data.get("email", "Unknown"),
@@ -194,7 +198,8 @@ def get_research_users(admin: dict = Depends(verify_admin)):
             "stats": {
                 "total_spend": round(total_spend, 2),
                 "total_clicks": total_clicks,
-                "data_points": count
+                "data_points": count,
+                "ads_generated": ads_generated
             }
         })
         
