@@ -426,8 +426,10 @@ export default function CampaignCenter() {
     const handleApproveAsset = async (channel) => {
         if (!campaignId) return;
         try {
-            const cleanChannel = channel.toLowerCase().replace(/ /g, "_").replace(/-/g, "_");
+            // FIX: Consistent ID generation logic (lower + spaces to underscores only)
+            const cleanChannel = channel.toLowerCase().replace(/ /g, "_");
             const draftId = `draft_${campaignId}_${cleanChannel}`;
+
             await api.post(`/api/creatives/${draftId}/publish`);
             setApprovedChannels(prev => [...prev, channel]);
         } catch (err) {
@@ -1167,18 +1169,27 @@ export default function CampaignCenter() {
                                     <div className="flex justify-end gap-3 p-6 pt-0">
                                         {!isApproved && (
                                             <>
-                                                <button
-                                                    onClick={() => handleOpenRejection(channelId)}
-                                                    className="px-5 py-3 rounded-xl font-bold text-red-600 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-900/50 transition-all flex items-center gap-2"
-                                                >
-                                                    <FaTimes /> Reject
-                                                </button>
-                                                <button
-                                                    onClick={() => handleApproveAsset(channelId)}
-                                                    className="px-6 py-3 rounded-xl font-bold text-white bg-green-600 hover:bg-green-700 transition-all flex items-center gap-2 shadow-lg"
-                                                >
-                                                    <FaCheckCircle /> Approve
-                                                </button>
+                                                {/* FIX: Disable Approve if asset failed to prevent 404s */}
+                                                {!assetUrl || assetUrl === 'FAILED' ? (
+                                                    <div className="flex items-center gap-2 text-red-400 font-bold text-xs px-4 py-2 bg-red-50 dark:bg-red-900/10 rounded-lg border border-red-100 dark:border-red-900/20">
+                                                        <FaExclamationTriangle /> Generation Failed
+                                                    </div>
+                                                ) : (
+                                                    <>
+                                                        <button
+                                                            onClick={() => handleOpenRejection(channelId)}
+                                                            className="px-5 py-3 rounded-xl font-bold text-red-600 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-900/50 transition-all flex items-center gap-2"
+                                                        >
+                                                            <FaTimes /> Reject
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleApproveAsset(channelId)}
+                                                            className="px-6 py-3 rounded-xl font-bold text-white bg-green-600 hover:bg-green-700 transition-all flex items-center gap-2 shadow-lg"
+                                                        >
+                                                            <FaCheckCircle /> Approve
+                                                        </button>
+                                                    </>
+                                                )}
                                             </>
                                         )}
                                         {isApproved && (

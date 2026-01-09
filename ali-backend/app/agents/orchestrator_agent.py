@@ -208,20 +208,24 @@ class OrchestratorAgent(BaseAgent):
                 raw_url = result.get('url') if isinstance(result, dict) else result
                 
                 # FIX 1: Apply Programmatic Brand Overlay
-                try:
-                    # Get brand details
-                    logo_url = brand_dna.get('logo_url')
-                    primary_color = brand_dna.get('color_palette', {}).get('primary', '#000000')
-                    
-                    # Apply overlay (skip for motion base images if we are wrapping them later, but good for fallback)
-                    final_url = await asyncio.to_thread(
-                        asset_processor.apply_brand_layer,
-                        raw_url,
-                        logo_url,
-                        primary_color
-                    )
-                except Exception as e:
-                    logger.warning(f"⚠️ Brand overlay skipped for {channel}: {e}")
+                # Enforce branding on all channels except text-heavy ones
+                if channel not in ['blog', 'email']:
+                    try:
+                        # Get brand details
+                        logo_url = brand_dna.get('logo_url')
+                        primary_color = brand_dna.get('color_palette', {}).get('primary', '#000000')
+                        
+                        # Apply overlay (skip for motion base images if we are wrapping them later, but good for fallback)
+                        final_url = await asyncio.to_thread(
+                            asset_processor.apply_brand_layer,
+                            raw_url,
+                            logo_url,
+                            primary_color
+                        )
+                    except Exception as e:
+                        logger.warning(f"⚠️ Brand overlay skipped for {channel}: {e}")
+                        final_url = raw_url
+                else:
                     final_url = raw_url
 
                 # HANDLE CAROUSEL
@@ -267,50 +271,55 @@ class OrchestratorAgent(BaseAgent):
             self.db.collection('users').document(uid).collection('campaigns').document(campaign_id).set(final_data, merge=True)
             
             # 5. Save drafts per channel for User Self-Approval (Review Feed)
-            for channel, asset_payload in assets.items():
+            for channel in target_channels:
+                # FIX: Ensure every channel gets a draft doc, even if generation failed
+                # Standardize ID: strictly lowercase, no spaces (matches frontend)
+                clean_channel = channel.lower().replace(" ", "_")
+                draft_id = f"draft_{campaign_id}_{clean_channel}"
+                
+                asset_payload = assets.get(channel)
+                meta = assets_metadata.get(channel, {})
+                channel_blueprint = blueprint.get(channel, blueprint.get('instagram', {}))
+
+                # Determine Status & URLs
                 if asset_payload:
-                    meta = assets_metadata.get(channel, {})
-                    
-                    # Determine Thumbnail: First slide if carousel, or the image itself
+                    status = "DRAFT"
+                    # Determine Thumbnail
                     thumbnail_url = asset_payload 
                     if isinstance(asset_payload, list):
                         thumbnail_url = asset_payload[0]
                     elif isinstance(asset_payload, str) and asset_payload.startswith("data:text/html"):
-                        # For HTML, we ideally want the background image, but we don't have it easily here separate from the HTML.
-                        # For simplicity in V3 MVP, we use a generic placeholder or try to extract. 
-                        # Ideally, we should have stored the background image URL before wrapping.
-                        # For now, let's use the first image generated for this channel if possible, OR just a generic icon on FE.
-                        # Actually, better: Pass the background image through in a structured dict?
-                        # Re-simplification: Use the 'final_url' from the extraction loop? 
-                        # Since we overwrote variable, let's just use a placeholder or rely on FE to render iframe preview.
                         thumbnail_url = asset_payload # FE will render iframe
-                    
-                    # FIX 2: Standardize Draft ID Construction (lowercase, underscores)
-                    clean_channel = channel.lower().replace(" ", "_").replace("-", "_")
-                    draft_id = f"draft_{campaign_id}_{clean_channel}"
-                    
-                    # Get channel-specific copy from blueprint
-                    channel_blueprint = blueprint.get(channel, blueprint.get('instagram', {}))
-                    
+                else:
+                    # Handle Failed Generation
+                    status = "FAILED"
+                    thumbnail_url = "https://placehold.co/600x400?text=Generation+Failed"
+                    asset_payload = None # Explicit null
+
+                # WRAP IN TRY/EXCEPT FOR ROBUSTNESS
+                try:
                     draft_data = {
                         "userId": uid,
                         "campaignId": campaign_id,
-                        "channel": channel,
-                        "thumbnailUrl": thumbnail_url, # Now can be list or data-uri
-                        "assetPayload": asset_payload, # The actual full asset (List or HTML String)
+                        "channel": clean_channel,
+                        "thumbnailUrl": thumbnail_url,
+                        "assetPayload": asset_payload,
                         "title": f"{goal[:50]}..." if len(goal) > 50 else goal,
                         "format": meta.get("format_type", "Image"),
-                        "size": f"{meta.get('size', (0,0))[0]}x{meta.get('size', (0,0))[1]}",
+                        "size": f"{meta.get('size', (0,0))[0]}x{meta.get('size', (0,0))[1]}" if meta.get('size') else "N/A",
                         "tone": meta.get("tone", "professional"),
-                        "status": "DRAFT",
+                        "status": status,
                         "approvalStatus": "pending",
                         "createdAt": firestore.SERVER_TIMESTAMP,
                         "blueprint": channel_blueprint,
-                        # Store text copy separately for review feed
-                        "textCopy": channel_blueprint.get("caption") or channel_blueprint.get("body") or channel_blueprint.get("headlines", [""])[0]
+                        "textCopy": channel_blueprint.get("caption") or channel_blueprint.get("body") or (channel_blueprint.get("headlines", [""])[0] if channel_blueprint.get("headlines") else "")
                     }
+                    
                     self.db.collection('creative_drafts').document(draft_id).set(draft_data)
-                    logger.info(f"📦 Saved draft {draft_id} for user {uid} (channel: {channel})")
+                    logger.info(f"📦 Saved draft {draft_id} [{status}] for user {uid} (channel: {clean_channel})")
+                except Exception as save_err:
+                    logger.error(f"❌ Failed to save draft {draft_id}: {save_err}")
+                    # Continue loop to ensure other drafts are saved
             
             self._update_progress(uid, campaign_id, "Campaign Ready!", 100)
 
