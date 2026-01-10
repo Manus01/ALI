@@ -13,6 +13,7 @@ from vertexai.generative_models import Tool
 from app.services.llm_factory import get_model
 from app.core.security import db
 from firebase_admin import firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 # Configure Logger
 logger = logging.getLogger("ali_platform.agents.troubleshooting_agent")
@@ -61,8 +62,8 @@ class TroubleshootingAgent:
         # 1. Frontend Logs (client_logs)
         try:
             logs_ref = db.collection("client_logs")\
-                         .where("timestamp", ">=", cutoff.isoformat())\
-                         .where("level", "==", "error")\
+                         .where(filter=FieldFilter("timestamp", ">=", cutoff.isoformat()))\
+                         .where(filter=FieldFilter("level", "==", "error"))\
                          .limit(limit).stream()
             for doc in logs_ref:
                 d = doc.to_dict()
@@ -84,8 +85,8 @@ class TroubleshootingAgent:
             failure_types = ['system_failure', 'generation_blocked', 'content_alert']
             for failure_type in failure_types:
                 tasks_ref = db.collection("admin_tasks")\
-                              .where("type", "==", failure_type)\
-                              .where("status", "==", "pending")\
+                              .where(filter=FieldFilter("type", "==", failure_type))\
+                              .where(filter=FieldFilter("status", "==", "pending"))\
                               .limit(limit).stream()
                 for doc in tasks_ref:
                     d = doc.to_dict()
@@ -149,7 +150,7 @@ class TroubleshootingAgent:
         for event in events:
             # Check for existing pending task to dedupe
             sig = event.get('signature')
-            exists = db.collection('admin_tasks').where('type', '==', 'error_report').where('error_signature', '==', sig).where('status', '==', 'pending').limit(1).get()
+            exists = db.collection('admin_tasks').where(filter=FieldFilter('type', '==', 'error_report')).where(filter=FieldFilter('error_signature', '==', sig)).where(filter=FieldFilter('status', '==', 'pending')).limit(1).get()
             if len(exists) > 0: continue
 
             # Analyze

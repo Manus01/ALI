@@ -393,8 +393,11 @@ class OrchestratorAgent(BaseAgent):
                         if asset_url:
                             assets[asset_key] = asset_url
                             # Determine if it's video or fallback image
-                            if asset_url.endswith('.mp4') or 'video' in asset_url:
+                            if asset_url.endswith('.mp4') or asset_url.endswith('.webm') or 'video' in asset_url:
                                 meta["format_type"] = "video"
+                                # If webm, warn about potential compatibility
+                                if asset_url.endswith('.webm'):
+                                    meta["compatibility_warning"] = "WebM format - may not play on all mobile devices"
                             else:
                                 meta["format_type"] = "image"  # Fallback occurred
                         else:

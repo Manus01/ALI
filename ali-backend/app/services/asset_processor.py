@@ -12,6 +12,9 @@ import os
 import io
 import logging
 from typing import Dict, Any, Optional, List, Tuple
+import subprocess
+import shutil
+import tempfile
 from dataclasses import dataclass
 from enum import Enum
 
@@ -1102,7 +1105,8 @@ class AssetProcessor:
         
         try:
             # Create local temp directory for video
-            temp_dir = f"/tmp/videos/{asset_id}"
+            base_temp_dir = tempfile.gettempdir()
+            temp_dir = os.path.join(base_temp_dir, "videos", asset_id)
             os.makedirs(temp_dir, exist_ok=True)
             
             async with async_playwright() as p:
@@ -1133,29 +1137,14 @@ class AssetProcessor:
                 except Exception:
                     pass
                 
-                # Wait for animation (since we sped up 2x, we wait duration / 2)
-                # But to be safe and catch tail ends, we wait slightly more than exactly half if 2x, 
-                # however, duration passed in is usually "real time". 
-                # If the user wants a 6s animation, and we speed up 2x, it takes 3s.
-                # So we wait duration / 2 + buffer.
-                # Let's assume 'duration' arg is the DESIRED video length. 
-                # Actually, if we speed up 2x, the animation finishes in half time. 
-                # We should record for duration/2. The output video will be duration/2 length but fast.
-                # WAIT. We want the OUTPUT video to be normal speed? 
-                # No, usually "Async Video Recording" for HTML means we capture the screen. 
-                # If we speed up GSAP, the animation plays faster. The video records it playing fast. 
-                # If we want a 60fps smooth video of a 6s animation, keeping it 1x is best for quality.
-                # BUT the prompt says: "SMART OPTIMIZATION: Speed up GSAP to 2x to cut recording time in half".
-                # This implies we want a shorter video file that PLAYS FAST? 
-                # OR we accept that the video will be 2x speed. 
-                # For social media (Stories/TikTok), fast/snappy is usually good.
-                # Let's stick to the prompt's instruction: "Wait for animation duration (e.g., 3s real time = 6s animation)" is what they said?
-                # User Prompt: "Wait for animation duration (e.g., 3s real time = 6s animation)"
-                # This means if the animation IS 6 seconds normally, we speed it up 2x, so it finishes in 3 seconds.
-                # We record for 3 seconds. The resulting video is 3 seconds long.
+                # WAIT LOGIC FIX (V5.1):
+                # If we speed up GSAP by 2x, the animation finishes in duration/2.
+                # However, Playwright creates a video file that plays at normal speed.
+                # If we record for 3s (real time) while GSAP is 2x, we capture the hole animation.
+                # The output video will be 3s long and look "fast". this is desired for social.
                 
                 recording_time = duration / 2.0
-                await asyncio.sleep(recording_time)
+                await asyncio.sleep(recording_time + 1.0) # Buffer to ensure capture
                 
                 # Close context to save video
                 await context.close()
@@ -1167,31 +1156,52 @@ class AssetProcessor:
                     logger.error("❌ No video file generated")
                     return None
                     
-                local_video_path = os.path.join(temp_dir, video_files[0])
+                local_video_path = os.path.join(temp_dir, video_files[0]) # This is .webm
                 
+                # V5.1 FIX: Verify if FFmpeg is available for conversion
+                ffmpeg_available = shutil.which("ffmpeg") is not None
+                final_video_path = local_video_path
+                content_type = "video/webm"
+                
+                if ffmpeg_available:
+                    try:
+                        # Convert to MP4
+                        mp4_path = os.path.join(temp_dir, "output.mp4")
+                        command = [
+                            "ffmpeg", "-y",
+                            "-i", local_video_path,
+                            "-c:v", "libx264", "-preset", "fast", "-crf", "23",
+                            "-c:a", "aac", "-b:a", "128k",
+                            mp4_path
+                        ]
+                        subprocess.run(command, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        final_video_path = mp4_path
+                        content_type = "video/mp4"
+                        logger.info("✅ Converted WebM to MP4")
+                    except Exception as conv_err:
+                        logger.warning(f"⚠️ FFmpeg conversion failed, falling back to WebM: {conv_err}")
+                else:
+                    logger.warning("⚠️ FFmpeg not found, uploading as WebM (may affect platform compatibility)")
+
                 # Upload to GCS
-                with open(local_video_path, "rb") as f:
+                with open(final_video_path, "rb") as f:
                     video_bytes = f.read()
                 
-                target_path = f"assets/{user_id}/{asset_id}/video.mp4" # Store as mp4 (even if webm container, browsers handle it, or we should convert. Playwright records webm. GCS content-type video/webm)
-                # Note: Instagram/TikTok prefer MP4 (H.264). WebM might fail on some mobile devices directly.
-                # However, converting WebM to MP4 requires ffmpeg. 
-                # The user request says "Upload 'video_path' to Firebase Storage as 'video/mp4'". 
-                # We will upload with mime type 'video/mp4' but raw bytes are WebM. 
-                # Most modern players handle it, but strictly it's a mismatch. 
-                # Without ffmpeg installed in the environment, we can't transcode.
-                # User environment OS is Windows? No, "Operating System: windows" in user_information, but this code runs on backend (likely linux container).
-                # We will upload as video/mp4 for now as requested.
+                # Determine extension
+                ext = "mp4" if content_type == "video/mp4" else "webm"
+                target_path = f"assets/{user_id}/{asset_id}/video.{ext}"
                 
                 uploaded_url = self.upload_to_gcs(
                     video_bytes,
                     target_path,
-                    content_type="video/mp4" 
+                    content_type=content_type
                 )
                 
                 # Cleanup
                 try:
-                    os.remove(local_video_path)
+                    # Remove all files in temp dir
+                    for f in os.listdir(temp_dir):
+                        os.remove(os.path.join(temp_dir, f))
                     os.rmdir(temp_dir)
                 except:
                     pass

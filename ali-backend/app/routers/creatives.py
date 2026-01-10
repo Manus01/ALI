@@ -9,6 +9,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 import requests
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 from app.core.security import db, get_current_user_id
 
@@ -29,7 +30,7 @@ def get_my_drafts(user_id: str = Depends(get_current_user_id)) -> List[dict]:
     
     try:
         # Query only by user_id to avoid compound index requirement
-        docs = list(db.collection("creative_drafts").where("userId", "==", user_id).stream())
+        docs = list(db.collection("creative_drafts").where(filter=FieldFilter("userId", "==", user_id)).stream())
         
         # Convert to list of dicts - V4.0 FIX: Include document ID!
         all_docs = [{**doc.to_dict(), "id": doc.id, "_doc_ref": doc.reference} for doc in docs]
@@ -83,7 +84,7 @@ def get_my_published(user_id: str = Depends(get_current_user_id)) -> List[dict]:
     """
     try:
         # Query only by user_id to avoid compound index requirement
-        docs = db.collection("creative_drafts").where("userId", "==", user_id).stream()
+        docs = db.collection("creative_drafts").where(filter=FieldFilter("userId", "==", user_id)).stream()
         
         # Convert to list of dicts - V4.0 FIX: Include document ID!
         all_docs = [{**doc.to_dict(), "id": doc.id} for doc in docs]
@@ -194,7 +195,7 @@ def export_campaign_zip(campaign_id: str, user_id: str = Depends(get_current_use
     """
     try:
         # Fetch all creative drafts for this campaign
-        docs = db.collection("creative_drafts").where("userId", "==", user_id).stream()
+        docs = db.collection("creative_drafts").where(filter=FieldFilter("userId", "==", user_id)).stream()
         all_docs = [doc.to_dict() for doc in docs]
         
         # Filter to this campaign and PUBLISHED status

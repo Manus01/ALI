@@ -5,6 +5,7 @@ from app.services.performance_logger import run_nightly_performance_log
 from typing import Dict, Optional, List
 from datetime import datetime
 from google.cloud import firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 import logging
 
 logger = logging.getLogger(__name__)
@@ -393,8 +394,8 @@ def get_pending_tasks(admin: dict = Depends(verify_admin)):
     """
     try:
         tasks_ref = db.collection("admin_tasks")\
-                      .where("type", "==", "METRICOOL_REQUEST")\
-                      .where("status", "==", "pending")\
+                      .where(filter=FieldFilter("type", "==", "METRICOOL_REQUEST"))\
+                      .where(filter=FieldFilter("status", "==", "pending"))\
                       .limit(20)
         
         tasks = []
@@ -467,7 +468,7 @@ def get_tutorial_requests(status: Optional[str] = None, admin: dict = Depends(ve
         query = db.collection("tutorial_requests")
         
         if status:
-            query = query.where("status", "==", status)
+            query = query.where(filter=FieldFilter("status", "==", status))
         
         # Order by creation time, newest first
         query = query.order_by("createdAt", direction=firestore.Query.DESCENDING).limit(50)
@@ -768,10 +769,10 @@ def get_creative_drafts(status: Optional[str] = None, admin: dict = Depends(veri
         query = db.collection("creative_drafts")
         
         if status:
-            query = query.where("status", "==", status)
+            query = query.where(filter=FieldFilter("status", "==", status))
         else:
             # Default: show non-published drafts
-            query = query.where("status", "in", ["DRAFT", "PENDING_REVIEW"])
+            query = query.where(filter=FieldFilter("status", "in", ["DRAFT", "PENDING_REVIEW"]))
         
         query = query.order_by("createdAt", direction=firestore.Query.DESCENDING).limit(50)
         
@@ -835,10 +836,10 @@ def get_recommendations(status: Optional[str] = None, admin: dict = Depends(veri
         query = db.collection("recommendations")
         
         if status:
-            query = query.where("status", "==", status)
+            query = query.where(filter=FieldFilter("status", "==", status))
         else:
             # Default: show pending recommendations
-            query = query.where("status", "==", "PENDING")
+            query = query.where(filter=FieldFilter("status", "==", "PENDING"))
         
         query = query.order_by("createdAt", direction=firestore.Query.DESCENDING).limit(50)
         
@@ -936,7 +937,7 @@ def get_research_alerts(severity: Optional[str] = None, admin: dict = Depends(ve
         
         # Also check for standalone alerts in admin_tasks collection
         alerts_query = db.collection("admin_tasks")\
-            .where("type", "==", "research_alert")\
+            .where(filter=FieldFilter("type", "==", "research_alert"))\
             .order_by("created_at", direction=firestore.Query.DESCENDING)\
             .limit(50)
         

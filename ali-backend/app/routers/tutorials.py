@@ -9,6 +9,7 @@ import time
 from typing import Callable, List, Dict, Optional
 import httpx  # For async media health checks
 from firebase_admin import firestore
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 # Import lifecycle types for type hints
 try:
@@ -609,7 +610,7 @@ def delete_user_tutorial(tutorial_id: str, user: dict = Depends(verify_token)):
 
         # 2. Create Admin Notification / Task
         # Check if request already exists to avoid duplicates
-        existing = db.collection("admin_tasks").where("tutorial_id", "==", tutorial_id).where("status", "==", "pending").limit(1).stream()
+        existing = db.collection("admin_tasks").where(filter=FieldFilter("tutorial_id", "==", tutorial_id)).where(filter=FieldFilter("status", "==", "pending")).limit(1).stream()
         if not any(existing):
             db.collection("admin_tasks").add({
                 "type": "delete_tutorial_request",
@@ -733,7 +734,7 @@ def admin_delete_tutorial(tutorial_id: str, confirm: bool = False, user: dict = 
 
         # 4. Delete ALL User Copies (Collection Group Query)
         # We want to remove it from every user's private collection
-        instances = db.collection_group('tutorials').where('id', '==', tutorial_id).stream()
+        instances = db.collection_group('tutorials').where(filter=FieldFilter('id', '==', tutorial_id)).stream()
         batch = db.batch()
         count = 0
         for instance in instances:
@@ -746,7 +747,7 @@ def admin_delete_tutorial(tutorial_id: str, confirm: bool = False, user: dict = 
         if count > 0: batch.commit()
         
         # 5. Clean Admin Tasks
-        tasks = db.collection("admin_tasks").where("tutorial_id", "==", tutorial_id).stream()
+        tasks = db.collection("admin_tasks").where(filter=FieldFilter("tutorial_id", "==", tutorial_id)).stream()
         for t in tasks:
             t.reference.delete()
 
