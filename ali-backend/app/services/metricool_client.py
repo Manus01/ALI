@@ -161,7 +161,7 @@ class MetricoolClient:
         
         # FALLBACK: If no direct keys found, try the nested list approach (legacy)
         if not connected:
-            logger.warning(f"⚠️ No direct keys found, trying nested list fallback...")
+            logger.info(f"ℹ️ No direct keys found via flat response, trying nested list fallback...")
             
             # Field names that might contain social network data
             possible_fields = [
@@ -244,7 +244,11 @@ class MetricoolClient:
             if val not in normalized:
                 normalized.append(val)
         
-        logger.info(f"✅ Normalized providers: {normalized}")
+        # V3.1 FIX: Only warn if BOTH detection methods failed to find any providers
+        if not normalized:
+            logger.warning(f"⚠️ No socialNetworks found via direct keys OR nested lists for this blog.")
+        else:
+            logger.info(f"✅ Normalized providers: {normalized}")
         return normalized
 
     def get_account_info(self) -> Dict[str, Any]:

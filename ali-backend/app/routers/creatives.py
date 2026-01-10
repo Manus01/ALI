@@ -25,14 +25,12 @@ def get_my_drafts(user_id: str = Depends(get_current_user_id)) -> List[dict]:
         # Convert to list of dicts
         all_docs = [doc.to_dict() for doc in docs]
         
-        # Filter in Python: keep items where status is DRAFT, PENDING, or missing
-        drafts = [
-            d for d in all_docs
-            if d.get("status") in ["DRAFT", "PENDING", None] or "status" not in d
-        ]
+        # V3.1 FIX: Return ALL drafts (including FAILED) so users can see failed generations
+        # No status filtering - users need to see what failed to debug issues
+        drafts = all_docs
         
-        # Sort in Python by createdAt descending (handle missing values safely)
-        drafts.sort(key=lambda x: x.get("createdAt", ""), reverse=True)
+        # Sort in Python by createdAt descending (use 0 for missing values for proper sorting)
+        drafts.sort(key=lambda x: x.get("createdAt") or 0, reverse=True)
         
         # Return limited results
         return drafts[:50]
