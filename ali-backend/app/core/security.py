@@ -74,6 +74,17 @@ def verify_token(token: str = Depends(oauth2_scheme)):
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+
+def get_current_user_id(user: dict = Depends(verify_token)) -> str:
+    """Extract the current user's UID from a verified token."""
+    uid = user.get("uid")
+    if not uid:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User ID missing from token",
+        )
+    return uid
+
 logger.info("⏳ Starting Firebase Initialization...")
 db = initialize_firebase()
 if db:
