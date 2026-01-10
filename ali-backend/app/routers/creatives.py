@@ -238,3 +238,117 @@ def export_campaign_zip(campaign_id: str, user_id: str = Depends(get_current_use
         logger.error(f"ZIP export failed for {campaign_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@router.delete("/{draft_id}")
+def delete_creative(draft_id: str, user_id: str = Depends(get_current_user_id)):
+    """
+    Delete a creative draft permanently.
+    """
+    try:
+        doc_ref = db.collection("creative_drafts").document(draft_id)
+        doc = doc_ref.get()
+        
+        if not doc.exists:
+            raise HTTPException(status_code=404, detail=f"Draft {draft_id} not found")
+        
+        data = doc.to_dict()
+        
+        # Verify ownership
+        if data.get("userId") != user_id:
+            raise HTTPException(status_code=403, detail="Not authorized to delete this creative")
+        
+        doc_ref.delete()
+        logger.info(f"🗑️ Deleted creative {draft_id} for user {user_id}")
+        return {"status": "deleted", "draft_id": draft_id}
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Delete failed for {draft_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{draft_id}/regenerate")
+async def regenerate_failed_creative(draft_id: str, user_id: str = Depends(get_current_user_id)):
+    """
+    Regenerate a failed creative asset.
+    Only works for drafts with status='FAILED'.
+    """
+    from fastapi import BackgroundTasks
+    
+    try:
+        doc_ref = db.collection("creative_drafts").document(draft_id)
+        doc = doc_ref.get()
+        
+        if not doc.exists:
+            raise HTTPException(status_code=404, detail=f"Draft {draft_id} not found")
+        
+        data = doc.to_dict()
+        
+        # Verify ownership
+        if data.get("userId") != user_id:
+            raise HTTPException(status_code=403, detail="Not authorized to regenerate this creative")
+        
+        # Only regenerate FAILED assets
+        if data.get("status") != "FAILED":
+            raise HTTPException(status_code=400, detail="Only failed assets can be regenerated")
+        
+        # Update status to PENDING
+        from firebase_admin import firestore as fs
+        doc_ref.update({
+            "status": "PENDING",
+            "updatedAt": fs.SERVER_TIMESTAMP
+        })
+        
+        # Trigger regeneration in background
+        campaign_id = data.get("campaignId")
+        channel = data.get("channel")
+        goal = data.get("campaignGoal") or data.get("title", "Brand Campaign")
+        
+        # Import and run regeneration
+        from app.agents.orchestrator_agent import OrchestratorAgent
+        from app.services.image_agent import ImageAgent
+        import asyncio
+        
+        async def regenerate_task():
+            try:
+                image_agent = ImageAgent()
+                # Simple regeneration with the goal as prompt
+                result = image_agent.generate_image(
+                    f"{goal}. Professional brand visual for {channel}.",
+                    brand_dna="",
+                    folder=f"campaigns/{channel}"
+                )
+                
+                if result and isinstance(result, dict) and result.get('url'):
+                    doc_ref.update({
+                        "status": "DRAFT",
+                        "asset_url": result['url'],
+                        "thumbnailUrl": result['url'],
+                        "updatedAt": fs.SERVER_TIMESTAMP
+                    })
+                    logger.info(f"✅ Regenerated {draft_id} successfully")
+                else:
+                    doc_ref.update({
+                        "status": "FAILED",
+                        "updatedAt": fs.SERVER_TIMESTAMP
+                    })
+                    logger.warning(f"⚠️ Regeneration returned no URL for {draft_id}")
+            except Exception as e:
+                logger.error(f"❌ Regeneration failed for {draft_id}: {e}")
+                doc_ref.update({
+                    "status": "FAILED",
+                    "updatedAt": fs.SERVER_TIMESTAMP
+                })
+        
+        # Run in background
+        asyncio.create_task(regenerate_task())
+        
+        logger.info(f"🔄 Started regeneration for {draft_id}")
+        return {"status": "regenerating", "draft_id": draft_id}
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Regeneration start failed for {draft_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
