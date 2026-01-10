@@ -350,20 +350,88 @@ class OrchestratorAgent(BaseAgent):
                     
                     # Generate motion HTML from template library with luminance mode and layout variant
                     html_content = get_motion_template(template_name, final_url, logo_url, primary_color, copy_text, luminance_mode, layout_variant)
-                    encoded = base64.b64encode(html_content.encode('utf-8')).decode('utf-8')
-                    html_asset = f"data:text/html;charset=utf-8;base64,{encoded}"
                     
                     # Store with format label for multi-format support
                     format_label = meta.get("format_label", "primary")
                     asset_key = f"{channel}_{format_label}" if format_label != 'primary' else channel
-                    assets[asset_key] = html_asset
                     
-                # STANDARD IMAGE
+                    # ============================================================
+                    # V5.0 SMART FORMAT SELECTION
+                    # Read format_type from AI blueprint, with TikTok override
+                    # ============================================================
+                    ai_format_type = channel_blueprint.get("format_type", "image")
+                    
+                    # OVERRIDE: TikTok MUST always be video regardless of AI output
+                    if channel == "tiktok":
+                        ai_format_type = "video"
+                        logger.info(f"📹 TikTok override: forcing video format")
+                    
+                    # Determine final format considering format_label
+                    is_video = (
+                        ai_format_type == "video" or 
+                        format_label == "story" or
+                        channel in ['youtube_shorts', 'facebook_story']
+                    )
+                    
+                    logger.info(f"📊 Smart Format for {channel}: format_type={ai_format_type}, is_video={is_video}")
+                    
+                    # Get dimensions
+                    w, h = meta.get("size", (1080, 1920))
+                    
+                    if is_video:
+                        # V5.0: Use generate_video_asset with automatic fallback
+                        logger.info(f"🎥 Generating VIDEO asset for {channel} ({w}x{h})...")
+                        asset_url = await asset_processor.generate_video_asset(
+                            html_content=html_content,
+                            user_id=uid,
+                            asset_id=f"{campaign_id}_{asset_key}",
+                            width=w,
+                            height=h,
+                            duration=6.0,
+                            fallback_to_image=True  # Auto-fallback on failure
+                        )
+                        if asset_url:
+                            assets[asset_key] = asset_url
+                            # Determine if it's video or fallback image
+                            if asset_url.endswith('.mp4') or 'video' in asset_url:
+                                meta["format_type"] = "video"
+                            else:
+                                meta["format_type"] = "image"  # Fallback occurred
+                        else:
+                            # Both video and fallback failed - use HTML as last resort
+                            logger.warning(f"⚠️ All rendering failed for {channel}, using HTML fallback")
+                            encoded = base64.b64encode(html_content.encode('utf-8')).decode('utf-8')
+                            assets[asset_key] = f"data:text/html;charset=utf-8;base64,{encoded}"
+                            meta["format_type"] = "html"
+                    else:
+                        # V5.0: Use generate_image_asset with GSAP snap-to-finish
+                        logger.info(f"📸 Generating IMAGE asset for {channel} ({w}x{h})...")
+                        asset_url = await asset_processor.generate_image_asset(
+                            html_content=html_content,
+                            user_id=uid,
+                            asset_id=f"{campaign_id}_{asset_key}",
+                            width=w,
+                            height=h
+                        )
+                        if asset_url:
+                            assets[asset_key] = asset_url
+                            meta["format_type"] = "image"
+                        else:
+                            # Fallback to base64 HTML
+                            logger.warning(f"⚠️ Image generation failed for {channel}, using HTML fallback")
+                            encoded = base64.b64encode(html_content.encode('utf-8')).decode('utf-8')
+                            assets[asset_key] = f"data:text/html;charset=utf-8;base64,{encoded}"
+                            meta["format_type"] = "html"
+                    
+                    assets_metadata[channel] = meta
+                    
+                # STANDARD IMAGE (non-motion channels)
                 else:
                     # Store with format label for multi-format support
                     format_label = meta.get("format_label", "primary")
                     asset_key = f"{channel}_{format_label}" if format_label != 'primary' else channel
                     assets[asset_key] = final_url
+                    meta["format_type"] = "image"
                 
                 # Save metadata (overwrite is fine for carousel as base props are same)
                 assets_metadata[channel] = meta

@@ -26,3 +26,4 @@ google-cloud-logging
 google-cloud-run
 duckduckgo-search
 playwright==1.48.0
+Pillow>=10.0.0

@@ -153,6 +153,32 @@ GLOBAL_LAYOUT_CSS = '''
     }
 '''
 
+# V4.1 Animation Fail-Safe CSS
+# Ensures content is VISIBLE by default - GSAP will handle hiding & revealing
+# If JS fails, content remains visible rather than invisible
+GLOBAL_FAILSAFE_CSS = '''
+    /* V4.1 Fail-Safe: Default visible state for animated elements */
+    /* GSAP should use gsap.set() to hide before animating, NOT CSS opacity: 0 */
+    #text, #logo, #glass-card, #text-container, #text-panel, 
+    #headline, .headline, .copy-text, .accent-bar {
+        opacity: 1 !important;
+        visibility: visible !important;
+    }
+    
+    /* Marker class for screenshot capture timing */
+    body.animation-complete {
+        /* No visual change - this class signals GSAP animations are done */
+    }
+    
+    /* Fallback: If GSAP fails, elements stay visible but static */
+    @supports not (animation: none) {
+        #text, #logo, #glass-card { 
+            transform: none !important;
+            filter: none !important;
+        }
+    }
+'''
+
 
 def get_motion_template(template_name: str, image_url: str, logo_url: str, color: str, text: str, luminance_mode: str = 'dark', layout_variant: str = 'hero-center') -> str:
     """
@@ -203,6 +229,7 @@ def _luxury_template(image_url: str, logo_url: str, color: str, text: str, layou
 <html>
 <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link href="{font['link']}" rel="stylesheet">
     <style>
         :root {{
@@ -217,6 +244,7 @@ def _luxury_template(image_url: str, logo_url: str, color: str, text: str, layou
         
         {GLOBAL_GRAIN_CSS}
         {GLOBAL_LAYOUT_CSS}
+        {GLOBAL_FAILSAFE_CSS}
         
         /* Arch-shaped image container */
         #image-arch {{
@@ -449,6 +477,7 @@ def _cyber_template(image_url: str, logo_url: str, color: str, text: str, layout
 <html>
 <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link href="{font['link']}" rel="stylesheet">
     <style>
         :root {{
@@ -463,6 +492,7 @@ def _cyber_template(image_url: str, logo_url: str, color: str, text: str, layout
         
         {GLOBAL_GRAIN_CSS}
         {GLOBAL_LAYOUT_CSS}
+        {GLOBAL_FAILSAFE_CSS}
         
         /* Monochrome + Neon Color Grading */
         #bg {{
@@ -713,6 +743,7 @@ def _editorial_template(image_url: str, logo_url: str, color: str, text: str, la
 <html>
 <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link href="{font['link']}" rel="stylesheet">
     <style>
         :root {{
@@ -727,6 +758,7 @@ def _editorial_template(image_url: str, logo_url: str, color: str, text: str, la
         
         {GLOBAL_GRAIN_CSS}
         {GLOBAL_LAYOUT_CSS}
+        {GLOBAL_FAILSAFE_CSS}
         
         /* Off-Center Broken Grid Layout */
         #image-panel {{
@@ -884,6 +916,7 @@ def _minimal_template(image_url: str, logo_url: str, color: str, text: str, layo
 <html>
 <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link href="{font['link']}" rel="stylesheet">
     <style>
         :root {{
@@ -897,6 +930,7 @@ def _minimal_template(image_url: str, logo_url: str, color: str, text: str, layo
         
         {GLOBAL_GRAIN_CSS}
         {GLOBAL_LAYOUT_CSS}
+        {GLOBAL_FAILSAFE_CSS}
         .grain {{ opacity: 0.04; }}
         
         #bg {{
@@ -1042,6 +1076,7 @@ def _aurora_template(image_url: str, logo_url: str, color: str, text: str, lumin
 <html>
 <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <style>
         :root {{
@@ -1207,6 +1242,7 @@ def _gridlock_template(image_url: str, logo_url: str, color: str, text: str, lum
 <html>
 <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
     <style>
         :root {{
@@ -1395,6 +1431,7 @@ def _scrapbook_template(image_url: str, logo_url: str, color: str, text: str, la
 <html>
 <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link href="{font['link']}" rel="stylesheet">
     <style>
         :root {{
@@ -1548,6 +1585,7 @@ def _pop_template(image_url: str, logo_url: str, color: str, text: str, layout_v
 <html>
 <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link href="{font['link']}" rel="stylesheet">
     <style>
         :root {{
@@ -1698,6 +1736,7 @@ def _swiss_template(image_url: str, logo_url: str, color: str, text: str, layout
 <html>
 <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link href="{font['link']}" rel="stylesheet">
     <style>
         :root {{

@@ -79,6 +79,10 @@ class CampaignAgent(BaseAgent):
         
         For EVERY channel, include at minimum:
         - 'visual_prompt': A detailed image generation prompt
+        - 'format_type': REQUIRED. Choose "video" or "image" based on these rules:
+            * TikTok: MUST ALWAYS be "video" (no exceptions)
+            * Instagram/Facebook: Choose "video" if content implies motion, storytelling, demos, or reveals. Choose "image" if it's a static announcement, quote, or infographic.
+            * LinkedIn/Others: Default to "image" unless content specifically benefits from motion
         - 'caption' or 'body' or 'headlines': Platform-appropriate text copy
         
         Also include a general 'theme': A 1-sentence title for the campaign.

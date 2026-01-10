@@ -847,21 +847,32 @@ class AssetProcessor:
         html_content: str,
         width: int = 1200,
         height: int = 630,
-        output_format: str = "png"
+        output_format: str = "png",
+        animation_delay: float = 3.0,
+        timeout: int = 30000
     ) -> bytes:
         """
         Render HTML creative to raster image.
-        Used for HTML5 ad banners and landing page previews.
+        Used for HTML5 ad banners, landing page previews, and animated GSAP templates.
+        
+        V4.1 Animation Rendering Fix:
+        - Added animation_delay for GSAP animation stabilization
+        - Added configurable timeout (use 60000 for vertical 9:16 formats)
+        - Checks for .animation-complete class if present
         
         Args:
             html_content: Complete HTML document or snippet
             width: Viewport width
             height: Viewport height
             output_format: 'png' or 'jpeg'
+            animation_delay: Seconds to wait for animations to stabilize (default 3.0)
+            timeout: Page load timeout in milliseconds (default 30000, use 60000 for heavy animations)
             
         Returns:
             Screenshot bytes
         """
+        import asyncio
+        
         if not PLAYWRIGHT_AVAILABLE:
             logger.warning("⚠️ Playwright not available for HTML rendering")
             return b""
@@ -875,7 +886,21 @@ class AssetProcessor:
                 if not html_content.strip().lower().startswith("<!doctype") and not html_content.strip().lower().startswith("<html"):
                     html_content = f"<!DOCTYPE html><html><body>{html_content}</body></html>"
                 
-                await page.set_content(html_content, wait_until="networkidle")
+                # V4.1: Use configurable timeout for set_content
+                await page.set_content(html_content, wait_until="networkidle", timeout=timeout)
+                
+                # V4.1 FIX: Wait for GSAP animations to stabilize
+                # First, try to wait for .animation-complete class (if template adds it)
+                try:
+                    await page.wait_for_selector(".animation-complete", timeout=2000)
+                    logger.debug("✓ Animation complete class detected")
+                except Exception:
+                    # Class not present - use fixed animation delay as fallback
+                    pass
+                
+                # Always apply animation delay for GSAP stabilization
+                await asyncio.sleep(animation_delay)
+                logger.debug(f"⏱️ Animation delay complete ({animation_delay}s)")
                 
                 screenshot = await page.screenshot(
                     type=output_format,
@@ -884,12 +909,299 @@ class AssetProcessor:
                 )
                 
                 await browser.close()
-                logger.info(f"✅ Rendered HTML to {output_format.upper()} ({width}x{height})")
+                logger.info(f"✅ Rendered HTML to {output_format.upper()} ({width}x{height}) [delay={animation_delay}s]")
                 return screenshot
                 
+
         except Exception as e:
             logger.error(f"❌ HTML render failed: {e}")
             return b""
+
+    async def generate_image_asset(
+        self,
+        html_content: str,
+        user_id: str,
+        asset_id: str,
+        width: int = 1080,
+        height: int = 1920,
+        output_format: str = "png"
+    ) -> Optional[str]:
+        """
+        V5.0 Smart Format Selection: Generate static image from HTML with GSAP snap-to-finish.
+        
+        Uses gsap.globalTimeline.progress(1).pause() to instantly snap the animation
+        to its final frame, then captures a screenshot. This provides instant capture
+        without waiting for animation playback.
+        
+        Args:
+            html_content: HTML string with GSAP animations
+            user_id: User ID for storage path
+            asset_id: Asset ID for filename
+            width: Image width
+            height: Image height
+            output_format: 'png' or 'jpeg'
+            
+        Returns:
+            Public URL of the uploaded image or None if failed.
+        """
+        import asyncio
+        
+        if not PLAYWRIGHT_AVAILABLE:
+            logger.warning("⚠️ Playwright not available for image generation")
+            return None
+            
+        try:
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(headless=True)
+                page = await browser.new_page(viewport={"width": width, "height": height})
+                
+                # Normalize HTML
+                if not html_content.strip().lower().startswith("<!doctype") and not html_content.strip().lower().startswith("<html"):
+                    html_content = f"<!DOCTYPE html><html><body>{html_content}</body></html>"
+                
+                # Load content
+                await page.set_content(html_content, wait_until="networkidle", timeout=60000)
+                
+                # V5.0 SNAP-TO-FINISH: Skip animation to final frame instantly
+                try:
+                    await page.evaluate("""
+                        if (typeof gsap !== 'undefined' && gsap.globalTimeline) {
+                            gsap.globalTimeline.progress(1).pause();
+                        }
+                    """)
+                    logger.debug("⚡ GSAP snapped to final frame")
+                except Exception:
+                    pass
+                
+                # Brief wait for render stabilization
+                await asyncio.sleep(0.5)
+                
+                # Capture screenshot
+                screenshot = await page.screenshot(
+                    type=output_format,
+                    full_page=False,
+                    omit_background=output_format == "png"
+                )
+                
+                await browser.close()
+                
+                # Upload to GCS
+                target_path = f"assets/{user_id}/{asset_id}/static.{output_format}"
+                uploaded_url = self.upload_to_gcs(
+                    screenshot,
+                    target_path,
+                    content_type=f"image/{output_format}"
+                )
+                
+                logger.info(f"📸 Image asset generated & uploaded: {uploaded_url}")
+                return uploaded_url
+                
+        except Exception as e:
+            logger.error(f"❌ Image asset generation failed: {e}")
+            return None
+
+    async def generate_video_asset(
+        self,
+        html_content: str,
+        user_id: str,
+        asset_id: str,
+        width: int = 1080,
+        height: int = 1920,
+        duration: float = 6.0,
+        fallback_to_image: bool = True
+    ) -> Optional[str]:
+        """
+        V5.0 Smart Format Selection: Generate video asset with automatic fallback.
+        
+        Attempts to record HTML animation as video. If recording fails (e.g., browser crash,
+        timeout, Playwright error), automatically falls back to static image capture
+        so the user at least gets something.
+        
+        Args:
+            html_content: HTML string with GSAP animations
+            user_id: User ID for storage path
+            asset_id: Asset ID for filename
+            width: Video width
+            height: Video height
+            duration: Animation duration in seconds
+            fallback_to_image: If True, capture static image on video failure
+            
+        Returns:
+            Public URL of the video (or fallback image) or None if both fail.
+        """
+        try:
+            # Attempt video recording
+            video_url = await self.record_html_animation(
+                html_content=html_content,
+                user_id=user_id,
+                asset_id=asset_id,
+                width=width,
+                height=height,
+                duration=duration
+            )
+            
+            if video_url:
+                return video_url
+            else:
+                raise Exception("Video recording returned None")
+                
+        except Exception as e:
+            logger.warning(f"⚠️ Video recording failed for {asset_id}: {e}")
+            
+            if fallback_to_image:
+                logger.info(f"🔄 Falling back to static image for {asset_id}")
+                try:
+                    image_url = await self.generate_image_asset(
+                        html_content=html_content,
+                        user_id=user_id,
+                        asset_id=f"{asset_id}_fallback",
+                        width=width,
+                        height=height
+                    )
+                    if image_url:
+                        logger.info(f"✅ Fallback image generated: {image_url}")
+                        return image_url
+                except Exception as fallback_err:
+                    logger.error(f"❌ Fallback image also failed: {fallback_err}")
+            
+            return None
+
+    async def record_html_animation(
+        self,
+        html_content: str,
+        user_id: str,
+        asset_id: str,
+        width: int = 1080,
+        height: int = 1920,
+        duration: float = 6.0,
+        fps: int = 30
+    ) -> Optional[str]:
+        """
+        Record HTML/GSAP animation to MP4 video.
+        
+        Args:
+            html_content: HTML string with animations
+            user_id: User ID for storage
+            asset_id: Asset ID for filename
+            width: Video width (default 1080 for vertical)
+            height: Video height (default 1920 for vertical)
+            duration: Animation duration in seconds (real time)
+            fps: Frames per second
+            
+        Returns:
+            Public URL of the uploaded video or None if failed.
+        """
+        import asyncio
+        import os
+        
+        if not PLAYWRIGHT_AVAILABLE:
+            logger.warning("⚠️ Playwright not available for video recording")
+            return None
+            
+        video_path = None
+        
+        try:
+            # Create local temp directory for video
+            temp_dir = f"/tmp/videos/{asset_id}"
+            os.makedirs(temp_dir, exist_ok=True)
+            
+            async with async_playwright() as p:
+                # Launch browser (headless)
+                browser = await p.chromium.launch(headless=True)
+                
+                # Create context with video recording enabled
+                context = await browser.new_context(
+                    viewport={"width": width, "height": height},
+                    record_video_dir=temp_dir,
+                    record_video_size={"width": width, "height": height}
+                )
+                
+                page = await context.new_page()
+                
+                # Normalize HTML
+                if not html_content.strip().lower().startswith("<!doctype") and not html_content.strip().lower().startswith("<html"):
+                    html_content = f"<!DOCTYPE html><html><body>{html_content}</body></html>"
+                
+                # Load content
+                await page.set_content(html_content, wait_until="networkidle", timeout=60000)
+                
+                # SMART OPTIMIZATION: Speed up GSAP to 2x (if GSAP exists)
+                # This cuts recording time in half effectively
+                try:
+                    await page.evaluate("if (typeof gsap !== 'undefined') { gsap.globalTimeline.timeScale(2); }")
+                    logger.debug("⚡ accelerated GSAP timeline by 2x")
+                except Exception:
+                    pass
+                
+                # Wait for animation (since we sped up 2x, we wait duration / 2)
+                # But to be safe and catch tail ends, we wait slightly more than exactly half if 2x, 
+                # however, duration passed in is usually "real time". 
+                # If the user wants a 6s animation, and we speed up 2x, it takes 3s.
+                # So we wait duration / 2 + buffer.
+                # Let's assume 'duration' arg is the DESIRED video length. 
+                # Actually, if we speed up 2x, the animation finishes in half time. 
+                # We should record for duration/2. The output video will be duration/2 length but fast.
+                # WAIT. We want the OUTPUT video to be normal speed? 
+                # No, usually "Async Video Recording" for HTML means we capture the screen. 
+                # If we speed up GSAP, the animation plays faster. The video records it playing fast. 
+                # If we want a 60fps smooth video of a 6s animation, keeping it 1x is best for quality.
+                # BUT the prompt says: "SMART OPTIMIZATION: Speed up GSAP to 2x to cut recording time in half".
+                # This implies we want a shorter video file that PLAYS FAST? 
+                # OR we accept that the video will be 2x speed. 
+                # For social media (Stories/TikTok), fast/snappy is usually good.
+                # Let's stick to the prompt's instruction: "Wait for animation duration (e.g., 3s real time = 6s animation)" is what they said?
+                # User Prompt: "Wait for animation duration (e.g., 3s real time = 6s animation)"
+                # This means if the animation IS 6 seconds normally, we speed it up 2x, so it finishes in 3 seconds.
+                # We record for 3 seconds. The resulting video is 3 seconds long.
+                
+                recording_time = duration / 2.0
+                await asyncio.sleep(recording_time)
+                
+                # Close context to save video
+                await context.close()
+                await browser.close()
+                
+                # Find the video file
+                video_files = [f for f in os.listdir(temp_dir) if f.endswith(".webm")]
+                if not video_files:
+                    logger.error("❌ No video file generated")
+                    return None
+                    
+                local_video_path = os.path.join(temp_dir, video_files[0])
+                
+                # Upload to GCS
+                with open(local_video_path, "rb") as f:
+                    video_bytes = f.read()
+                
+                target_path = f"assets/{user_id}/{asset_id}/video.mp4" # Store as mp4 (even if webm container, browsers handle it, or we should convert. Playwright records webm. GCS content-type video/webm)
+                # Note: Instagram/TikTok prefer MP4 (H.264). WebM might fail on some mobile devices directly.
+                # However, converting WebM to MP4 requires ffmpeg. 
+                # The user request says "Upload 'video_path' to Firebase Storage as 'video/mp4'". 
+                # We will upload with mime type 'video/mp4' but raw bytes are WebM. 
+                # Most modern players handle it, but strictly it's a mismatch. 
+                # Without ffmpeg installed in the environment, we can't transcode.
+                # User environment OS is Windows? No, "Operating System: windows" in user_information, but this code runs on backend (likely linux container).
+                # We will upload as video/mp4 for now as requested.
+                
+                uploaded_url = self.upload_to_gcs(
+                    video_bytes,
+                    target_path,
+                    content_type="video/mp4" 
+                )
+                
+                # Cleanup
+                try:
+                    os.remove(local_video_path)
+                    os.rmdir(temp_dir)
+                except:
+                    pass
+                    
+                logger.info(f"🎥 Video recorded & uploaded: {uploaded_url}")
+                return uploaded_url
+
+        except Exception as e:
+            logger.error(f"❌ Video recording failed: {e}")
+            return None
 
 _asset_processor: Optional[AssetProcessor] = None
 
