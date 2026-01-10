@@ -115,79 +115,92 @@ class MetricoolClient:
 
     def _extract_connected_providers(self, blog: Dict[str, Any]) -> List[str]:
         """
-        Metricool can report connected social platforms in various formats.
-        We try multiple field names and structures to extract connected providers.
+        V3.0 FIX: Metricool returns a FLAT object with keys like 'facebook', 'linkedinCompany'.
+        If the key has a non-null value, the channel is connected.
+        
+        Example response keys:
+        - facebook: '812522521953625' (connected)
+        - instagram: None (not connected)
+        - linkedinCompany: 'urn:li:organization:109430776' (connected)
         """
         connected: List[str] = []
         
         # DEBUG: Log all keys in the blog response to help diagnose
         logger.info(f"🔍 Extracting providers. Blog keys: {list(blog.keys())}")
 
-        # Field names that might contain social network data
-        possible_fields = [
-            'socialNetworks', 'social_networks', 'socialnetworks',
-            'providers', 'networks', 'channels', 'accounts',
-            'connectedNetworks', 'connectedProviders', 'connected_providers',
-            'socials', 'linkedAccounts', 'linked_accounts'
-        ]
+        # V3.0 DIRECT KEY CHECK - Metricool flat response format
+        # Map Metricool key names to normalized provider names
+        DIRECT_KEY_MAPPING = {
+            'facebook': 'facebook',
+            'facebookPageId': 'facebook',
+            'facebookGroup': 'facebook',
+            'facebookGroupId': 'facebook',
+            'facebookAds': 'facebook_ads',
+            'instagram': 'instagram',
+            'twitter': 'twitter',
+            'linkedinCompany': 'linkedin',
+            'youtube': 'youtube',
+            'tiktok': 'tiktok',
+            'pinterest': 'pinterest',
+            'threads': 'threads',
+            'bluesky': 'bluesky',
+            'gmb': 'google',
+            'googlePlus': 'google',
+            'adwords': 'google_ads',
+            'twitch': 'twitch',
+        }
         
-        # Try all possible field names
-        for field in possible_fields:
-            data = blog.get(field)
-            if data:
-                logger.info(f"📱 Found field '{field}': {data}")
-                if isinstance(data, list):
-                    for item in data:
-                        if isinstance(item, dict):
-                            # Check if this item is "connected"
-                            # FIX: Strictly check status if present
-                            status = str(item.get("status") or "").lower()
-                            
-                            is_connected = False
-                            if status:
-                                is_connected = (status == "connected" or status == "active")
-                            else:
-                                # Fallback for fields that are booleans or older API formats
-                                is_connected = (
-                                    item.get("connected") or 
-                                    item.get("selected") or 
-                                    item.get("active") or
-                                    item.get("enabled") or
-                                    item.get("isConnected") or
-                                    # ONLY assume connected if we are looking at a explicit list of ONLY connected items (deprecated behavior)
-                                    # Safer to default to False if we can't be sure.
-                                    False
-                                )
-                                
-                                # Special case: If the field name itself implies connection (e.g. 'connectedNetworks')
-                                if field in ['connectedNetworks', 'connectedProviders', 'linkedAccounts']:
-                                     is_connected = True
-
-                            if is_connected:
-                                provider_name = (
-                                    item.get("id") or item.get("name") or 
-                                    item.get("provider") or item.get("network") or
-                                    item.get("type") or item.get("platform")
-                                )
-                                if provider_name:
-                                    connected.append(provider_name)
-                        elif isinstance(item, str):
-                            # Flat list of provider names
-                            connected.append(item)
-
-        # If no connected providers found, do a heuristic scan for any network-like data
+        # Check each known key directly
+        for key, normalized_name in DIRECT_KEY_MAPPING.items():
+            value = blog.get(key)
+            # If value exists and is not None/empty, the channel is connected
+            if value:
+                if normalized_name not in connected:
+                    connected.append(normalized_name)
+                    logger.info(f"  ✅ Found connected: {key} = {str(value)[:50]}... -> {normalized_name}")
+        
+        # FALLBACK: If no direct keys found, try the nested list approach (legacy)
         if not connected:
-            for key, val in blog.items():
-                if isinstance(val, list) and len(val) > 0:
-                    # Check if this list looks like it contains provider data
-                    first = val[0] if val else None
-                    if isinstance(first, dict):
-                        # Check if it looks like a social network object
-                        keys_lower = [k.lower() for k in first.keys()]
-                        if any(k in keys_lower for k in ['name', 'provider', 'network', 'type', 'id']):
-                            logger.info(f"🔎 Heuristic match found in key '{key}': {val}")
-                            for item in val:
-                                if isinstance(item, dict):
+            logger.warning(f"⚠️ No direct keys found, trying nested list fallback...")
+            
+            # Field names that might contain social network data
+            possible_fields = [
+                'socialNetworks', 'social_networks', 'socialnetworks',
+                'providers', 'networks', 'channels', 'accounts',
+                'connectedNetworks', 'connectedProviders', 'connected_providers',
+                'socials', 'linkedAccounts', 'linked_accounts'
+            ]
+            
+            # Try all possible field names
+            for field in possible_fields:
+                data = blog.get(field)
+                if data:
+                    logger.info(f"📱 Found field '{field}': {data}")
+                    if isinstance(data, list):
+                        for item in data:
+                            if isinstance(item, dict):
+                                # Check if this item is "connected"
+                                status = str(item.get("status") or "").lower()
+                                
+                                is_connected = False
+                                if status:
+                                    is_connected = (status == "connected" or status == "active")
+                                else:
+                                    # Fallback for fields that are booleans
+                                    is_connected = (
+                                        item.get("connected") or 
+                                        item.get("selected") or 
+                                        item.get("active") or
+                                        item.get("enabled") or
+                                        item.get("isConnected") or
+                                        False
+                                    )
+                                    
+                                    # Special case: If the field name implies connection
+                                    if field in ['connectedNetworks', 'connectedProviders', 'linkedAccounts']:
+                                         is_connected = True
+
+                                if is_connected:
                                     provider_name = (
                                         item.get("id") or item.get("name") or 
                                         item.get("provider") or item.get("network") or
@@ -195,17 +208,20 @@ class MetricoolClient:
                                     )
                                     if provider_name:
                                         connected.append(provider_name)
+                            elif isinstance(item, str):
+                                # Flat list of provider names
+                                connected.append(item)
 
         logger.info(f"📊 Raw extracted providers: {connected}")
 
         # Normalize and deduplicate
         normalized = []
         PROVIDER_MAPPING = {
-            "facebookpage": "facebook", "facebookads": "facebook", "fb": "facebook",
+            "facebookpage": "facebook", "facebookads": "facebook_ads", "fb": "facebook",
             "instagrambusiness": "instagram", "ig": "instagram",
             "linkedinpage": "linkedin", "linkedincompany": "linkedin", "li": "linkedin",
             "tiktokbusiness": "tiktok", "tiktokads": "tiktok", "tt": "tiktok",
-            "googleads": "google", "googlemybusiness": "google",
+            "googleads": "google_ads", "googlemybusiness": "google",
             "twitter": "twitter", "x": "twitter",
             "pinterest": "pinterest", "youtube": "youtube"
         }
@@ -220,7 +236,7 @@ class MetricoolClient:
                 val = PROVIDER_MAPPING[val]
             else:
                 # Heuristic: map if starts with known provider name
-                for key in ["facebook", "instagram", "linkedin", "tiktok", "google", "youtube", "twitter", "pinterest"]:
+                for key in ["facebook", "instagram", "linkedin", "tiktok", "google", "youtube", "twitter", "pinterest", "threads", "bluesky"]:
                     if val.startswith(key):
                         val = key
                         break

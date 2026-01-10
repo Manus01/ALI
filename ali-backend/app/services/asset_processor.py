@@ -658,8 +658,8 @@ class AssetProcessor:
                         
                         # Tile the logo
                         watermark_layer = Image.new("RGBA", base_img.size, (0, 0, 0, 0))
-                        tile_spacing_x = int(base_img.width * 0.20)
-                        tile_spacing_y = int(base_img.height * 0.20)
+                        tile_spacing_x = max(1, int(base_img.width * 0.20))
+                        tile_spacing_y = max(1, int(base_img.height * 0.20))
                         
                         for y in range(0, base_img.height, tile_spacing_y):
                             for x in range(0, base_img.width, tile_spacing_x):

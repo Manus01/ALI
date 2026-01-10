@@ -207,8 +207,21 @@ class OrchestratorAgent(BaseAgent):
             
             self._update_progress(uid, campaign_id, f"Generating {len(tasks)} Channel Assets...", 60)
             
-            # Execute all tasks concurrently
-            results = await asyncio.gather(*tasks, return_exceptions=True)
+            # Execute all tasks concurrently with Semaphore (V3.0 Stability Fix)
+            # Limit concurrent image generations to Avoid Quota Errors (Vertex AI limit ~60/min but burst limited)
+            semaphore = asyncio.Semaphore(3)  # Max 3 concurrent requests
+
+            async def semaphore_task(t):
+                async with semaphore:
+                    try:
+                        return await t
+                    except Exception as e:
+                        logger.error(f"Generate task failed: {e}")
+                        return e
+
+            # Wrap tasks
+            safe_tasks = [semaphore_task(t) for t in tasks]
+            results = await asyncio.gather(*safe_tasks, return_exceptions=True)
             
             # Map results back to structured assets
             from app.services.asset_processor import get_asset_processor
@@ -373,6 +386,8 @@ class OrchestratorAgent(BaseAgent):
                         else:
                             status = "FAILED"
                             thumbnail_url = "https://placehold.co/600x400?text=Generation+Failed"
+                            # Capture specific error if available in payload (which might be Exception object)
+                            error_msg = str(asset_payload) if asset_payload and isinstance(asset_payload, (Exception, str)) else "Unknown Error"
                             asset_payload = None
 
                         text_copy = channel_blueprint.get("caption") or channel_blueprint.get("body")

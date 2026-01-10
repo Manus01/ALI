@@ -93,16 +93,20 @@ class ImageAgent:
     def generate_image(self, prompt: str, reference_image_uri: Optional[str] = None, brand_dna: Optional[str] = None, folder: str = "general") -> Optional[str]:
         """
         Generates an image using Imagen 3.0.
-        Supports:
+        supports:
         - Adaptive Inputs (Reference Image URI)
         - Contextual Prompts (Brand DNA)
         - Folder Organization
+        - Retry logic for Rate Limits (429)
         """
         if not self.client: return None
         
         request_id = str(uuid.uuid4())
         
-        try:
+        # RETRY LOGIC (Max 3 retries, exponential backoff)
+        max_retries = 3
+        for attempt in range(max_retries + 1):
+            try:
              # 1. Pydantic Fix: String-Strict Validation
              clean_prompt = prompt
              if isinstance(clean_prompt, list):
@@ -194,6 +198,15 @@ class ImageAgent:
             return None
             
         except Exception as e:
+            # Check for Rate Limit / Quota errors
+            error_str = str(e).lower()
+            if "429" in error_str or "quota" in error_str or "resource exhausted" in error_str:
+                if attempt < max_retries:
+                    wait_time = 2 ** attempt  # Exponential: 1s, 2s, 4s...
+                    logger.warning(f"⚠️ Rate Limit Hit (Request ID: {request_id}). Retrying in {wait_time}s...")
+                    time.sleep(wait_time)
+                    continue
+            
             logger.error(f"❌ Image Generation Error (Request ID: {request_id}): {e}")
             traceback.print_exc()
             return None

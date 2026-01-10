@@ -18,6 +18,7 @@ async def initiate_campaign(payload: dict, user: dict = Depends(verify_token)):
         from app.services.metricool_client import MetricoolClient
         
         goal = payload.get("goal")
+        selected_channels = payload.get("selected_channels", []) # V3.0 Fix: Extract channels
         uid = user['uid']
         
         # Guard: Check for Database connection
@@ -44,7 +45,12 @@ async def initiate_campaign(payload: dict, user: dict = Depends(verify_token)):
         # -------------------------------
 
         agent = CampaignAgent()
-        questions = await agent.generate_clarifying_questions(goal, brand_ref.to_dict(), connected_platforms=connected_platforms)
+        questions = await agent.generate_clarifying_questions(
+            goal, 
+            brand_ref.to_dict(), 
+            connected_platforms=connected_platforms,
+            selected_channels=selected_channels # V3.0 Fix: Respect user selection
+        )
         return {"questions": questions}
     except ImportError as e:
         logger.error(f"Failed to import CampaignAgent: {e}")
