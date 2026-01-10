@@ -8,7 +8,16 @@ WORKDIR /app
 COPY requirements.txt .
 
 # Install dependencies
+# Install system dependencies for Playwright and FFmpeg
+RUN apt-get update && apt-get install -y \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Common Python Dependencies
 RUN pip install --no-cache-dir -r requirements.txt
+
+# Install Playwright Browsers (Chromium only to save space)
+RUN playwright install --with-deps chromium
 
 # Copy the rest of the app
 COPY . .
