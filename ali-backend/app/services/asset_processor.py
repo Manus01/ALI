@@ -532,7 +532,8 @@ class AssetProcessor:
         if logo_url:
             try:
                 import requests
-                logo_response = requests.get(logo_url)
+                logo_response = requests.get(logo_url, timeout=10)
+                logo_response.raise_for_status()  # Explicit 404/403 detection
                 logo_img = Image.open(io.BytesIO(logo_response.content)).convert("RGBA")
 
                 target_logo_width = int(base_img.width * 0.15)
@@ -546,7 +547,7 @@ class AssetProcessor:
 
                 base_img.paste(logo_img, (x_pos, y_pos), mask=logo_img)
             except Exception as e:
-                logger.warning(f"⚠️ Failed to apply logo overlay: {e}")
+                logger.warning(f"⚠️ Logo overlay skipped (URL may be 404/403): {e}")
 
         return base_img
 

@@ -765,7 +765,7 @@ def get_creative_drafts(status: Optional[str] = None, admin: dict = Depends(veri
     Status filter: DRAFT, PENDING_REVIEW, PUBLISHED
     """
     try:
-        query = db.collection("creativeDrafts")
+        query = db.collection("creative_drafts")
         
         if status:
             query = query.where("status", "==", status)
@@ -793,7 +793,7 @@ def publish_creative_draft(draft_id: str, admin: dict = Depends(verify_admin)):
     Publish a creative draft - updates status to PUBLISHED.
     """
     try:
-        doc_ref = db.collection("creativeDrafts").document(draft_id)
+        doc_ref = db.collection("creative_drafts").document(draft_id)
         doc = doc_ref.get()
         
         if not doc.exists:

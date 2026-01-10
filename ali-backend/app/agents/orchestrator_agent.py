@@ -139,71 +139,71 @@ class OrchestratorAgent(BaseAgent):
                 # Generate assets for each format
                 for primary_format, format_label in formats_to_generate:
                     width, height = primary_format["size"]
-                tone = spec.get("tone", primary_format.get("tone", "professional"))
-                
-                # Build safe zone instruction for vertical formats
-                safe_zone_instruction = ""
-                if primary_format.get("safe_zone_bottom"):
-                    safe_zone_instruction = f" CRITICAL: Leave bottom {primary_format['safe_zone_bottom']}px clear of text/logos (UI overlay zone)."
-                if primary_format.get("safe_zone_right"):
-                    safe_zone_instruction += f" Leave right {primary_format['safe_zone_right']}px clear."
-                
-                # Get channel-specific visual prompt from blueprint, fallback to instagram
-                channel_data = blueprint.get(channel, blueprint.get('instagram', {}))
-                visual_prompt = channel_data.get('visual_prompt', 'Professional brand promotional image')
-                
-                # Enhance prompt with dimension awareness and safe zones
-                enhanced_prompt = (
-                    f"{visual_prompt}. "
-                    f"DIMENSIONS: {width}x{height}px ({primary_format.get('ratio', 'custom')}). "
-                    f"TONE: {tone}.{safe_zone_instruction}"
-                )
-                
-                dna_str = f"Style {brand_dna.get('visual_styles', [])}. Colors {brand_dna.get('color_palette', {})}"
-                
-                # ---------------------------------------------------------
-                # NEW: Carousel & Motion Logic
-                # ---------------------------------------------------------
-                is_carousel = primary_format.get("type") == "carousel"
-                motion_supported = spec.get("motion_support", False)
-                
-                if is_carousel:
-                    # Carousel: Generate 3 sequential images
-                    # We create a sub-loop of tasks
-                    for i in range(1, 4):
-                        slide_prompt = f"{enhanced_prompt}. Slide {i} of 3. Ensure visual continuity."
+                    tone = spec.get("tone", primary_format.get("tone", "professional"))
+                    
+                    # Build safe zone instruction for vertical formats
+                    safe_zone_instruction = ""
+                    if primary_format.get("safe_zone_bottom"):
+                        safe_zone_instruction = f" CRITICAL: Leave bottom {primary_format['safe_zone_bottom']}px clear of text/logos (UI overlay zone)."
+                    if primary_format.get("safe_zone_right"):
+                        safe_zone_instruction += f" Leave right {primary_format['safe_zone_right']}px clear."
+                    
+                    # Get channel-specific visual prompt from blueprint, fallback to instagram
+                    channel_data = blueprint.get(channel, blueprint.get('instagram', {}))
+                    visual_prompt = channel_data.get('visual_prompt', 'Professional brand promotional image')
+                    
+                    # Enhance prompt with dimension awareness and safe zones
+                    enhanced_prompt = (
+                        f"{visual_prompt}. "
+                        f"DIMENSIONS: {width}x{height}px ({primary_format.get('ratio', 'custom')}). "
+                        f"TONE: {tone}.{safe_zone_instruction}"
+                    )
+                    
+                    dna_str = f"Style {brand_dna.get('visual_styles', [])}. Colors {brand_dna.get('color_palette', {})}"
+                    
+                    # ---------------------------------------------------------
+                    # NEW: Carousel & Motion Logic
+                    # ---------------------------------------------------------
+                    is_carousel = primary_format.get("type") == "carousel"
+                    motion_supported = spec.get("motion_support", False)
+                    
+                    if is_carousel:
+                        # Carousel: Generate 3 sequential images
+                        # We create a sub-loop of tasks
+                        for i in range(1, 4):
+                            slide_prompt = f"{enhanced_prompt}. Slide {i} of 3. Ensure visual continuity."
+                            task = asyncio.to_thread(
+                                image_agent.generate_image, 
+                                slide_prompt, 
+                                brand_dna=dna_str, 
+                                folder=f"campaigns/{channel}/slide_{i}"
+                            )
+                            tasks.append(task)
+                            task_metadata.append({
+                                "channel": channel,
+                                "format_type": "carousel",  # Mark as carousel
+                                "slide_index": i,
+                                "size": primary_format["size"],
+                                "tone": tone
+                            })
+
+                    else:
+                        # Standard Single Image (may be upgraded to Motion later)
                         task = asyncio.to_thread(
                             image_agent.generate_image, 
-                            slide_prompt, 
+                            enhanced_prompt, 
                             brand_dna=dna_str, 
-                            folder=f"campaigns/{channel}/slide_{i}"
+                            folder=f"campaigns/{channel}"
                         )
                         tasks.append(task)
                         task_metadata.append({
                             "channel": channel,
-                            "format_type": "carousel",  # Mark as carousel
-                            "slide_index": i,
+                            "format_type": "motion" if motion_supported else primary_format["type"],
+                            "format_label": format_label,
+                            "motion_enabled": motion_supported,
                             "size": primary_format["size"],
                             "tone": tone
                         })
-
-                else:
-                    # Standard Single Image (may be upgraded to Motion later)
-                    task = asyncio.to_thread(
-                        image_agent.generate_image, 
-                        enhanced_prompt, 
-                        brand_dna=dna_str, 
-                        folder=f"campaigns/{channel}"
-                    )
-                    tasks.append(task)
-                    task_metadata.append({
-                        "channel": channel,
-                        "format_type": "motion" if motion_supported else primary_format["type"],
-                        "format_label": format_label,
-                        "motion_enabled": motion_supported,
-                        "size": primary_format["size"],
-                        "tone": tone
-                    })
             
             self._update_progress(uid, campaign_id, f"Generating {len(tasks)} Channel Assets...", 60)
             

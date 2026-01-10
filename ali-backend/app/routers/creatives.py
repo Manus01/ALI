@@ -20,7 +20,7 @@ def get_my_drafts(user_id: str = Depends(get_current_user_id)) -> List[dict]:
     """
     try:
         # Query only by user_id to avoid compound index requirement
-        docs = db.collection("creativeDrafts").where("userId", "==", user_id).stream()
+        docs = db.collection("creative_drafts").where("userId", "==", user_id).stream()
         
         # Convert to list of dicts
         all_docs = [doc.to_dict() for doc in docs]
@@ -51,7 +51,7 @@ def get_my_published(user_id: str = Depends(get_current_user_id)) -> List[dict]:
     """
     try:
         # Query only by user_id to avoid compound index requirement
-        docs = db.collection("creativeDrafts").where("userId", "==", user_id).stream()
+        docs = db.collection("creative_drafts").where("userId", "==", user_id).stream()
         
         # Convert to list of dicts
         all_docs = [doc.to_dict() for doc in docs]
