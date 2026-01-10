@@ -254,10 +254,10 @@ async def generate_image_with_retry(prompt: str, reference_image_uri: Optional[s
             if result:
                 return result
         except ResourceExhausted as e:
-            print(f"Quota hit (attempt {attempt + 1}): {e}")
+            logger.warning(f"Quota hit (attempt {attempt + 1}): {e}")
             await asyncio.sleep(2 ** attempt)  # Exponential Backoff
         except Exception as e:
-            print(f"Gen Error: {e}")
+            logger.error(f"Gen Error: {e}")
             return None
     
     return None

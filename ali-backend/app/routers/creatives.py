@@ -70,7 +70,7 @@ def get_my_drafts(user_id: str = Depends(get_current_user_id)) -> List[dict]:
         # Return limited results
         return drafts[:50]
     except Exception as e:
-        print(f"Error fetching drafts: {e}")
+        logger.error(f"Error fetching drafts: {e}")
         return []
 
 
@@ -98,7 +98,7 @@ def get_my_published(user_id: str = Depends(get_current_user_id)) -> List[dict]:
         # Return limited results
         return published[:50]
     except Exception as e:
-        print(f"Error fetching published: {e}")
+        logger.error(f"Error fetching published: {e}")
         return []
 
 
