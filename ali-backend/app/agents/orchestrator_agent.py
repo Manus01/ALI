@@ -100,7 +100,7 @@ class OrchestratorAgent(BaseAgent):
             # Resolve channels - use selected_channels if provided, fallback to connected_platforms detection
             target_channels = selected_channels if selected_channels else ["instagram", "linkedin"]
             # Normalize channel names (lowercase, underscores)
-            target_channels = [c.lower().replace(" ", "_").replace("-", "_") for c in target_channels]
+            target_channels = [c.strip().lower().replace(" ", "_").replace("-", "_") for c in target_channels]
             logger.info(f"🎯 Channel-Aware Orchestration for: {target_channels}")
 
             # 2. Generate Blueprint with channel context

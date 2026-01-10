@@ -114,7 +114,8 @@ class BigQueryService:
             self.client.get_dataset(dataset_ref)
             logger.info(f"✅ Dataset {self.dataset_id} exists")
             return True
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Dataset access check failed (assuming creation needed): {e}")
             try:
                 self.client.create_dataset(dataset_ref, exists_ok=True)
                 logger.info(f"✅ Created dataset {self.dataset_id}")
@@ -147,7 +148,8 @@ class BigQueryService:
             self.client.get_table(table_ref)
             logger.info(f"✅ Table {table_name} exists")
             return True
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Table access check failed (assuming creation needed): {e}")
             try:
                 self.client.create_table(table, exists_ok=True)
                 logger.info(f"✅ Created table {table_name}")

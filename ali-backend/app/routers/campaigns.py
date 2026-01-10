@@ -85,7 +85,8 @@ async def finalize_campaign(payload: dict, background_tasks: BackgroundTasks, us
                     client = MetricoolClient(blog_id=blog_id)
                     account_info = client.get_account_info()
                     selected_channels = account_info.get('connected', ["instagram", "linkedin"])
-            except Exception:
+            except Exception as e:
+                logger.warning(f"Smart fallback failed, using default: {e}")
                 selected_channels = ["instagram", "linkedin"]  # Default fallback
         # ---------------------------------------------------------
 

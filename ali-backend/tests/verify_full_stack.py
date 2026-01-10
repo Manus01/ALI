@@ -8,7 +8,11 @@ import sys
 # Force UTF-8 output on Windows
 if sys.platform == 'win32':
     import io
+    import io
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 
 # =============================================================================

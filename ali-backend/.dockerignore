@@ -6,3 +6,8 @@ key.json
 firebase_credentials.json
 .git
 .gitignore
+tests/
+data/
+scripts/
+*.md
+pytest.ini

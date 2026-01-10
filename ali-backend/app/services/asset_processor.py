@@ -898,6 +898,7 @@ class AssetProcessor:
                     await page.wait_for_selector(".animation-complete", timeout=2000)
                     logger.debug("✓ Animation complete class detected")
                 except Exception:
+                    logger.debug("No .animation-complete class detected")
                     # Class not present - use fixed animation delay as fallback
                     pass
                 

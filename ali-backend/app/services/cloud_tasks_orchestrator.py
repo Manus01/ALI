@@ -168,7 +168,8 @@ class CloudTasksOrchestrator:
             self.client.get_queue(name=queue_path)
             logger.info(f"✅ Queue exists: {config.queue_name}")
             return True
-        except Exception:
+        except Exception as e:
+            logger.debug(f"Queue access check failed (assuming creation needed): {e}")
             # Queue doesn't exist, create it
             try:
                 queue = {

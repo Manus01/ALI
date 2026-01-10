@@ -82,6 +82,8 @@ class TestCampaignFlow(unittest.IsolatedAsyncioTestCase):
                 mock_processor = mock_get_processor.return_value
                 mock_processor.apply_advanced_branding = AsyncMock(return_value="http://mock-url.com/branded.png")
                 mock_processor.analyze_luminance_from_url = AsyncMock(return_value="light")
+                mock_processor.generate_video_asset = AsyncMock(return_value="http://mock-url.com/video.mp4")
+                mock_processor.generate_image_asset = AsyncMock(return_value="http://mock-url.com/image.png")
                 
                 # Setup Inputs
                 uid = "test_user_123"

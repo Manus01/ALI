@@ -81,5 +81,6 @@ class WebSearchClient:
             from urllib.parse import urlparse
             domain = urlparse(url).netloc
             return domain.replace('www.', '')
-        except:
+        except Exception:
+            logger.debug("Domain extraction failed")
             return "Web Result"

@@ -362,7 +362,8 @@ def _fetch_cached_global_tutorial(tutorial_id: str):
         doc = db.collection('tutorials').document(tutorial_id).get()
         if doc.exists:
             return doc.to_dict()
-    except:
+    except Exception as e:
+        logger.warning(f"Global tutorial cache check warning: {e}")
         return None
     return None
 
