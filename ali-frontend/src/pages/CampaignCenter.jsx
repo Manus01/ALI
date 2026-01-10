@@ -309,6 +309,17 @@ export default function CampaignCenter() {
         });
     };
 
+    // V4.0: Read view query parameter from URL (for notification navigation)
+    useEffect(() => {
+        const params = new URLSearchParams(location.search);
+        const view = params.get('view');
+        if (view === 'library') {
+            setViewMode('library');
+            // Also refresh drafts to show latest
+            fetchUserDrafts();
+        }
+    }, [location.search]);
+
     useEffect(() => {
         if (location.state?.editDna) {
             setForceEditDna(true);
@@ -950,10 +961,10 @@ export default function CampaignCenter() {
 
                                                     {/* Status Indicator (Draft/Approved) */}
                                                     <div className={`absolute top-2 left-2 px-2 py-1 rounded-md text-[10px] font-black uppercase tracking-wider shadow-sm ${asset.status === 'PUBLISHED'
-                                                            ? 'bg-green-500 text-white'
-                                                            : asset.status === 'FAILED'
-                                                                ? 'bg-red-500 text-white'
-                                                                : 'bg-amber-400 text-slate-900'
+                                                        ? 'bg-green-500 text-white'
+                                                        : asset.status === 'FAILED'
+                                                            ? 'bg-red-500 text-white'
+                                                            : 'bg-amber-400 text-slate-900'
                                                         }`}>
                                                         {asset.status === 'PUBLISHED' ? '✓ Approved' : asset.status === 'FAILED' ? '✗ Failed' : 'Draft'}
                                                     </div>

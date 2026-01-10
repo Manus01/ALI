@@ -28,8 +28,8 @@ def get_my_drafts(user_id: str = Depends(get_current_user_id)) -> List[dict]:
         # Query only by user_id to avoid compound index requirement
         docs = db.collection("creative_drafts").where("userId", "==", user_id).stream()
         
-        # Convert to list of dicts
-        all_docs = [doc.to_dict() for doc in docs]
+        # Convert to list of dicts - V4.0 FIX: Include document ID!
+        all_docs = [{**doc.to_dict(), "id": doc.id} for doc in docs]
         
         # V3.1 FIX: Return ALL drafts (including FAILED) so users can see failed generations
         # No status filtering - users need to see what failed to debug issues
@@ -57,8 +57,8 @@ def get_my_published(user_id: str = Depends(get_current_user_id)) -> List[dict]:
         # Query only by user_id to avoid compound index requirement
         docs = db.collection("creative_drafts").where("userId", "==", user_id).stream()
         
-        # Convert to list of dicts
-        all_docs = [doc.to_dict() for doc in docs]
+        # Convert to list of dicts - V4.0 FIX: Include document ID!
+        all_docs = [{**doc.to_dict(), "id": doc.id} for doc in docs]
         
         # Filter in Python: keep only PUBLISHED items
         published = [d for d in all_docs if d.get("status") == "PUBLISHED"]

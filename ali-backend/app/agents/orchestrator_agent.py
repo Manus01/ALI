@@ -502,7 +502,7 @@ class OrchestratorAgent(BaseAgent):
             "type": "campaign_progress",
             "campaign_id": campaign_id,
             "status": status,
-            "link": "/creative-studio" if percent == 100 else None,  # Navigate to results when complete
+            "link": "/creative-studio?view=library" if percent == 100 else None,  # Navigate to asset library when complete
             "created_at": firestore.SERVER_TIMESTAMP,
             "timestamp": firestore.SERVER_TIMESTAMP
         })
