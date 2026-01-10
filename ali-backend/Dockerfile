@@ -9,15 +9,33 @@ COPY requirements.txt .
 
 # Install dependencies
 # Install system dependencies for Playwright and FFmpeg
+# Note: fonts-ubuntu and fonts-unifont are the new package names in Debian Trixie
+# (previously ttf-ubuntu-font-family and ttf-unifont)
 RUN apt-get update && apt-get install -y \
     ffmpeg \
+    fonts-ubuntu \
+    fonts-unifont \
+    fonts-noto-color-emoji \
+    libnss3 \
+    libnspr4 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libdrm2 \
+    libxkbcommon0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libxrandr2 \
+    libgbm1 \
+    libasound2 \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Common Python Dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Install Playwright Browsers (Chromium only to save space)
-RUN playwright install --with-deps chromium
+# Install Playwright Browsers (Chromium only, skip system deps since we installed them above)
+RUN playwright install chromium
 
 # Copy the rest of the app
 COPY . .
