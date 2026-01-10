@@ -8,6 +8,7 @@ from typing import Optional
 from google import genai
 from google.genai import types
 from google.cloud import storage
+from google.api_core.exceptions import ResourceExhausted
 import traceback
 
 # Configure Logger
@@ -196,14 +197,25 @@ class ImageAgent:
         except (ValueError, TypeError) as e:
             logger.error(f"❌ Input Validation Error (Request ID: {request_id}): {e}")
             return None
-            
+
+        except ResourceExhausted as e:
+            logger.warning(f"⚠️ Rate Limit Hit (Request ID: {request_id}): {e}")
+            if attempt < max_retries:
+                wait_time = 2 ** attempt
+                logger.info(f"⏳ Retrying in {wait_time}s...")
+                time.sleep(wait_time)
+                continue
+            else:
+                 logger.error(f"❌ Max Retries Exceeded for Request {request_id}")
+                 return None
+
         except Exception as e:
-            # Check for Rate Limit / Quota errors
+            # Check for Rate Limit / Quota errors in generic exception
             error_str = str(e).lower()
             if "429" in error_str or "quota" in error_str or "resource exhausted" in error_str:
                 if attempt < max_retries:
-                    wait_time = 2 ** attempt  # Exponential: 1s, 2s, 4s...
-                    logger.warning(f"⚠️ Rate Limit Hit (Request ID: {request_id}). Retrying in {wait_time}s...")
+                    wait_time = 2 ** attempt
+                    logger.warning(f"⚠️ Rate Limit Hit (Generic Catch) (Request ID: {request_id}). Retrying in {wait_time}s...")
                     time.sleep(wait_time)
                     continue
             
