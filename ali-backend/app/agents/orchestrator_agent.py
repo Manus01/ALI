@@ -342,76 +342,86 @@ class OrchestratorAgent(BaseAgent):
             self.db.collection('users').document(uid).collection('campaigns').document(campaign_id).set(final_data, merge=True)
             
             # 5. Save drafts per channel + format for User Self-Approval (Review Feed)
-            # Collect all unique channel_format combinations from assets
-            for asset_key in assets.keys():
-                # Parse asset_key: could be 'instagram' or 'instagram_story'
-                if '_story' in asset_key or '_feed' in asset_key:
-                    parts = asset_key.rsplit('_', 1)
-                    channel = parts[0]
-                    format_label = parts[1]
-                else:
-                    channel = asset_key
-                    format_label = 'primary'
-                
-                # FIX: Ensure every asset gets a draft doc, even if generation failed
+            for channel in target_channels:
                 clean_channel = channel.lower().replace(" ", "_")
-                
-                # ID Logic: No suffix for primary/feed, suffix for others (story, etc.)
-                if format_label in ['primary', 'feed']:
-                     draft_id = f"draft_{campaign_id}_{clean_channel}"
-                else:
-                     draft_id = f"draft_{campaign_id}_{clean_channel}_{format_label}"
-                
-                asset_payload = assets.get(asset_key)
-                meta = assets_metadata.get(channel, {})
-                channel_blueprint = blueprint.get(channel, blueprint.get('instagram', {}))
-
-                # Determine Status & URLs
-                if asset_payload:
-                    status = "DRAFT"
-                    # Determine Thumbnail
-                    thumbnail_url = asset_payload 
-                    if isinstance(asset_payload, list):
-                        thumbnail_url = asset_payload[0]
-                    elif isinstance(asset_payload, str) and asset_payload.startswith("data:text/html"):
-                        thumbnail_url = asset_payload # FE will render iframe
-                else:
-                    # Handle Failed Generation
-                    status = "FAILED"
-                    thumbnail_url = "https://placehold.co/600x400?text=Generation+Failed"
-                    asset_payload = None # Explicit null
-
-                # Ensure copy_text is never None
-                text_copy = channel_blueprint.get("caption") or channel_blueprint.get("body")
-                if not text_copy and channel_blueprint.get("headlines"):
-                    text_copy = channel_blueprint["headlines"][0]
-                if not text_copy:
-                    text_copy = goal or "Brand Campaign Asset"
-
-                # WRAP IN TRY/EXCEPT FOR ROBUSTNESS
                 try:
-                    draft_data = {
+                    channel_assets = []
+                    for asset_key, asset_payload in assets.items():
+                        if asset_key == clean_channel:
+                            channel_assets.append((None, asset_payload))
+                        elif asset_key.startswith(f"{clean_channel}_"):
+                            fmt = asset_key[len(clean_channel) + 1:]
+                            channel_assets.append((fmt, asset_payload))
+
+                    if not channel_assets:
+                        channel_assets = [(None, None)]
+
+                    for fmt, asset_payload in channel_assets:
+                        suffix = f"_{fmt}" if fmt and fmt != "feed" else ""
+                        draft_id = f"draft_{campaign_id}_{clean_channel}{suffix}"
+
+                        meta = assets_metadata.get(channel, {})
+                        channel_blueprint = blueprint.get(channel, blueprint.get('instagram', {}))
+
+                        if asset_payload:
+                            status = "DRAFT"
+                            thumbnail_url = asset_payload
+                            if isinstance(asset_payload, list):
+                                thumbnail_url = asset_payload[0]
+                            elif isinstance(asset_payload, str) and asset_payload.startswith("data:text/html"):
+                                thumbnail_url = asset_payload
+                        else:
+                            status = "FAILED"
+                            thumbnail_url = "https://placehold.co/600x400?text=Generation+Failed"
+                            asset_payload = None
+
+                        text_copy = channel_blueprint.get("caption") or channel_blueprint.get("body")
+                        if not text_copy and channel_blueprint.get("headlines"):
+                            text_copy = channel_blueprint["headlines"][0]
+                        if not text_copy:
+                            text_copy = goal or "Brand Campaign Asset"
+
+                        draft_data = {
+                            "userId": uid,
+                            "campaignId": campaign_id,
+                            "channel": clean_channel,
+                            "thumbnailUrl": thumbnail_url,
+                            "assetPayload": asset_payload,
+                            "asset_url": asset_payload if asset_payload else None,
+                            "title": f"{goal[:50]}..." if len(goal) > 50 else goal,
+                            "format": meta.get("format_type", "Image"),
+                            "size": f"{meta.get('size', (0,0))[0]}x{meta.get('size', (0,0))[1]}" if meta.get('size') else "N/A",
+                            "tone": meta.get("tone", "professional"),
+                            "status": status,
+                            "approvalStatus": "pending",
+                            "createdAt": firestore.SERVER_TIMESTAMP,
+                            "blueprint": channel_blueprint,
+                            "textCopy": text_copy
+                        }
+
+                        self.db.collection('creative_drafts').document(draft_id).set(draft_data)
+                        logger.info(f"📦 Saved draft {draft_id} [{status}] for user {uid} (channel: {clean_channel})")
+                except Exception as save_err:
+                    logger.error(f"❌ Failed to save drafts for {clean_channel}: {save_err}")
+                    failed_draft_id = f"draft_{campaign_id}_{clean_channel}"
+                    failed_draft = {
                         "userId": uid,
                         "campaignId": campaign_id,
                         "channel": clean_channel,
-                        "thumbnailUrl": thumbnail_url,
-                        "assetPayload": asset_payload,
+                        "thumbnailUrl": "https://placehold.co/600x400?text=Generation+Failed",
+                        "assetPayload": None,
+                        "asset_url": None,
                         "title": f"{goal[:50]}..." if len(goal) > 50 else goal,
-                        "format": meta.get("format_type", "Image"),
-                        "size": f"{meta.get('size', (0,0))[0]}x{meta.get('size', (0,0))[1]}" if meta.get('size') else "N/A",
-                        "tone": meta.get("tone", "professional"),
-                        "status": status,
+                        "format": "Image",
+                        "size": "N/A",
+                        "tone": "professional",
+                        "status": "FAILED",
                         "approvalStatus": "pending",
                         "createdAt": firestore.SERVER_TIMESTAMP,
-                        "blueprint": channel_blueprint,
-                        "textCopy": text_copy
+                        "blueprint": blueprint.get(channel, blueprint.get('instagram', {})),
+                        "textCopy": goal or "Brand Campaign Asset"
                     }
-                    
-                    self.db.collection('creative_drafts').document(draft_id).set(draft_data)
-                    logger.info(f"📦 Saved draft {draft_id} [{status}] for user {uid} (channel: {clean_channel})")
-                except Exception as save_err:
-                    logger.error(f"❌ Failed to save draft {draft_id}: {save_err}")
-                    # Continue loop to ensure other drafts are saved
+                    self.db.collection('creative_drafts').document(failed_draft_id).set(failed_draft)
             
             self._update_progress(uid, campaign_id, "Campaign Ready!", 100)
 

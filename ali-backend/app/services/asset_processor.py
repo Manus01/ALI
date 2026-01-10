@@ -500,101 +500,55 @@ class AssetProcessor:
         logger.info(f"✅ Processed asset {asset_id}: {result.width}x{result.height}")
         return result
     
-    def apply_brand_layer(
-        self,
-        base_image_url: str,
-        logo_url: Optional[str],
-        primary_color: str = "#000000",
-        overlay_opacity: float = 0.12
-    ) -> str:
+    def apply_brand_layer(self, base_img: "Image.Image", brand_dna: Dict[str, Any]) -> "Image.Image":
         """
         Apply programmatic brand overlay (Logo + Color Tint).
-        Fix for "Logo Issue" - ensures brand presence on all generated assets.
-        
-        V3.0 Visual Fix:
-        - Hex colors parsed as RGBA layers (not text)
-        - Uses alpha_composite for proper blending
-        - Logo composited with transparency mask
+
+        Uses low-opacity RGBA fills for brand color and pastes the logo
+        in the top-right corner with a transparency mask.
         """
-        if not PIL_AVAILABLE or not self.storage_client:
-            logger.warning("⚠️ PIL or GCS not available for brand overlay")
-            return base_image_url
+        if not PIL_AVAILABLE:
+            logger.warning("⚠️ PIL not available for brand overlay")
+            return base_img
 
-        try:
-            # 1. Download Base Image
-            import requests
-            response = requests.get(base_image_url)
-            base_img = Image.open(io.BytesIO(response.content)).convert("RGBA")
-            
-            # 2. Apply Subtle Color Overlay (Brand Tint) - V3.0 RGBA Fix
-            # Parse hex color string to RGB tuple
-            hex_color = primary_color.lstrip('#')
-            if len(hex_color) == 6:
-                r = int(hex_color[0:2], 16)
-                g = int(hex_color[2:4], 16)
-                b = int(hex_color[4:6], 16)
-            else:
-                # Fallback to black if hex parsing fails
-                r, g, b = 0, 0, 0
-            
-            # Create RGBA layer with ~12% opacity (alpha = 30 out of 255)
-            alpha_value = int(255 * overlay_opacity)  # ~30 for 12%
-            overlay = Image.new("RGBA", base_img.size, (r, g, b, alpha_value))
-            
-            # Use alpha_composite for proper RGBA blending
-            base_img = Image.alpha_composite(base_img, overlay)
+        primary_color = (
+            brand_dna.get("primary_color")
+            or brand_dna.get("color_palette", {}).get("primary")
+            or "#000000"
+        )
 
-            # 3. Apply Logo (Top-Right Safe Zone)
-            if logo_url:
-                try:
-                    logo_response = requests.get(logo_url)
-                    logo_img = Image.open(io.BytesIO(logo_response.content)).convert("RGBA")
-                    
-                    # Resize logo to 15% of image width
-                    target_logo_width = int(base_img.width * 0.15)
-                    aspect_ratio = logo_img.height / logo_img.width
-                    target_logo_height = int(target_logo_width * aspect_ratio)
-                    
-                    logo_img = logo_img.resize((target_logo_width, target_logo_height), Image.Resampling.LANCZOS)
-                    
-                    # Position: Top-Right with padding (5% of width)
-                    padding = int(base_img.width * 0.05)
-                    x_pos = base_img.width - target_logo_width - padding
-                    y_pos = padding
-                    
-                    # Composite logo with proper transparency mask using Image.paste
-                    # Create a transparent layer for the logo to ensure clean composition
-                    logo_layer = Image.new("RGBA", base_img.size, (0, 0, 0, 0))
-                    logo_layer.paste(logo_img, (x_pos, y_pos), mask=logo_img)
-                    base_img = Image.alpha_composite(base_img, logo_layer)
-                except Exception as e:
-                    logger.warning(f"⚠️ Failed to apply logo overlay: {e}")
+        hex_color = primary_color.lstrip("#")
+        rgb = (0, 0, 0)
+        if len(hex_color) == 6:
+            try:
+                rgb = tuple(int(hex_color[i:i + 2], 16) for i in (0, 2, 4))
+            except ValueError:
+                rgb = (0, 0, 0)
 
-            # 4. Save and Upload
-            output = io.BytesIO()
-            base_img = base_img.convert("RGB")  # Convert back to RGB for JPEG
-            base_img.save(output, format="JPEG", quality=90)
-            processed_bytes = output.getvalue()
-            
-            # Generate a new path for the branded version
-            import time
-            filename = f"branded_{int(time.time())}.jpg"
-            
-            destination_path = f"assets/branded/{filename}"
-            if "assets/" in base_image_url:
-                try:
-                    # Attempt to keep similar path
-                    parts = base_image_url.split("assets/")
-                    if len(parts) > 1:
-                        path_suffix = parts[1].split("?")[0]  # remove query params
-                        destination_path = f"assets/{path_suffix.replace('.jpg', '')}_branded.jpg"
-                except:
-                    pass
+        overlay = Image.new("RGBA", base_img.size, (*rgb, 30))
+        base_img = Image.alpha_composite(base_img.convert("RGBA"), overlay)
 
-            return self.upload_to_gcs(processed_bytes, destination_path, "image/jpeg") or base_image_url
-        except Exception as e:
-            logger.error(f"❌ Brand overlay failed: {e}")
-            return base_image_url
+        logo_url = brand_dna.get("logo_url")
+        if logo_url:
+            try:
+                import requests
+                logo_response = requests.get(logo_url)
+                logo_img = Image.open(io.BytesIO(logo_response.content)).convert("RGBA")
+
+                target_logo_width = int(base_img.width * 0.15)
+                aspect_ratio = logo_img.height / logo_img.width
+                target_logo_height = int(target_logo_width * aspect_ratio)
+                logo_img = logo_img.resize((target_logo_width, target_logo_height), Image.Resampling.LANCZOS)
+
+                padding = int(base_img.width * 0.05)
+                x_pos = base_img.width - target_logo_width - padding
+                y_pos = padding
+
+                base_img.paste(logo_img, (x_pos, y_pos), mask=logo_img)
+            except Exception as e:
+                logger.warning(f"⚠️ Failed to apply logo overlay: {e}")
+
+        return base_img
 
     def analyze_image_context(self, keywords: list) -> str:
         """

@@ -25,26 +25,18 @@ def get_my_drafts(user: dict = Depends(verify_token)):
     Fetch current user's draft creatives (status IN [DRAFT, PENDING]).
     Returns only creatives owned by the authenticated user.
     """
-    try:
-        uid = user['uid']
-        
-        # Query creativeDrafts collection for user's own drafts
-        query = db.collection("creativeDrafts")\
-            .where("userId", "==", uid)\
-            .where("status", "in", ["DRAFT", "PENDING"])\
-            .order_by("createdAt", direction=firestore.Query.DESCENDING)\
-            .limit(50)
-        
-        drafts = []
-        for doc in query.stream():
-            data = doc.to_dict()
-            data["id"] = doc.id
-            drafts.append(data)
-        
-        return drafts
-    except Exception as e:
-        logger.error(f"❌ Fetch My Drafts Error: {e}")
-        return []
+    uid = user['uid']
+
+    query = db.collection("creativeDrafts")\
+        .where("userId", "==", uid)\
+        .where("status", "in", ["DRAFT", "PENDING"])\
+        .order_by("createdAt", direction=firestore.Query.DESCENDING)\
+        .limit(50)
+
+    docs = query.stream()
+    data = [doc.to_dict() for doc in docs]
+
+    return data
 
 
 @router.post("/{draft_id}/publish")
@@ -112,26 +104,18 @@ def get_my_published(user: dict = Depends(verify_token)):
     Fetch current user's published creatives (status = PUBLISHED).
     Returns only creatives owned by the authenticated user.
     """
-    try:
-        uid = user['uid']
-        
-        # Query creativeDrafts collection for user's published creatives
-        query = db.collection("creativeDrafts")\
-            .where("userId", "==", uid)\
-            .where("status", "==", "PUBLISHED")\
-            .order_by("publishedAt", direction=firestore.Query.DESCENDING)\
-            .limit(50)
-        
-        published = []
-        for doc in query.stream():
-            data = doc.to_dict()
-            data["id"] = doc.id
-            published.append(data)
-        
-        return published
-    except Exception as e:
-        logger.error(f"❌ Fetch My Published Error: {e}")
-        return []
+    uid = user['uid']
+
+    query = db.collection("creativeDrafts")\
+        .where("userId", "==", uid)\
+        .where("status", "==", "PUBLISHED")\
+        .order_by("publishedAt", direction=firestore.Query.DESCENDING)\
+        .limit(50)
+
+    docs = query.stream()
+    data = [doc.to_dict() for doc in docs]
+
+    return data
 
 
 @router.post("/{campaign_id}/export-zip")
