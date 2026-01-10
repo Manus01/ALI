@@ -12,6 +12,9 @@ from firebase_admin import firestore
 
 logger = logging.getLogger("ali_platform.agents.orchestrator_agent")
 
+# V4.0 Configuration
+IMAGE_GENERATION_TIMEOUT = 120  # Seconds per image
+
 # ============================================================================
 # 2025/2026 MASTER CHANNEL SPECIFICATIONS
 # Enforces dimension-accurate, platform-compliant asset generation
@@ -205,23 +208,40 @@ class OrchestratorAgent(BaseAgent):
                             "tone": tone
                         })
             
-            self._update_progress(uid, campaign_id, f"Generating {len(tasks)} Channel Assets...", 60)
+            self._update_progress(uid, campaign_id, f"Generating {len(tasks)} Channel Assets...", 40)
             
-            # Execute all tasks concurrently with Semaphore (V3.0 Stability Fix)
+            # Execute all tasks concurrently with Semaphore (V4.0 Stability Fix)
             # Limit concurrent image generations to Avoid Quota Errors (Vertex AI limit ~60/min but burst limited)
             semaphore = asyncio.Semaphore(3)  # Max 3 concurrent requests
 
-            async def semaphore_task(t):
+            async def semaphore_task(t, task_meta):
+                """V4.0: Enhanced task wrapper with timeout and error isolation."""
                 async with semaphore:
                     try:
-                        return await t
+                        result = await asyncio.wait_for(t, timeout=IMAGE_GENERATION_TIMEOUT)
+                        return result
+                    except asyncio.TimeoutError:
+                        logger.error(f"⏰ Timeout generating asset for {task_meta.get('channel')}")
+                        return {"error": "timeout", "channel": task_meta.get("channel")}
                     except Exception as e:
-                        logger.error(f"Generate task failed: {e}")
-                        return e
+                        logger.error(f"❌ Generate task failed for {task_meta.get('channel')}: {e}")
+                        return {"error": str(e), "channel": task_meta.get("channel")}
 
-            # Wrap tasks
-            safe_tasks = [semaphore_task(t) for t in tasks]
-            results = await asyncio.gather(*safe_tasks, return_exceptions=True)
+            # Wrap tasks with metadata for error context
+            safe_tasks = [semaphore_task(t, task_metadata[i]) for i, t in enumerate(tasks)]
+            
+            # Process in batches to update progress more frequently
+            results = []
+            batch_size = 3
+            for batch_start in range(0, len(safe_tasks), batch_size):
+                batch_end = min(batch_start + batch_size, len(safe_tasks))
+                batch = safe_tasks[batch_start:batch_end]
+                batch_results = await asyncio.gather(*batch, return_exceptions=True)
+                results.extend(batch_results)
+                
+                # Update progress after each batch
+                percent = 40 + int((len(results) / len(safe_tasks)) * 45)  # 40-85%
+                self._update_progress(uid, campaign_id, f"Generated {len(results)}/{len(tasks)} assets...", percent)
             
             # Map results back to structured assets
             from app.services.asset_processor import get_asset_processor
@@ -235,12 +255,25 @@ class OrchestratorAgent(BaseAgent):
                 meta = task_metadata[i]
                 channel = meta["channel"]
                 
+                # V4.0: Enhanced error detection
                 if isinstance(result, Exception):
-                    logger.error(f"❌ Failed to generate asset for {channel}: {result}")
+                    logger.error(f"❌ Exception generating asset for {channel}: {result}")
+                    assets_metadata[channel] = {**meta, "error": str(result), "status": "FAILED"}
+                    continue
+                
+                # Check for error dict from our enhanced ImageAgent
+                if isinstance(result, dict) and "error" in result:
+                    logger.warning(f"⚠️ Asset error for {channel}: {result.get('error')} - {result.get('message')}")
+                    assets_metadata[channel] = {**meta, "error": result.get('message'), "status": "FAILED"}
                     continue
                     
                 # Extract URL if dict (new format), else use result (legacy string)
                 raw_url = result.get('url') if isinstance(result, dict) else result
+                
+                if not raw_url:
+                    logger.warning(f"⚠️ No URL returned for {channel}")
+                    assets_metadata[channel] = {**meta, "error": "No URL generated", "status": "FAILED"}
+                    continue
                 
                 # FIX 1: Apply Advanced Branding
                 # Use the new apply_advanced_branding with layout styles
@@ -399,6 +432,7 @@ class OrchestratorAgent(BaseAgent):
                         draft_data = {
                             "userId": uid,
                             "campaignId": campaign_id,
+                            "campaignGoal": goal,  # V4.0: For frontend grouping by goal
                             "channel": clean_channel,
                             "thumbnailUrl": thumbnail_url,
                             "assetPayload": asset_payload,
@@ -422,6 +456,7 @@ class OrchestratorAgent(BaseAgent):
                     failed_draft = {
                         "userId": uid,
                         "campaignId": campaign_id,
+                        "campaignGoal": goal,  # V4.0: For frontend grouping by goal
                         "channel": clean_channel,
                         "thumbnailUrl": "https://placehold.co/600x400?text=Generation+Failed",
                         "assetPayload": None,
@@ -438,21 +473,37 @@ class OrchestratorAgent(BaseAgent):
                     }
                     self.db.collection('creative_drafts').document(failed_draft_id).set(failed_draft)
             
-            self._update_progress(uid, campaign_id, "Campaign Ready!", 100)
+            # V4.0: Enhanced completion notification with details
+            success_count = len([k for k, v in assets.items() if v and not isinstance(v, dict) or (isinstance(v, dict) and 'error' not in v)])
+            goal_short = f"{goal[:40]}..." if len(goal) > 40 else goal
+            self._update_progress(uid, campaign_id, f"Campaign Ready! {success_count} assets for: {goal_short}", 100)
 
         except Exception as e:
             self.handle_error(e)
             self._update_progress(uid, campaign_id, "Error in generation.", 0, failed=True)
 
     def _update_progress(self, uid, campaign_id, message, percent, failed=False):
-        # This matches the 'Notifications' system used in your Tutorials page
+        """V4.0: Enhanced notifications with title, link, and proper timestamps."""
+        # Determine status and title
+        status = "error" if failed else ("completed" if percent == 100 else "processing")
+        
+        if failed:
+            title = "❌ Campaign Failed"
+        elif percent == 100:
+            title = "🎉 Campaign Ready"
+        else:
+            title = "⚙️ Generating Campaign"
+        
         notif_ref = self.db.collection('users').document(uid).collection('notifications').document(campaign_id)
         notif_ref.set({
+            "title": title,
             "message": message,
             "progress": percent,
             "type": "campaign_progress",
             "campaign_id": campaign_id,
-            "status": "error" if failed else ("completed" if percent == 100 else "processing"),
+            "status": status,
+            "link": "/creative-studio" if percent == 100 else None,  # Navigate to results when complete
+            "created_at": firestore.SERVER_TIMESTAMP,
             "timestamp": firestore.SERVER_TIMESTAMP
         })
 

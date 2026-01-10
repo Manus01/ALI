@@ -239,3 +239,100 @@ async def regenerate_channel_asset(payload: dict, background_tasks: BackgroundTa
     except Exception as e:
         logger.error(f"Channel Regeneration Failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- WIZARD DRAFT PERSISTENCE (v4.0) ---
+
+@router.post("/save-draft")
+async def save_campaign_draft(payload: dict, user: dict = Depends(verify_token)):
+    """
+    Save campaign wizard state as a draft.
+    Allows users to resume incomplete campaigns if they leave mid-wizard.
+    
+    Also handles saving generating campaigns so users can track progress.
+    """
+    try:
+        uid = user['uid']
+        draft_id = payload.get("draft_id") or f"wizard_draft_{int(time.time())}"
+        
+        if not db:
+            raise HTTPException(status_code=503, detail="Database Unavailable")
+        
+        draft_data = {
+            "userId": uid,
+            "draftId": draft_id,
+            "goal": payload.get("goal", ""),
+            "selected_channels": payload.get("selected_channels", []),
+            "questions": payload.get("questions", []),
+            "answers": payload.get("answers", {}),
+            "wizard_stage": payload.get("stage", "input"),
+            "status": "WIZARD_DRAFT",
+            "createdAt": firestore.SERVER_TIMESTAMP,
+            "updatedAt": firestore.SERVER_TIMESTAMP
+        }
+        
+        # Preserve createdAt if updating existing draft
+        existing = db.collection('users').document(uid).collection('campaign_drafts').document(draft_id).get()
+        if existing.exists:
+            existing_data = existing.to_dict()
+            draft_data["createdAt"] = existing_data.get("createdAt")
+        
+        db.collection('users').document(uid).collection('campaign_drafts').document(draft_id).set(draft_data, merge=True)
+        logger.info(f"💾 Saved wizard draft {draft_id} for user {uid} (stage: {payload.get('stage')})")
+        
+        return {"draft_id": draft_id, "status": "saved"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Save Draft Failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/my-wizard-drafts")
+async def get_wizard_drafts(user: dict = Depends(verify_token)):
+    """
+    Fetch incomplete wizard drafts for the current user.
+    Returns drafts sorted by most recently updated.
+    """
+    try:
+        uid = user['uid']
+        
+        if not db:
+            raise HTTPException(status_code=503, detail="Database Unavailable")
+        
+        docs = db.collection('users').document(uid).collection('campaign_drafts').stream()
+        drafts = [doc.to_dict() for doc in docs]
+        
+        # Filter to WIZARD_DRAFT status only
+        drafts = [d for d in drafts if d.get("status") == "WIZARD_DRAFT"]
+        
+        # Sort by updatedAt descending (handle missing values)
+        drafts.sort(key=lambda x: x.get("updatedAt") or 0, reverse=True)
+        
+        logger.info(f"📋 Retrieved {len(drafts)} wizard drafts for user {uid}")
+        return {"drafts": drafts[:10]}
+    except Exception as e:
+        logger.error(f"Get Wizard Drafts Failed: {e}")
+        return {"drafts": []}
+
+
+@router.delete("/wizard-draft/{draft_id}")
+async def delete_wizard_draft(draft_id: str, user: dict = Depends(verify_token)):
+    """
+    Delete a wizard draft after completion or manual discard.
+    Called automatically when campaign is finalized.
+    """
+    try:
+        uid = user['uid']
+        
+        if not db:
+            raise HTTPException(status_code=503, detail="Database Unavailable")
+        
+        db.collection('users').document(uid).collection('campaign_drafts').document(draft_id).delete()
+        logger.info(f"🗑️ Deleted wizard draft {draft_id} for user {uid}")
+        
+        return {"status": "deleted", "draft_id": draft_id}
+    except Exception as e:
+        logger.error(f"Delete Wizard Draft Failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+

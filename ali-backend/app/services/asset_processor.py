@@ -591,8 +591,9 @@ class AssetProcessor:
         import time
         
         try:
-            # 1. Download Base Image
-            response = requests.get(base_image_url)
+            # 1. Download Base Image (with timeout protection)
+            response = requests.get(base_image_url, timeout=30)
+            response.raise_for_status()
             base_img = Image.open(io.BytesIO(response.content)).convert("RGBA")
             
             # Extract brand data

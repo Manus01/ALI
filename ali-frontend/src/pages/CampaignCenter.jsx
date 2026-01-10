@@ -41,6 +41,7 @@ export default function CampaignCenter() {
     const [rejectionFeedback, setRejectionFeedback] = useState('');
     const [isRegenerating, setIsRegenerating] = useState(false);
     const [approvedChannels, setApprovedChannels] = useState([]);
+    const [showAllApprovedModal, setShowAllApprovedModal] = useState(false);
 
     // --- BRAND DNA STATES (Merged from BrandOnboarding) ---
     const [dnaStep, setDnaStep] = useState('input'); // input, loading, results
@@ -70,6 +71,11 @@ export default function CampaignCenter() {
     const [publishingId, setPublishingId] = useState(null);
     const [remixingId, setRemixingId] = useState(null); // New for Remix
     const [viewMode, setViewMode] = useState('wizard'); // 'wizard' or 'library'
+
+    // --- WIZARD DRAFT PERSISTENCE (v4.0) ---
+    const [currentDraftId, setCurrentDraftId] = useState(null);
+    const [wizardDrafts, setWizardDrafts] = useState([]);
+    const autoSaveTimeoutRef = useRef(null);
 
     // --- CHANNEL CONFIGURATIONS (v3.0) ---
     const AVAILABLE_CHANNELS = [
@@ -117,12 +123,78 @@ export default function CampaignCenter() {
         }
     }, []);
 
-    // Fetch user's draft creatives on mount
+    // --- WIZARD DRAFT PERSISTENCE FUNCTIONS (v4.0) ---
+    const fetchWizardDrafts = useCallback(async () => {
+        try {
+            const res = await api.get('/campaign/my-wizard-drafts');
+            setWizardDrafts(res.data.drafts || []);
+        } catch (err) {
+            console.warn("Could not fetch wizard drafts", err);
+        }
+    }, []);
+
+    // Auto-save wizard state (debounced)
+    const autoSaveWizardState = useCallback(async () => {
+        if (!currentUser) return;
+
+        // Only save if there's meaningful data
+        if (!goal && selectedChannels.length === 0) return;
+
+        try {
+            const res = await api.post('/campaign/save-draft', {
+                draft_id: currentDraftId,
+                goal,
+                selected_channels: selectedChannels,
+                questions,
+                answers,
+                stage
+            });
+            if (!currentDraftId) {
+                setCurrentDraftId(res.data.draft_id);
+            }
+            console.log('💾 Auto-saved wizard state');
+        } catch (err) {
+            console.warn("Auto-save failed:", err);
+        }
+    }, [currentUser, goal, selectedChannels, questions, answers, stage, currentDraftId]);
+
+    // Debounce trigger for auto-save (3 seconds)
+    useEffect(() => {
+        // Don't auto-save during generating or results stages
+        if (stage !== 'generating' && stage !== 'results' && stage !== 'error') {
+            clearTimeout(autoSaveTimeoutRef.current);
+            autoSaveTimeoutRef.current = setTimeout(autoSaveWizardState, 3000);
+        }
+        return () => clearTimeout(autoSaveTimeoutRef.current);
+    }, [goal, selectedChannels, answers, stage, autoSaveWizardState]);
+
+    // Resume a wizard draft
+    const resumeWizardDraft = (draft) => {
+        setGoal(draft.goal || '');
+        setSelectedChannels(draft.selected_channels || []);
+        setQuestions(draft.questions || []);
+        setAnswers(draft.answers || {});
+        setCurrentDraftId(draft.draftId);
+        setStage(draft.wizard_stage || 'input');
+    };
+
+    // Delete a wizard draft
+    const deleteWizardDraft = async (draftId) => {
+        try {
+            await api.delete(`/campaign/wizard-draft/${draftId}`);
+            setWizardDrafts(prev => prev.filter(d => d.draftId !== draftId));
+        } catch (err) {
+            console.warn("Failed to delete wizard draft", err);
+        }
+    };
+
+    // Fetch user's draft creatives and wizard drafts on mount
     useEffect(() => {
         if (currentUser && hasBrandDna) {
             fetchUserDrafts();
+            fetchWizardDrafts();
         }
-    }, [currentUser, hasBrandDna, fetchUserDrafts]);
+    }, [currentUser, hasBrandDna, fetchUserDrafts, fetchWizardDrafts]);
 
     const handleApproveAndPublish = async (draftId) => {
         setPublishingId(draftId);
@@ -413,12 +485,18 @@ export default function CampaignCenter() {
             });
             setCampaignId(res.data.campaign_id);
             hasFinalized.current = true;
+
+            // V4.0: Delete wizard draft after successful finalization
+            if (currentDraftId) {
+                deleteWizardDraft(currentDraftId);
+                setCurrentDraftId(null);
+            }
         } catch (err) {
             console.error("Finalization failed", err);
             isFinalizing.current = false;
             setStage('error');
         }
-    }, [goal, answers, selectedChannels]);
+    }, [goal, answers, selectedChannels, currentDraftId, deleteWizardDraft]);
 
     // --- REVIEW FEED HANDLERS (v3.0) ---
 
@@ -431,7 +509,13 @@ export default function CampaignCenter() {
             const draftId = `draft_${campaignId}_${cleanChannel}`;
 
             await api.post(`/api/creatives/${draftId}/publish`);
-            setApprovedChannels(prev => [...prev, channel]);
+            const newApproved = [...approvedChannels, channel];
+            setApprovedChannels(newApproved);
+
+            // V4.0: Check if all assets are now approved
+            if (newApproved.length === selectedChannels.length) {
+                setShowAllApprovedModal(true);
+            }
         } catch (err) {
             console.error("Approval failed", err);
             alert("Failed to approve asset: " + (err.response?.data?.detail || err.message));
@@ -938,6 +1022,57 @@ export default function CampaignCenter() {
                 </div>
             )}
 
+            {/* WIZARD DRAFTS SECTION (v4.0) - Show incomplete campaigns */}
+            {viewMode === 'wizard' && wizardDrafts.length > 0 && stage === 'input' && (
+                <div className="bg-gradient-to-br from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 p-6 rounded-[2rem] border border-blue-200 dark:border-blue-800 mt-8">
+                    <div className="flex justify-between items-center mb-4">
+                        <div>
+                            <h3 className="text-md font-black text-slate-800 dark:text-white flex items-center gap-2">
+                                <FaEdit className="text-blue-500" /> Continue Your Campaign
+                            </h3>
+                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                                Pick up where you left off
+                            </p>
+                        </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {wizardDrafts.slice(0, 4).map(draft => (
+                            <div
+                                key={draft.draftId}
+                                className="bg-white dark:bg-slate-800 p-5 rounded-2xl border border-slate-100 dark:border-slate-700 flex justify-between items-center group hover:border-blue-400 dark:hover:border-blue-600 transition-all"
+                            >
+                                <button
+                                    onClick={() => resumeWizardDraft(draft)}
+                                    className="text-left flex-1"
+                                >
+                                    <h4 className="font-bold text-slate-800 dark:text-white truncate group-hover:text-blue-600 dark:group-hover:text-blue-400 max-w-[200px]">
+                                        {draft.goal || "Untitled Campaign"}
+                                    </h4>
+                                    <p className="text-xs text-slate-400 mt-1">
+                                        Stage: {draft.wizard_stage} • {draft.selected_channels?.length || 0} channels
+                                    </p>
+                                </button>
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={() => deleteWizardDraft(draft.draftId)}
+                                        className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all"
+                                        title="Discard draft"
+                                    >
+                                        <FaTimes />
+                                    </button>
+                                    <button
+                                        onClick={() => resumeWizardDraft(draft)}
+                                        className="px-3 py-2 text-xs font-bold text-blue-600 bg-blue-50 dark:bg-blue-900/30 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-all"
+                                    >
+                                        Resume →
+                                    </button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             {/* STAGE 1.5: CHANNEL SELECTOR (v3.0) */}
             {stage === 'channels' && (
                 <div className="bg-white dark:bg-slate-800 p-12 border border-slate-100 dark:border-slate-700 shadow-xl rounded-[3rem] animate-slide-up">
@@ -1049,18 +1184,26 @@ export default function CampaignCenter() {
                 <div className="flex flex-col items-center justify-center py-20 animate-fade-in text-center">
                     <div className="relative w-56 h-56 mb-10">
                         <svg className="w-full h-full transform -rotate-90">
-                            <circle cx="112" cy="112" r="90" stroke="currentColor" strokeWidth="16" fill="transparent" className="text-slate-100" />
+                            <circle cx="112" cy="112" r="90" stroke="currentColor" strokeWidth="16" fill="transparent" className="text-slate-100 dark:text-slate-700" />
                             <circle cx="112" cy="112" r="90" stroke="currentColor" strokeWidth="16" fill="transparent"
                                 strokeDasharray={565.48} strokeDashoffset={565.48 - (565.48 * progress.percent) / 100}
                                 style={{ color: primaryColor }}
                                 className="transition-all duration-1000 ease-in-out" strokeLinecap="round" />
                         </svg>
-                        <div className="absolute inset-0 flex items-center justify-center font-black text-5xl text-slate-800 tracking-tighter">
+                        <div className="absolute inset-0 flex items-center justify-center font-black text-5xl text-slate-800 dark:text-white tracking-tighter">
                             {progress.percent}%
                         </div>
                     </div>
-                    <h3 className="text-2xl font-black text-slate-800 mb-3 tracking-tight">{progress.message}</h3>
-                    <p className="text-slate-400 max-w-xs mx-auto font-medium">Your brand assets are being stamped with your DNA. Notification will arrive shortly.</p>
+                    <h3 className="text-2xl font-black text-slate-800 dark:text-white mb-3 tracking-tight">{progress.message}</h3>
+                    <p className="text-slate-400 max-w-xs mx-auto font-medium mb-8">Your brand assets are being stamped with your DNA. Notification will arrive shortly.</p>
+
+                    {/* V4.0: Background Generation Notice */}
+                    <div className="bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-2xl p-4 text-center max-w-md">
+                        <p className="text-blue-700 dark:text-blue-400 text-sm font-medium">
+                            <FaInfoCircle className="inline mr-2" />
+                            You can leave this page safely. Generation continues in the background and your assets will appear in drafts when ready.
+                        </p>
+                    </div>
                 </div>
             )}
 
@@ -1193,8 +1336,16 @@ export default function CampaignCenter() {
                                             </>
                                         )}
                                         {isApproved && (
-                                            <div className="flex items-center gap-2 text-green-600 dark:text-green-400 font-bold">
-                                                <FaCheckCircle /> Locked & Approved
+                                            <div className="flex items-center gap-3">
+                                                <button
+                                                    onClick={() => window.open(`/api/creatives/draft_${campaignId}_${channelId.toLowerCase().replace(/ /g, '_')}/download`, '_blank')}
+                                                    className="px-4 py-2 rounded-xl font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 transition-all flex items-center gap-2 text-sm"
+                                                >
+                                                    <FaDownload /> Download
+                                                </button>
+                                                <div className="flex items-center gap-2 text-green-600 dark:text-green-400 font-bold">
+                                                    <FaCheckCircle /> Approved
+                                                </div>
                                             </div>
                                         )}
                                     </div>
@@ -1278,6 +1429,38 @@ export default function CampaignCenter() {
                             >
                                 {isRecycling ? <FaSpinner className="animate-spin" /> : <FaSyncAlt />}
                                 {isRecycling ? "Orchestrating..." : "Execute Transformation"}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* ALL APPROVED MODAL (v4.0) - Prompt for ZIP export */}
+            {showAllApprovedModal && (
+                <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-50 flex items-center justify-center p-6">
+                    <div className="bg-white dark:bg-slate-800 rounded-[3rem] w-full max-w-md overflow-hidden shadow-2xl animate-scale-up border border-green-200 dark:border-green-800">
+                        <div className="p-8 text-center bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20">
+                            <div className="w-20 h-20 bg-green-100 dark:bg-green-900/50 rounded-full flex items-center justify-center mx-auto mb-6">
+                                <FaCheckCircle className="text-4xl text-green-600 dark:text-green-400" />
+                            </div>
+                            <h3 className="text-2xl font-black text-slate-800 dark:text-white mb-2">All Assets Approved! 🎉</h3>
+                            <p className="text-slate-500 dark:text-slate-400 text-sm mb-6">
+                                You've approved all {approvedChannels.length} assets in this campaign.
+                            </p>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <button
+                                onClick={() => { handleExportZip(); setShowAllApprovedModal(false); }}
+                                style={{ backgroundColor: primaryColor }}
+                                className="w-full py-4 text-white rounded-2xl font-black flex items-center justify-center gap-3 shadow-xl hover:scale-[1.02] transition-all"
+                            >
+                                <FaDownload /> Download ZIP (All Assets)
+                            </button>
+                            <button
+                                onClick={() => setShowAllApprovedModal(false)}
+                                className="w-full py-3 text-slate-600 dark:text-slate-400 rounded-2xl font-bold bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 transition-all"
+                            >
+                                Continue Reviewing
                             </button>
                         </div>
                     </div>

@@ -18,6 +18,11 @@ logger = logging.getLogger("ali_platform.services.image_agent")
 BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "ali-platform-prod-73019.firebasestorage.app")
 IMAGE_MODEL = "imagen-4.0-generate-001"  # Upgraded to Imagen 4.0 GA (Jan 2025)
 
+# V4.0 Enhanced Retry Configuration
+IMAGE_GENERATION_TIMEOUT = int(os.getenv("IMAGE_GENERATION_TIMEOUT", "120"))  # 2 minutes per image
+MAX_RETRIES = int(os.getenv("IMAGE_MAX_RETRIES", "5"))  # Increased from 3 to 5
+RETRY_BASE_DELAY = float(os.getenv("IMAGE_RETRY_BASE_DELAY", "2.0"))  # Exponential base
+
 
 class ImageAgent:
     def __init__(self):
@@ -105,11 +110,15 @@ class ImageAgent:
             return None
         
         request_id = str(uuid.uuid4())
+        start_time = time.time()
         
-        # RETRY LOGIC (Max 3 retries, exponential backoff)
-        max_retries = 3
-        for attempt in range(max_retries + 1):
+        # V4.0: Enhanced retry logic with configurable retries
+        for attempt in range(MAX_RETRIES):
             try:
+                # Check if we've exceeded total timeout
+                if time.time() - start_time > IMAGE_GENERATION_TIMEOUT:
+                    logger.error(f"❌ Total timeout exceeded for request {request_id}")
+                    return {"error": "timeout", "message": "Generation timeout exceeded"}
                 # 1. Pydantic Fix: String-Strict Validation
                 clean_prompt = prompt
                 if isinstance(clean_prompt, list):
@@ -180,35 +189,51 @@ class ImageAgent:
 
             except (ValueError, TypeError) as e:
                 logger.error(f"❌ Input Validation Error (Request ID: {request_id}): {e}")
-                return None
+                return {"error": "validation", "message": str(e)}
 
             except ResourceExhausted as e:
-                logger.warning(f"⚠️ Rate Limit Hit (Request ID: {request_id}): {e}")
-                if attempt < max_retries:
-                    wait_time = 2 ** attempt
-                    logger.info(f"⏳ Retrying in {wait_time}s...")
+                logger.warning(f"⚠️ Quota Hit (Attempt {attempt+1}/{MAX_RETRIES}, Request ID: {request_id}): {e}")
+                if attempt < MAX_RETRIES - 1:
+                    wait_time = RETRY_BASE_DELAY ** (attempt + 1)
+                    logger.info(f"⏳ Quota backoff: waiting {wait_time:.1f}s...")
                     time.sleep(wait_time)
                     continue
                 else:
-                    logger.error(f"❌ Max Retries Exceeded for Request {request_id}")
-                    return None
+                    logger.error(f"❌ Quota exhausted after {MAX_RETRIES} attempts for request {request_id}")
+                    return {"error": "quota_exhausted", "message": "Rate limit exceeded after max retries"}
 
             except Exception as e:
-                # Check for Rate Limit / Quota errors in generic exception
                 error_str = str(e).lower()
-                if "429" in error_str or "quota" in error_str or "resource exhausted" in error_str:
-                    if attempt < max_retries:
-                        wait_time = 2 ** attempt
-                        logger.warning(f"⚠️ Rate Limit Hit (Generic Catch) (Request ID: {request_id}). Retrying in {wait_time}s...")
+                
+                # Content Policy - don't retry, return error info
+                if "blocked" in error_str or "safety" in error_str or "policy" in error_str:
+                    logger.warning(f"⚠️ Content policy blocked for request {request_id}: {e}")
+                    return {"error": "content_policy", "message": "Content blocked by safety policy"}
+                
+                # Timeout or Network - retry with backoff
+                if "timeout" in error_str or "deadline" in error_str or "unavailable" in error_str:
+                    if attempt < MAX_RETRIES - 1:
+                        wait_time = RETRY_BASE_DELAY ** attempt
+                        logger.warning(f"⚠️ Timeout/Network error (Attempt {attempt+1}), retrying in {wait_time:.1f}s: {e}")
                         time.sleep(wait_time)
                         continue
                 
+                # Rate Limit - retry with backoff
+                if "429" in error_str or "quota" in error_str or "resource exhausted" in error_str:
+                    if attempt < MAX_RETRIES - 1:
+                        wait_time = RETRY_BASE_DELAY ** (attempt + 1)
+                        logger.warning(f"⚠️ Rate Limit Hit (Generic, Attempt {attempt+1}): {e}")
+                        time.sleep(wait_time)
+                        continue
+                
+                # Unknown error - log and fail
                 logger.error(f"❌ Image Generation Error (Request ID: {request_id}): {e}")
                 traceback.print_exc()
-                return None
+                return {"error": "generation_failed", "message": str(e)}
         
         # All retries exhausted
-        return None
+        logger.error(f"❌ All {MAX_RETRIES} retries exhausted for request {request_id}")
+        return {"error": "max_retries", "message": "All generation attempts failed"}
 
 
 async def generate_image_with_retry(prompt: str, reference_image_uri: Optional[str] = None, brand_dna: Optional[str] = None, folder: str = "general", max_retries: int = 3) -> Optional[dict]:

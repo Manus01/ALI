@@ -8,6 +8,11 @@ Each template includes: Film grain overlay, GSAP animations, advanced CSS effect
 
 # CDN Links
 GSAP_CDN = "https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"
+GSAP_CDN_FALLBACK = "https://cdn.jsdelivr.net/npm/gsap@3.12.2/dist/gsap.min.js"
+
+def get_gsap_script_tag() -> str:
+    """Generate GSAP script tag with fallback for CDN failures."""
+    return f'''<script src="{GSAP_CDN}" onerror="this.onerror=null;this.src='{GSAP_CDN_FALLBACK}'"></script>'''
 
 # Base64-encoded noise texture for film grain (16x16 repeating pattern)
 GRAIN_TEXTURE = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAACXBIWXMAAAsTAAALEwEAmpwYAAABN0lEQVQ4jYWSMU7DQBBF/2zsGImGgoKCgpqSmpaOK3ABLkFJQUVBQcsFuAAVBR0SBQ0FDQ0NNfZis/PZ+Cd2bCXDSKvdnf/nzexsFTPDJpSUMCIQARGBCIgIREAEGPm4HwYhBEIIhBAItfq1vgwCwTQNJZYkeSRJnkCSZJCE0cg0TUMppZRSSillqFq9Wl+5XIpxHMdxvF7XdV3X9SJJkkSSgBCCEALDMAwhhFKqVqvVavW6rheLxWKxWCTkPI9EIpFIJBLxPM9hGIZhmGEYhmGapmmap"
