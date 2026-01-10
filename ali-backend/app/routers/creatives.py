@@ -23,17 +23,45 @@ def get_my_drafts(user_id: str = Depends(get_current_user_id)) -> List[dict]:
     Returns only creatives owned by the authenticated user.
     
     Note: Filtering and sorting done in Python to avoid Firestore compound index requirements.
+    V4.0: Auto-flags stale PENDING drafts as TIMED_OUT after 30 minutes.
     """
+    from datetime import datetime, timedelta, timezone
+    
     try:
         # Query only by user_id to avoid compound index requirement
-        docs = db.collection("creative_drafts").where("userId", "==", user_id).stream()
+        docs = list(db.collection("creative_drafts").where("userId", "==", user_id).stream())
         
         # Convert to list of dicts - V4.0 FIX: Include document ID!
-        all_docs = [{**doc.to_dict(), "id": doc.id} for doc in docs]
+        all_docs = [{**doc.to_dict(), "id": doc.id, "_doc_ref": doc.reference} for doc in docs]
         
-        # V3.1 FIX: Return ALL drafts (including FAILED) so users can see failed generations
-        # No status filtering - users need to see what failed to debug issues
-        drafts = all_docs
+        # V4.0: Auto-flag stale PENDING drafts as TIMED_OUT (30 min timeout)
+        now = datetime.now(timezone.utc)
+        timeout_threshold = timedelta(minutes=30)
+        
+        for draft in all_docs:
+            if draft.get("status") == "PENDING":
+                created_at = draft.get("createdAt")
+                # Firestore timestamps need conversion
+                if created_at and hasattr(created_at, 'timestamp'):
+                    created_time = datetime.fromtimestamp(created_at.timestamp(), tz=timezone.utc)
+                    if now - created_time > timeout_threshold:
+                        # Auto-flag as TIMED_OUT
+                        draft["status"] = "TIMED_OUT"
+                        draft["_original_status"] = "PENDING"
+                        draft["_timeout_reason"] = "Generation exceeded 30 minute timeout"
+                        
+                        # Update Firestore so this persists
+                        try:
+                            draft["_doc_ref"].update({
+                                "status": "TIMED_OUT",
+                                "timeoutAt": now
+                            })
+                            logger.info(f"⏰ Auto-flagged stale PENDING draft as TIMED_OUT: {draft['id']}")
+                        except Exception as update_err:
+                            logger.warning(f"Could not update stale draft status: {update_err}")
+        
+        # Remove internal reference from response
+        drafts = [{k: v for k, v in d.items() if not k.startswith('_')} for d in all_docs]
         
         # Sort in Python by createdAt descending (use 0 for missing values for proper sorting)
         drafts.sort(key=lambda x: x.get("createdAt") or 0, reverse=True)
@@ -289,9 +317,18 @@ async def regenerate_failed_creative(draft_id: str, user_id: str = Depends(get_c
         if data.get("userId") != user_id:
             raise HTTPException(status_code=403, detail="Not authorized to regenerate this creative")
         
-        # Only regenerate FAILED assets
-        if data.get("status") != "FAILED":
-            raise HTTPException(status_code=400, detail="Only failed assets can be regenerated")
+        # V4.0: Allow regeneration for FAILED/TIMED_OUT OR DRAFT with missing asset URL
+        status = data.get("status")
+        asset_url = data.get("asset_url") or data.get("assetPayload")
+        
+        # Can regenerate if: FAILED/TIMED_OUT status, OR DRAFT/PENDING with no valid URL
+        can_regenerate = (
+            status in ["FAILED", "TIMED_OUT"] or 
+            (status in ["DRAFT", "PENDING", None] and not asset_url)
+        )
+        
+        if not can_regenerate:
+            raise HTTPException(status_code=400, detail="Only failed or incomplete assets can be regenerated")
         
         # Update status to PENDING
         from firebase_admin import firestore as fs

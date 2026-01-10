@@ -1368,9 +1368,10 @@ export default function CampaignCenter() {
                                                     <img src={assetUrl} alt={channel.name} className="w-full h-full object-cover" />
                                                 </div>
                                             ) : (
-                                                /* LOADING / EMPTY */
-                                                <div className="aspect-video bg-slate-100 dark:bg-slate-700 rounded-2xl flex items-center justify-center">
-                                                    <FaSpinner className="text-3xl text-slate-300 dark:text-slate-500 animate-spin" />
+                                                /* FAILED / EMPTY - Show Failed State (V4.0) */
+                                                <div className="aspect-video bg-red-50 dark:bg-red-900/20 rounded-2xl flex flex-col items-center justify-center border border-red-200 dark:border-red-800 gap-2">
+                                                    <FaExclamationTriangle className="text-3xl text-red-400" />
+                                                    <p className="text-red-500 text-xs font-bold uppercase">Generation Failed</p>
                                                 </div>
                                             )}
                                         </div>
