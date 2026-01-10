@@ -4,7 +4,6 @@ Creative drafts endpoints for authenticated users.
 from typing import List
 
 from fastapi import APIRouter, Depends, HTTPException
-from google.cloud import firestore
 
 from app.core.security import db, get_current_user_id
 
@@ -14,20 +13,31 @@ router = APIRouter()
 @router.get("/my-drafts")
 def get_my_drafts(user_id: str = Depends(get_current_user_id)) -> List[dict]:
     """
-    Fetch current user's draft creatives (status IN [DRAFT, PENDING]).
+    Fetch current user's draft creatives (status IN [DRAFT, PENDING] or missing).
     Returns only creatives owned by the authenticated user.
+    
+    Note: Filtering and sorting done in Python to avoid Firestore compound index requirements.
     """
     try:
-        query = (
-            db.collection("creativeDrafts")
-            .where("userId", "==", user_id)
-            .where("status", "in", ["DRAFT", "PENDING"])
-            .order_by("createdAt", direction=firestore.Query.DESCENDING)
-            .limit(50)
-        )
-        return [doc.to_dict() for doc in query.stream()]
+        # Query only by user_id to avoid compound index requirement
+        docs = db.collection("creativeDrafts").where("userId", "==", user_id).stream()
+        
+        # Convert to list of dicts
+        all_docs = [doc.to_dict() for doc in docs]
+        
+        # Filter in Python: keep items where status is DRAFT, PENDING, or missing
+        drafts = [
+            d for d in all_docs
+            if d.get("status") in ["DRAFT", "PENDING", None] or "status" not in d
+        ]
+        
+        # Sort in Python by createdAt descending (handle missing values safely)
+        drafts.sort(key=lambda x: x.get("createdAt", ""), reverse=True)
+        
+        # Return limited results
+        return drafts[:50]
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Error fetching drafts: {e}")
         return []
 
 
@@ -36,16 +46,24 @@ def get_my_published(user_id: str = Depends(get_current_user_id)) -> List[dict]:
     """
     Fetch current user's published creatives (status = PUBLISHED).
     Returns only creatives owned by the authenticated user.
+    
+    Note: Filtering and sorting done in Python to avoid Firestore compound index requirements.
     """
     try:
-        query = (
-            db.collection("creativeDrafts")
-            .where("userId", "==", user_id)
-            .where("status", "==", "PUBLISHED")
-            .order_by("publishedAt", direction=firestore.Query.DESCENDING)
-            .limit(50)
-        )
-        return [doc.to_dict() for doc in query.stream()]
+        # Query only by user_id to avoid compound index requirement
+        docs = db.collection("creativeDrafts").where("userId", "==", user_id).stream()
+        
+        # Convert to list of dicts
+        all_docs = [doc.to_dict() for doc in docs]
+        
+        # Filter in Python: keep only PUBLISHED items
+        published = [d for d in all_docs if d.get("status") == "PUBLISHED"]
+        
+        # Sort in Python by publishedAt descending (handle missing values safely)
+        published.sort(key=lambda x: x.get("publishedAt", ""), reverse=True)
+        
+        # Return limited results
+        return published[:50]
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"Error fetching published: {e}")
         return []
