@@ -38,7 +38,7 @@ export default function CampaignCenter() {
     const [channelConfirmed, setChannelConfirmed] = useState(false);
 
     // --- REVIEW FEED STATES (v3.0) ---
-    const [rejectionModal, setRejectionModal] = useState({ open: false, channel: null, assetId: null });
+    const [rejectionModal, setRejectionModal] = useState({ open: false, channel: null, formatLabel: null, draftId: null, assetKey: null });
     const [rejectionFeedback, setRejectionFeedback] = useState('');
     const [isRegenerating, setIsRegenerating] = useState(false);
     const [approvedChannels, setApprovedChannels] = useState([]);
@@ -397,6 +397,10 @@ export default function CampaignCenter() {
         };
     }, [stage, campaignId, currentUser, fetchFinalResults]);
 
+    useEffect(() => {
+        setApprovedChannels([]);
+    }, [campaignId]);
+
     // --- BRAND DNA HANDLERS ---
     const handleLogoChange = (e) => {
         const file = e.target.files[0];
@@ -545,19 +549,21 @@ export default function CampaignCenter() {
     // --- REVIEW FEED HANDLERS (v3.0) ---
 
     // Approve a channel's asset
-    const handleApproveAsset = async (channel) => {
+    const handleApproveAsset = async (channel, formatLabel) => {
         if (!campaignId) return;
         try {
-            // FIX: Consistent ID generation logic (lower + spaces to underscores only)
             const cleanChannel = channel.toLowerCase().replace(/ /g, "_");
-            const draftId = `draft_${campaignId}_${cleanChannel}`;
+            const draftId = formatLabel && !['primary', 'feed'].includes(formatLabel)
+                ? `draft_${campaignId}_${cleanChannel}_${formatLabel}`
+                : `draft_${campaignId}_${cleanChannel}`;
 
             await api.post(`/api/creatives/${draftId}/publish`);
-            const newApproved = [...approvedChannels, channel];
+            const approvalKey = formatLabel ? `${cleanChannel}_${formatLabel}` : cleanChannel;
+            const newApproved = [...approvedChannels, approvalKey];
             setApprovedChannels(newApproved);
 
-            // V4.0: Check if all assets are now approved
-            if (newApproved.length === selectedChannels.length) {
+            const totalAssets = getTotalAssetCount();
+            if (totalAssets > 0 && newApproved.length >= totalAssets) {
                 setShowAllApprovedModal(true);
             }
         } catch (err) {
@@ -566,9 +572,11 @@ export default function CampaignCenter() {
         }
     };
 
-    const handleOpenRejection = (channel) => {
+    const handleOpenRejection = (channel, formatLabel, draftId, assetKey) => {
         const cleanChannel = channel.toLowerCase().replace(/ /g, "_").replace(/-/g, "_");
-        setRejectionModal({ open: true, channel, assetId: `draft_${campaignId}_${cleanChannel}` });
+        const resolvedDraftId = draftId || `draft_${campaignId}_${cleanChannel}`;
+        const resolvedAssetKey = assetKey || cleanChannel;
+        setRejectionModal({ open: true, channel, formatLabel, draftId: resolvedDraftId, assetKey: resolvedAssetKey });
         setRejectionFeedback('');
     };
 
@@ -580,12 +588,13 @@ export default function CampaignCenter() {
             await api.post('/campaign/regenerate', {
                 campaign_id: campaignId,
                 channel: rejectionModal.channel,
-                feedback: rejectionFeedback
+                feedback: rejectionFeedback,
+                format_label: rejectionModal.formatLabel || "primary"
             });
             // Refresh results
             const res = await api.get(`/campaign/results/${campaignId}`);
             setFinalAssets(res.data);
-            setRejectionModal({ open: false, channel: null, assetId: null });
+            setRejectionModal({ open: false, channel: null, formatLabel: null, draftId: null, assetKey: null });
             setRejectionFeedback('');
         } catch (err) {
             console.error("Regeneration failed", err);
@@ -637,6 +646,41 @@ export default function CampaignCenter() {
             setIsRecycling(false);
         }
     };
+
+    const getDraftIdForFormat = useCallback((channelId, formatLabel) => {
+        const cleanChannel = channelId.toLowerCase().replace(/ /g, "_");
+        return formatLabel && !['primary', 'feed'].includes(formatLabel)
+            ? `draft_${campaignId}_${cleanChannel}_${formatLabel}`
+            : `draft_${campaignId}_${cleanChannel}`;
+    }, [campaignId]);
+
+    const getChannelAssets = useCallback((channelId) => {
+        if (!finalAssets?.assets) return [];
+        const channelPrefix = `${channelId}_`;
+        const assets = Object.entries(finalAssets.assets)
+            .filter(([key]) => key === channelId || key.startsWith(channelPrefix))
+            .map(([key, url]) => {
+                const formatLabel = key === channelId ? "primary" : key.replace(channelPrefix, "");
+                const draftId = getDraftIdForFormat(channelId, formatLabel);
+                return { assetKey: key, formatLabel, url, draftId };
+            });
+        const formatOrder = ["primary", "feed", "story"];
+        return assets.sort((a, b) => {
+            const aIndex = formatOrder.indexOf(a.formatLabel);
+            const bIndex = formatOrder.indexOf(b.formatLabel);
+            if (aIndex === -1 && bIndex === -1) {
+                return a.formatLabel.localeCompare(b.formatLabel);
+            }
+            if (aIndex === -1) return 1;
+            if (bIndex === -1) return -1;
+            return aIndex - bIndex;
+        });
+    }, [finalAssets, getDraftIdForFormat]);
+
+    const getTotalAssetCount = useCallback(() => {
+        if (!finalAssets?.assets || !selectedChannels.length) return 0;
+        return selectedChannels.reduce((count, channelId) => count + getChannelAssets(channelId).length, 0);
+    }, [finalAssets, selectedChannels, getChannelAssets]);
 
     // --- RENDER: BRAND DNA CHECK ---
     // If logic detects missing brand DNA, redirect to the dedicated onboarding page
@@ -1296,7 +1340,7 @@ export default function CampaignCenter() {
                             </div>
                             <h3 className="text-2xl font-black text-slate-800 dark:text-white tracking-tight">{finalAssets.blueprint?.theme || 'Campaign Assets'}</h3>
                             <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">
-                                {selectedChannels.length} channels • {approvedChannels.length} approved
+                                {selectedChannels.length} channels • {approvedChannels.length}/{getTotalAssetCount()} approved
                             </p>
                         </div>
                         <button
@@ -1312,28 +1356,19 @@ export default function CampaignCenter() {
                     <div className="space-y-6 pr-2">
                         {selectedChannels.map(channelId => {
                             const channel = AVAILABLE_CHANNELS.find(c => c.id === channelId) || { name: channelId, icon: '📊' };
-                            const assetUrl = finalAssets.assets?.[channelId];
+                            const channelAssets = getChannelAssets(channelId);
                             const channelBlueprint = finalAssets.blueprint?.[channelId] || {};
-                            const isApproved = approvedChannels.includes(channelId);
                             const textCopy = channelBlueprint.caption || channelBlueprint.body ||
                                 (channelBlueprint.headlines ? channelBlueprint.headlines.join(' | ') : '') ||
                                 channelBlueprint.video_script || '';
 
                             return (
-                                <div key={channelId} className={`bg-white dark:bg-slate-800 rounded-[2rem] border-2 transition-all ${isApproved
-                                    ? 'border-green-200 dark:border-green-800 shadow-lg shadow-green-100 dark:shadow-green-900/20'
-                                    : 'border-slate-100 dark:border-slate-700 shadow-sm'
-                                    }`}>
+                                <div key={channelId} className="bg-white dark:bg-slate-800 rounded-[2rem] border-2 border-slate-100 dark:border-slate-700 shadow-sm">
                                     {/* Channel Header */}
                                     <div className="flex items-center justify-between p-6 border-b border-slate-100 dark:border-slate-700">
                                         <div className="flex items-center gap-3">
                                             <span className="text-2xl">{channel.icon}</span>
                                             <span className="font-black text-slate-800 dark:text-white text-lg">{channel.name}</span>
-                                            {isApproved && (
-                                                <span className="px-3 py-1 bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-400 rounded-full text-xs font-bold uppercase">
-                                                    Approved
-                                                </span>
-                                            )}
                                         </div>
                                         <div className="text-xs text-slate-400 dark:text-slate-500">
                                             {finalAssets.assets_metadata?.[channelId]?.size || 'Standard'}
@@ -1342,38 +1377,111 @@ export default function CampaignCenter() {
 
                                     {/* Split View: Asset + Copy */}
                                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6">
-                                        {/* Visual Asset */}
                                         <div className="space-y-4">
-                                            <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Visual Asset</p>
+                                            <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Visual Assets</p>
+                                            <div className="space-y-6">
+                                                {channelAssets.map(({ assetKey, formatLabel, url, draftId }) => {
+                                                    const approvalKey = `${channelId}_${formatLabel}`;
+                                                    const isApproved = approvedChannels.includes(approvalKey);
+                                                    return (
+                                                        <div key={assetKey} className="space-y-3">
+                                                            <div className="flex items-center justify-between">
+                                                                <span className="text-xs font-bold uppercase tracking-wider text-slate-400">{formatLabel}</span>
+                                                                {isApproved && (
+                                                                    <span className="text-[10px] font-black text-green-600 uppercase">Approved</span>
+                                                                )}
+                                                            </div>
+                                                            {Array.isArray(url) ? (
+                                                                <CarouselViewer slides={url} channelName={`${channel.name} ${formatLabel}`} />
+                                                            ) : (typeof url === 'string' && (url.endsWith('.html') || url.startsWith('data:text/html'))) ? (
+                                                                <div className="aspect-video bg-black rounded-2xl overflow-hidden border border-slate-100 dark:border-slate-600 relative group">
+                                                                    <iframe
+                                                                        src={url}
+                                                                        title={`${channel.name} Motion`}
+                                                                        className="w-full h-full border-0 pointer-events-none"
+                                                                    />
+                                                                    <div className="absolute bottom-2 right-2 bg-black/60 text-white text-[10px] uppercase font-bold px-2 py-1 rounded backdrop-blur">
+                                                                        Motion
+                                                                    </div>
+                                                                </div>
+                                                            ) : url ? (
+                                                                <div className="aspect-video bg-slate-50 dark:bg-slate-700 rounded-2xl overflow-hidden border border-slate-100 dark:border-slate-600">
+                                                                    <img src={url} alt={`${channel.name} ${formatLabel}`} className="w-full h-full object-cover" />
+                                                                </div>
+                                                            ) : (
+                                                                <div className="aspect-video bg-red-50 dark:bg-red-900/20 rounded-2xl flex flex-col items-center justify-center border border-red-200 dark:border-red-800 gap-2">
+                                                                    <FaExclamationTriangle className="text-3xl text-red-400" />
+                                                                    <p className="text-red-500 text-xs font-bold uppercase">Generation Failed</p>
+                                                                </div>
+                                                            )}
 
-                                            {/* RENDER LOGIC: Carousel vs Motion vs Static */}
-                                            {Array.isArray(assetUrl) ? (
-                                                /* CAROUSEL SLIDER */
-                                                <CarouselViewer slides={assetUrl} channelName={channel.name} />
-                                            ) : (typeof assetUrl === 'string' && (assetUrl.endsWith('.html') || assetUrl.startsWith('data:text/html'))) ? (
-                                                /* MOTION HTML ASSET */
-                                                <div className="aspect-video bg-black rounded-2xl overflow-hidden border border-slate-100 dark:border-slate-600 relative group">
-                                                    <iframe
-                                                        src={assetUrl}
-                                                        title={`${channel.name} Motion`}
-                                                        className="w-full h-full border-0 pointer-events-none" // Disable interaction for preview safety
-                                                    />
-                                                    <div className="absolute bottom-2 right-2 bg-black/60 text-white text-[10px] uppercase font-bold px-2 py-1 rounded backdrop-blur">
-                                                        Motion
-                                                    </div>
-                                                </div>
-                                            ) : assetUrl ? (
-                                                /* STANDARD IMAGE */
-                                                <div className="aspect-video bg-slate-50 dark:bg-slate-700 rounded-2xl overflow-hidden border border-slate-100 dark:border-slate-600">
-                                                    <img src={assetUrl} alt={channel.name} className="w-full h-full object-cover" />
-                                                </div>
-                                            ) : (
-                                                /* FAILED / EMPTY - Show Failed State (V4.0) */
-                                                <div className="aspect-video bg-red-50 dark:bg-red-900/20 rounded-2xl flex flex-col items-center justify-center border border-red-200 dark:border-red-800 gap-2">
-                                                    <FaExclamationTriangle className="text-3xl text-red-400" />
-                                                    <p className="text-red-500 text-xs font-bold uppercase">Generation Failed</p>
-                                                </div>
-                                            )}
+                                                            <div className="flex justify-between items-center">
+                                                                <div className="flex items-center gap-2">
+                                                                    {url && url !== 'FAILED' && (
+                                                                        <button
+                                                                            onClick={() => window.open(`/api/creatives/${draftId}/download`, '_blank')}
+                                                                            className="p-2 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-all"
+                                                                            title="Download"
+                                                                        >
+                                                                            <FaDownload />
+                                                                        </button>
+                                                                    )}
+                                                                    <button
+                                                                        onClick={() => handleDeleteAsset(draftId)}
+                                                                        className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 transition-all"
+                                                                        title="Delete"
+                                                                    >
+                                                                        <FaTrash />
+                                                                    </button>
+                                                                </div>
+
+                                                                {!isApproved && (
+                                                                    <>
+                                                                        {!url || url === 'FAILED' ? (
+                                                                            <>
+                                                                                <div className="flex items-center gap-2 text-red-400 font-bold text-xs px-4 py-2 bg-red-50 dark:bg-red-900/10 rounded-lg border border-red-100 dark:border-red-900/20">
+                                                                                    <FaExclamationTriangle /> Failed
+                                                                                </div>
+                                                                                <button
+                                                                                    onClick={() => handleRegenerateFailed(draftId)}
+                                                                                    disabled={regeneratingId === draftId}
+                                                                                    className="px-4 py-2 rounded-xl font-bold text-amber-600 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-all flex items-center gap-2 disabled:opacity-50"
+                                                                                >
+                                                                                    {regeneratingId === draftId ? (
+                                                                                        <><FaSpinner className="animate-spin" /> Regenerating...</>
+                                                                                    ) : (
+                                                                                        <><FaRedo /> Retry</>
+                                                                                    )}
+                                                                                </button>
+                                                                            </>
+                                                                        ) : (
+                                                                            <>
+                                                                                <button
+                                                                                    onClick={() => handleOpenRejection(channelId, formatLabel, draftId, assetKey)}
+                                                                                    className="px-5 py-3 rounded-xl font-bold text-red-600 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-900/50 transition-all flex items-center gap-2"
+                                                                                >
+                                                                                    <FaTimes /> Reject
+                                                                                </button>
+                                                                                <button
+                                                                                    onClick={() => handleApproveAsset(channelId, formatLabel)}
+                                                                                    className="px-6 py-3 rounded-xl font-bold text-white bg-green-600 hover:bg-green-700 transition-all flex items-center gap-2 shadow-lg"
+                                                                                >
+                                                                                    <FaCheckCircle /> Approve
+                                                                                </button>
+                                                                            </>
+                                                                        )}
+                                                                    </>
+                                                                )}
+                                                                {isApproved && (
+                                                                    <div className="flex items-center gap-2 text-green-600 dark:text-green-400 font-bold">
+                                                                        <FaCheckCircle /> Approved
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
                                         </div>
 
                                         {/* Text Copy */}
@@ -1387,72 +1495,9 @@ export default function CampaignCenter() {
                                         </div>
                                     </div>
 
-                                    {/* Action Footer */}
                                     <div className="flex justify-between items-center p-6 pt-0">
-                                        {/* Left: Utility Buttons */}
-                                        <div className="flex items-center gap-2">
-                                            {assetUrl && assetUrl !== 'FAILED' && (
-                                                <button
-                                                    onClick={() => window.open(`/api/creatives/draft_${campaignId}_${channelId.toLowerCase().replace(/ /g, '_')}/download`, '_blank')}
-                                                    className="p-2 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-all"
-                                                    title="Download"
-                                                >
-                                                    <FaDownload />
-                                                </button>
-                                            )}
-                                            <button
-                                                onClick={() => handleDeleteAsset(`draft_${campaignId}_${channelId.toLowerCase().replace(/ /g, '_')}`)}
-                                                className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 transition-all"
-                                                title="Delete"
-                                            >
-                                                <FaTrash />
-                                            </button>
-                                        </div>
-
-                                        {/* Right: Primary Actions */}
-                                        <div className="flex items-center gap-3">
-                                            {!isApproved && (
-                                                <>
-                                                    {!assetUrl || assetUrl === 'FAILED' ? (
-                                                        <>
-                                                            <div className="flex items-center gap-2 text-red-400 font-bold text-xs px-4 py-2 bg-red-50 dark:bg-red-900/10 rounded-lg border border-red-100 dark:border-red-900/20">
-                                                                <FaExclamationTriangle /> Failed
-                                                            </div>
-                                                            <button
-                                                                onClick={() => handleRegenerateFailed(`draft_${campaignId}_${channelId.toLowerCase().replace(/ /g, '_')}`)}
-                                                                disabled={regeneratingId === `draft_${campaignId}_${channelId.toLowerCase().replace(/ /g, '_')}`}
-                                                                className="px-4 py-2 rounded-xl font-bold text-amber-600 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-all flex items-center gap-2 disabled:opacity-50"
-                                                            >
-                                                                {regeneratingId === `draft_${campaignId}_${channelId.toLowerCase().replace(/ /g, '_')}` ? (
-                                                                    <><FaSpinner className="animate-spin" /> Regenerating...</>
-                                                                ) : (
-                                                                    <><FaRedo /> Retry</>
-                                                                )}
-                                                            </button>
-                                                        </>
-                                                    ) : (
-                                                        <>
-                                                            <button
-                                                                onClick={() => handleOpenRejection(channelId)}
-                                                                className="px-5 py-3 rounded-xl font-bold text-red-600 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-900/50 transition-all flex items-center gap-2"
-                                                            >
-                                                                <FaTimes /> Reject
-                                                            </button>
-                                                            <button
-                                                                onClick={() => handleApproveAsset(channelId)}
-                                                                className="px-6 py-3 rounded-xl font-bold text-white bg-green-600 hover:bg-green-700 transition-all flex items-center gap-2 shadow-lg"
-                                                            >
-                                                                <FaCheckCircle /> Approve
-                                                            </button>
-                                                        </>
-                                                    )}
-                                                </>
-                                            )}
-                                            {isApproved && (
-                                                <div className="flex items-center gap-2 text-green-600 dark:text-green-400 font-bold">
-                                                    <FaCheckCircle /> Approved
-                                                </div>
-                                            )}
+                                        <div className="text-xs text-slate-400 font-bold uppercase">
+                                            Review each format above to approve, reject, or regenerate.
                                         </div>
                                     </div>
                                 </div>
@@ -1468,13 +1513,13 @@ export default function CampaignCenter() {
                     <div className="bg-white dark:bg-slate-800 rounded-[3rem] w-full max-w-xl overflow-hidden shadow-2xl animate-scale-up border border-white/20">
                         <div className="p-8 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900/50">
                             <h3 className="font-black text-slate-800 dark:text-white uppercase tracking-tight">Request Revision</h3>
-                            <button onClick={() => setRejectionModal({ open: false, channel: null, assetId: null })} aria-label="Close Modal" className="p-2 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-all">
+                            <button onClick={() => setRejectionModal({ open: false, channel: null, formatLabel: null, draftId: null, assetKey: null })} aria-label="Close Modal" className="p-2 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-all">
                                 <FaTimes className="text-slate-400" />
                             </button>
                         </div>
                         <div className="p-10">
                             <p className="text-sm text-slate-500 dark:text-slate-400 font-medium mb-4">
-                                Tell us what needs to change for the <strong className="text-slate-800 dark:text-white">{rejectionModal.channel}</strong> asset. We'll regenerate it based on your feedback.
+                                Tell us what needs to change for the <strong className="text-slate-800 dark:text-white">{rejectionModal.formatLabel ? `${rejectionModal.channel} (${rejectionModal.formatLabel})` : rejectionModal.channel}</strong> asset. We'll regenerate it based on your feedback.
                             </p>
                             <textarea
                                 name="rejectionFeedback"

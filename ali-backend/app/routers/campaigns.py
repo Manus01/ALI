@@ -265,13 +265,14 @@ async def regenerate_channel_asset(payload: dict, background_tasks: BackgroundTa
     Used by the Review Feed rejection flow.
     """
     try:
-        from app.agents.orchestrator_agent import OrchestratorAgent, CHANNEL_SPECS
+        from app.agents.orchestrator_agent import CHANNEL_SPECS
         from app.services.image_agent import ImageAgent
         
         uid = user['uid']
         campaign_id = payload.get("campaign_id")
         channel = payload.get("channel")  # e.g., "linkedin", "tiktok"
         feedback = payload.get("feedback", "")  # User's rejection feedback
+        format_label = (payload.get("format_label") or "primary").lower()
         
         if not campaign_id or not channel:
             raise HTTPException(status_code=400, detail="campaign_id and channel are required")
@@ -292,7 +293,14 @@ async def regenerate_channel_asset(payload: dict, background_tasks: BackgroundTa
         if not spec:
             raise HTTPException(status_code=400, detail=f"Unknown channel: {channel}")
         
-        primary_format = spec["formats"][0]
+        def resolve_format():
+            if format_label == "story":
+                return next((fmt for fmt in spec["formats"] if fmt.get("ratio") == "9:16"), None)
+            if format_label == "feed":
+                return next((fmt for fmt in spec["formats"] if fmt.get("ratio") in ["1:1", "4:5"]), None)
+            return next((fmt for fmt in spec["formats"] if fmt.get("type") == format_label), None)
+
+        primary_format = resolve_format() or spec["formats"][0]
         width, height = primary_format["size"]
         
         # Build regeneration prompt incorporating feedback
@@ -308,7 +316,7 @@ async def regenerate_channel_asset(payload: dict, background_tasks: BackgroundTa
         TONE: {spec.get('tone', 'professional')}
         """
         
-        logger.info(f"🔄 Regenerating {channel} asset for campaign {campaign_id} with feedback: {feedback[:50]}...")
+        logger.info(f"🔄 Regenerating {channel} ({format_label}) asset for campaign {campaign_id} with feedback: {feedback[:50]}...")
         
         # Generate new asset
         image_agent = ImageAgent()
@@ -321,13 +329,18 @@ async def regenerate_channel_asset(payload: dict, background_tasks: BackgroundTa
         if not new_url:
             raise HTTPException(status_code=500, detail="Asset regeneration failed")
         
-        # Update campaign assets
+        asset_key = f"{channel}_{format_label}" if format_label != "primary" else channel
         db.collection('users').document(uid).collection('campaigns').document(campaign_id).update({
-            f"assets.{channel}": new_url
+            f"assets.{asset_key}": new_url
         })
         
         # Update draft
-        draft_id = f"draft_{campaign_id}_{channel}"
+        clean_channel = channel.lower().replace(" ", "_").replace("-", "_")
+        draft_id = (
+            f"draft_{campaign_id}_{clean_channel}_{format_label}"
+            if format_label not in ["primary", "feed"]
+            else f"draft_{campaign_id}_{clean_channel}"
+        )
         db.collection('creative_drafts').document(draft_id).update({
             "thumbnailUrl": new_url,
             "status": "DRAFT",
@@ -445,4 +458,3 @@ async def delete_wizard_draft(draft_id: str, user: dict = Depends(verify_token))
     except Exception as e:
         logger.error(f"Delete Wizard Draft Failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
