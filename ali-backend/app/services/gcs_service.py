@@ -1,6 +1,7 @@
 ﻿import os
 import time
 import logging
+from typing import Optional
 from google.cloud import storage
 
 logger = logging.getLogger(__name__)
@@ -89,3 +90,26 @@ class GCSService:
             logger.warning(f"Could not sign URL, attempting fallback to public link: {e}")
             # Fallback to public link (requires bucket to be public)
             return blob.public_url
+
+    def generate_signed_url(
+        self,
+        bucket_name: str,
+        blob_path: str,
+        expiration: Optional[int] = None
+    ) -> Optional[str]:
+        """Generate a fresh signed URL for an existing object."""
+        if not self.storage_client:
+            logger.warning("⚠️ Storage Client not initialized.")
+            return None
+
+        try:
+            bucket = self.storage_client.bucket(bucket_name)
+            blob = bucket.blob(blob_path)
+            return blob.generate_signed_url(
+                version="v4",
+                expiration=expiration or self.expiration,
+                method="GET"
+            )
+        except Exception as e:
+            logger.warning(f"Could not generate signed URL for {bucket_name}/{blob_path}: {e}")
+            return None

@@ -116,7 +116,13 @@ export default function CampaignCenter() {
 
         if (view === 'library') return;
         if (!campaignIdParam || !currentUser) return;
-        if (campaignIdParam === campaignId && finalAssets) return;
+        const matchesFinalAssets =
+            finalAssets?.campaign_id === campaignIdParam ||
+            finalAssets?.campaignId === campaignIdParam;
+        if (finalAssets && !matchesFinalAssets) {
+            setFinalAssets(null);
+        }
+        if (campaignIdParam === campaignId && finalAssets && matchesFinalAssets) return;
 
         const restoreCampaignResults = async () => {
             try {
