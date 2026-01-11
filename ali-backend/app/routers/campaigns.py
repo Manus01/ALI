@@ -271,6 +271,8 @@ async def regenerate_channel_asset(payload: dict, background_tasks: BackgroundTa
         uid = user['uid']
         campaign_id = payload.get("campaign_id")
         channel = payload.get("channel")  # e.g., "linkedin", "tiktok"
+        format_label = payload.get("format_label") or "primary"
+        clean_channel = channel.lower().replace(" ", "_").replace("-", "_")
         feedback = payload.get("feedback", "")  # User's rejection feedback
         
         if not campaign_id or not channel:
@@ -288,15 +290,21 @@ async def regenerate_channel_asset(payload: dict, background_tasks: BackgroundTa
         brand_dna = db.collection('users').document(uid).collection('brand_profile').document('current').get().to_dict()
         
         # Get channel specs
-        spec = CHANNEL_SPECS.get(channel)
+        spec = CHANNEL_SPECS.get(clean_channel)
         if not spec:
             raise HTTPException(status_code=400, detail=f"Unknown channel: {channel}")
-        
+
         primary_format = spec["formats"][0]
-        width, height = primary_format["size"]
+        selected_format = primary_format
+        if format_label == "story":
+            selected_format = next((f for f in spec["formats"] if f.get("ratio") == "9:16"), primary_format)
+        elif format_label == "feed":
+            selected_format = next((f for f in spec["formats"] if f.get("ratio") in ["1:1", "4:5"]), primary_format)
+
+        width, height = selected_format["size"]
         
         # Build regeneration prompt incorporating feedback
-        original_blueprint = campaign_data.get("blueprint", {}).get(channel, {})
+        original_blueprint = campaign_data.get("blueprint", {}).get(clean_channel, {})
         visual_prompt = original_blueprint.get("visual_prompt", "Professional brand promotional image")
         
         enhanced_prompt = f"""
@@ -308,13 +316,13 @@ async def regenerate_channel_asset(payload: dict, background_tasks: BackgroundTa
         TONE: {spec.get('tone', 'professional')}
         """
         
-        logger.info(f"🔄 Regenerating {channel} asset for campaign {campaign_id} with feedback: {feedback[:50]}...")
+        logger.info(f"🔄 Regenerating {clean_channel} ({format_label}) asset for campaign {campaign_id} with feedback: {feedback[:50]}...")
         
         # Generate new asset
         image_agent = ImageAgent()
         dna_str = f"Style {brand_dna.get('visual_styles', [])}. Colors {brand_dna.get('color_palette', {})}"
         
-        result = image_agent.generate_image(enhanced_prompt, brand_dna=dna_str, folder=f"campaigns/{channel}")
+        result = image_agent.generate_image(enhanced_prompt, brand_dna=dna_str, folder=f"campaigns/{clean_channel}")
         
         new_url = result.get('url') if isinstance(result, dict) else result
         
@@ -322,12 +330,14 @@ async def regenerate_channel_asset(payload: dict, background_tasks: BackgroundTa
             raise HTTPException(status_code=500, detail="Asset regeneration failed")
         
         # Update campaign assets
+        asset_key = f"{clean_channel}_{format_label}" if format_label != "primary" else clean_channel
         db.collection('users').document(uid).collection('campaigns').document(campaign_id).update({
-            f"assets.{channel}": new_url
+            f"assets.{asset_key}": new_url
         })
         
         # Update draft
-        draft_id = f"draft_{campaign_id}_{channel}"
+        suffix = f"_{format_label}" if format_label and format_label not in ["feed", "primary"] else ""
+        draft_id = f"draft_{campaign_id}_{clean_channel}{suffix}"
         db.collection('creative_drafts').document(draft_id).update({
             "thumbnailUrl": new_url,
             "status": "DRAFT",
@@ -336,7 +346,7 @@ async def regenerate_channel_asset(payload: dict, background_tasks: BackgroundTa
             "regenerationFeedback": feedback
         })
         
-        logger.info(f"✅ Regenerated {channel} asset for campaign {campaign_id}")
+        logger.info(f"✅ Regenerated {clean_channel} ({format_label}) asset for campaign {campaign_id}")
         
         return {
             "status": "regenerated",
@@ -445,4 +455,3 @@ async def delete_wizard_draft(draft_id: str, user: dict = Depends(verify_token))
     except Exception as e:
         logger.error(f"Delete Wizard Draft Failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
