@@ -18,6 +18,17 @@ from app.services.gcs_service import GCSService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+KNOWN_CHANNELS = [
+    "linkedin",
+    "instagram",
+    "facebook",
+    "tiktok",
+    "google_display",
+    "pinterest",
+    "threads",
+    "email",
+    "blog"
+]
 
 
 def _extract_gcs_blob(asset_url: str) -> Optional[Tuple[str, str]]:
@@ -44,6 +55,56 @@ def _extract_gcs_blob(asset_url: str) -> Optional[Tuple[str, str]]:
     if bucket and blob_path:
         return bucket, blob_path
     return None
+
+
+def _parse_draft_id(draft_id: str) -> Optional[Tuple[str, str, str]]:
+    if not draft_id.startswith("draft_"):
+        return None
+    remainder = draft_id[len("draft_"):]
+    for channel in KNOWN_CHANNELS:
+        channel_token = f"_{channel}_"
+        if channel_token in remainder:
+            campaign_id, format_label = remainder.split(channel_token, 1)
+            return campaign_id, channel, format_label or "primary"
+        if remainder.endswith(f"_{channel}"):
+            campaign_id = remainder[:-(len(channel) + 1)]
+            return campaign_id, channel, "primary"
+    return None
+
+
+def _cleanup_campaign_asset(user_id: str, campaign_id: str, channel: str, format_label: str) -> None:
+    asset_key = channel if format_label in ["primary", "feed"] else f"{channel}_{format_label}"
+    campaign_ref = db.collection("users").document(user_id).collection("campaigns").document(campaign_id)
+    campaign_doc = campaign_ref.get()
+    if not campaign_doc.exists:
+        return
+    campaign_data = campaign_doc.to_dict()
+    assets = dict(campaign_data.get("assets", {}))
+    assets_metadata = dict(campaign_data.get("assets_metadata", {}))
+    blueprint = dict(campaign_data.get("blueprint", {}))
+
+    asset_removed = False
+    if asset_key in assets:
+        assets.pop(asset_key, None)
+        asset_removed = True
+
+    remaining_channel_assets = [
+        key for key in assets.keys()
+        if key == channel or key.startswith(f"{channel}_")
+    ]
+
+    update_data = {}
+    if asset_removed:
+        update_data["assets"] = assets
+    if not remaining_channel_assets:
+        if channel in blueprint:
+            blueprint.pop(channel, None)
+            update_data["blueprint"] = blueprint
+        if channel in assets_metadata:
+            assets_metadata.pop(channel, None)
+            update_data["assets_metadata"] = assets_metadata
+    if update_data:
+        campaign_ref.set(update_data, merge=True)
 
 
 @router.get("/my-drafts")
@@ -146,6 +207,12 @@ def publish_creative(draft_id: str, user_id: str = Depends(get_current_user_id))
         doc = doc_ref.get()
         
         if not doc.exists:
+            parsed = _parse_draft_id(draft_id)
+            if parsed:
+                campaign_id, channel, format_label = parsed
+                _cleanup_campaign_asset(user_id, campaign_id, channel, format_label)
+                logger.info(f"🧹 Cleaned campaign asset for missing draft {draft_id}")
+                return {"status": "deleted", "draft_id": draft_id, "campaign_cleanup": True}
             raise HTTPException(status_code=404, detail=f"Draft {draft_id} not found")
         
         data = doc.to_dict()
@@ -180,6 +247,12 @@ def download_asset(draft_id: str, user_id: str = Depends(get_current_user_id)):
         doc = db.collection("creative_drafts").document(draft_id).get()
         
         if not doc.exists:
+            parsed = _parse_draft_id(draft_id)
+            if parsed:
+                campaign_id, channel, format_label = parsed
+                _cleanup_campaign_asset(user_id, campaign_id, channel, format_label)
+                logger.info(f"🧹 Cleaned campaign asset for missing draft {draft_id}")
+                return {"status": "deleted", "draft_id": draft_id, "campaign_cleanup": True}
             raise HTTPException(status_code=404, detail=f"Draft {draft_id} not found")
         
         data = doc.to_dict()
@@ -349,6 +422,12 @@ def delete_creative(draft_id: str, user_id: str = Depends(get_current_user_id)):
         doc = doc_ref.get()
         
         if not doc.exists:
+            parsed = _parse_draft_id(draft_id)
+            if parsed:
+                campaign_id, channel, format_label = parsed
+                _cleanup_campaign_asset(user_id, campaign_id, channel, format_label)
+                logger.info(f"🧹 Cleaned campaign asset for missing draft {draft_id}")
+                return {"status": "deleted", "draft_id": draft_id, "campaign_cleanup": True}
             raise HTTPException(status_code=404, detail=f"Draft {draft_id} not found")
         
         data = doc.to_dict()
@@ -356,6 +435,17 @@ def delete_creative(draft_id: str, user_id: str = Depends(get_current_user_id)):
         # Verify ownership
         if data.get("userId") != user_id:
             raise HTTPException(status_code=403, detail="Not authorized to delete this creative")
+
+        campaign_id = data.get("campaignId")
+        channel = data.get("channel")
+        if campaign_id and channel:
+            base_id = f"draft_{campaign_id}_{channel}"
+            format_label = "primary"
+            if draft_id.startswith(base_id):
+                suffix = draft_id[len(base_id):]
+                if suffix.startswith("_"):
+                    format_label = suffix.lstrip("_") or "primary"
+            _cleanup_campaign_asset(user_id, campaign_id, channel, format_label)
         
         doc_ref.delete()
         logger.info(f"🗑️ Deleted creative {draft_id} for user {user_id}")

@@ -1,10 +1,11 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { getFirestore, collection, onSnapshot, updateDoc, doc } from 'firebase/firestore';
 import api from '../api/axiosInterceptor';
 import { useAuth } from '../hooks/useAuth';
 import { FaBell, FaCheck, FaRobot, FaSpinner, FaTimes } from 'react-icons/fa';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useNotification } from '../context/NotificationContext';
 
 export default function NotificationCenter() {
     const { currentUser } = useAuth();
@@ -12,9 +13,11 @@ export default function NotificationCenter() {
     const db = getFirestore();
 
     const [notifications, setNotifications] = useState([]);
+    const [confirmationProcessingId, setConfirmationProcessingId] = useState(null);
     const [isOpen, setIsOpen] = useState(false);
     const [unreadCount, setUnreadCount] = useState(0);
     const menuRef = useRef(null);
+    const { confirmations, lastConfirmationId, dismissConfirmation } = useNotification();
 
     // 1. Listen for Notifications (FIXED PATH FOR SECURITY)
     useEffect(() => {
@@ -43,6 +46,12 @@ export default function NotificationCenter() {
 
         return () => unsubscribe();
     }, [currentUser, db]);
+
+    useEffect(() => {
+        if (lastConfirmationId) {
+            setIsOpen(true);
+        }
+    }, [lastConfirmationId]);
 
     // 2. Close on Click Outside
     useEffect(() => {
@@ -84,6 +93,31 @@ export default function NotificationCenter() {
         }
     };
 
+    const handleConfirmAction = async (note) => {
+        setConfirmationProcessingId(note.id);
+        try {
+            await note.onConfirm?.();
+        } catch (err) {
+            console.error("Confirmation action failed", err);
+        } finally {
+            setConfirmationProcessingId(null);
+            dismissConfirmation(note.id);
+        }
+    };
+
+    const handleCancelAction = (note) => {
+        note.onCancel?.();
+        dismissConfirmation(note.id);
+    };
+
+    const hasConfirmations = confirmations.length > 0;
+    const displayedUnreadCount = useMemo(() => {
+        if (hasConfirmations) {
+            return unreadCount + confirmations.length;
+        }
+        return unreadCount;
+    }, [confirmations.length, hasConfirmations, unreadCount]);
+
     if (!currentUser) return null;
 
     return (
@@ -97,9 +131,9 @@ export default function NotificationCenter() {
                 `}
             >
                 <FaBell className="text-xl" />
-                {unreadCount > 0 && (
+                {displayedUnreadCount > 0 && (
                     <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white shadow-sm animate-bounce">
-                        {unreadCount}
+                        {displayedUnreadCount}
                     </span>
                 )}
             </button>
@@ -129,7 +163,45 @@ export default function NotificationCenter() {
 
                         {/* List */}
                         <div className="max-h-[400px] overflow-y-auto custom-scrollbar">
-                            {notifications.length === 0 ? (
+                            {confirmations.length > 0 && (
+                                <div className="border-b border-slate-100">
+                                    <div className="px-4 py-2 text-[11px] font-bold uppercase tracking-widest text-amber-500 bg-amber-50/70">
+                                        Action Required
+                                    </div>
+                                    <div className="divide-y divide-amber-100">
+                                        {confirmations.map(note => (
+                                            <div
+                                                key={note.id}
+                                                className="relative flex gap-4 px-4 py-4 bg-amber-50/40 pr-4"
+                                            >
+                                                <div className="mt-1 flex h-8 w-8 flex-none items-center justify-center rounded-full bg-amber-100 text-amber-600">
+                                                    <FaTimes />
+                                                </div>
+                                                <div className="flex-auto">
+                                                    <p className="text-sm font-bold text-slate-800">{note.title}</p>
+                                                    <p className="text-xs text-slate-600 mt-1">{note.message}</p>
+                                                    <div className="mt-3 flex flex-wrap gap-2">
+                                                        <button
+                                                            onClick={() => handleConfirmAction(note)}
+                                                            disabled={confirmationProcessingId === note.id}
+                                                            className="px-3 py-2 rounded-lg bg-red-600 text-white text-xs font-bold hover:bg-red-700 transition-colors disabled:opacity-60"
+                                                        >
+                                                            {confirmationProcessingId === note.id ? 'Working...' : note.confirmLabel}
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleCancelAction(note)}
+                                                            className="px-3 py-2 rounded-lg border border-slate-200 text-xs font-bold text-slate-600 hover:bg-white transition-colors"
+                                                        >
+                                                            {note.cancelLabel}
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                            {notifications.length === 0 && confirmations.length === 0 ? (
                                 <div className="flex flex-col items-center justify-center py-12 text-slate-400">
                                     <FaCheck className="text-3xl mb-2 opacity-20" />
                                     <p className="text-xs">All caught up!</p>
