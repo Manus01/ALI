@@ -239,6 +239,57 @@ class AssetProcessor:
                 self.vision_client = vision.ImageAnnotatorClient()
             except Exception as e:
                 logger.warning(f"⚠️ Vision client init failed: {e}")
+
+    def _load_logo_image(self, logo_url: str, context: str) -> Optional["Image.Image"]:
+        if not logo_url or not PIL_AVAILABLE:
+            return None
+
+        import requests
+        import importlib.util
+
+        try:
+            logo_response = requests.get(logo_url, timeout=15)
+            logo_response.raise_for_status()
+        except Exception as err:
+            logger.warning(f"⚠️ Logo download failed for {context}: {err}")
+            return None
+
+        content_type = (logo_response.headers.get("Content-Type") or "").lower()
+        is_svg = "image/svg" in content_type
+        if content_type and not content_type.startswith("image/"):
+            logger.warning(
+                "⚠️ Invalid logo file for %s: expected image content type, got %s",
+                context,
+                content_type
+            )
+            return None
+
+        logo_bytes = logo_response.content
+        if is_svg:
+            if importlib.util.find_spec("cairosvg") is None:
+                logger.warning(
+                    "⚠️ SVG logo provided for %s but cairosvg is unavailable for conversion.",
+                    context
+                )
+                return None
+            from cairosvg import svg2png
+            try:
+                logo_bytes = svg2png(bytestring=logo_bytes)
+            except Exception as err:
+                logger.warning(f"⚠️ Failed to convert SVG logo for {context}: {err}")
+                return None
+
+        logo_stream = io.BytesIO(logo_bytes)
+        logo_stream.seek(0)
+
+        try:
+            logo_img = Image.open(logo_stream)
+            logo_img.verify()
+            logo_stream.seek(0)
+            return Image.open(logo_stream).convert("RGBA")
+        except Exception as err:
+            logger.warning(f"⚠️ Invalid logo file for {context}: {err}")
+            return None
     
     def extract_dominant_colors(self, image_bytes: bytes, num_colors: int = 5) -> List[str]:
         """
@@ -765,95 +816,62 @@ class AssetProcessor:
             else:  # watermark
                 # WATERMARK: Repeated logo tiles at 5% opacity
                 if logo_url:
-                    try:
-                        logo_response = requests.get(logo_url, timeout=15)
-                        logo_response.raise_for_status()
-                        
-                        # V7.1 FIX: Proper BytesIO handling with seek and validation
-                        logo_stream = io.BytesIO(logo_response.content)
-                        logo_stream.seek(0)  # CRITICAL: Reset pointer to start
-                        
-                        # Verify it's a valid image before using
+                    logo_img = self._load_logo_image(logo_url, "watermark")
+                    if logo_img:
                         try:
-                            logo_img = Image.open(logo_stream)
-                            logo_img.verify()  # Verify it's actually an image
-                            logo_stream.seek(0)  # Reset again after verify
-                            logo_img = Image.open(logo_stream)  # Re-open for use
-                            logo_img = logo_img.convert("RGBA")
-                        except Exception as verify_err:
-                            logger.warning(f"⚠️ Invalid logo file: {verify_err}. Skipping watermark.")
-                            logo_position = 'top_right'
-                            raise  # Re-raise to skip watermark processing
-                        
-                        # Make logo very transparent (5% opacity)
-                        logo_small = logo_img.resize(
-                            (int(base_img.width * 0.10), int(base_img.width * 0.10 * logo_img.height / logo_img.width)),
-                            Image.Resampling.LANCZOS
-                        )
-                        
-                        # Reduce opacity to 5%
-                        alpha = logo_small.split()[3]
-                        alpha = alpha.point(lambda p: int(p * 0.05))
-                        logo_small.putalpha(alpha)
-                        
-                        # Tile the logo
-                        watermark_layer = Image.new("RGBA", base_img.size, (0, 0, 0, 0))
-                        tile_spacing_x = max(1, int(base_img.width * 0.20))
-                        tile_spacing_y = max(1, int(base_img.height * 0.20))
-                        
-                        for y in range(0, base_img.height, tile_spacing_y):
-                            for x in range(0, base_img.width, tile_spacing_x):
-                                watermark_layer.paste(logo_small, (x, y), mask=logo_small)
-                        
-                        base_img = Image.alpha_composite(base_img, watermark_layer)
-                    except Exception as e:
-                        logger.warning(f"⚠️ Watermark logo failed: {e}")
+                            # Make logo very transparent (5% opacity)
+                            logo_small = logo_img.resize(
+                                (int(base_img.width * 0.10), int(base_img.width * 0.10 * logo_img.height / logo_img.width)),
+                                Image.Resampling.LANCZOS
+                            )
+                            
+                            # Reduce opacity to 5%
+                            alpha = logo_small.split()[3]
+                            alpha = alpha.point(lambda p: int(p * 0.05))
+                            logo_small.putalpha(alpha)
+                            
+                            # Tile the logo
+                            watermark_layer = Image.new("RGBA", base_img.size, (0, 0, 0, 0))
+                            tile_spacing_x = max(1, int(base_img.width * 0.20))
+                            tile_spacing_y = max(1, int(base_img.height * 0.20))
+                            
+                            for y in range(0, base_img.height, tile_spacing_y):
+                                for x in range(0, base_img.width, tile_spacing_x):
+                                    watermark_layer.paste(logo_small, (x, y), mask=logo_small)
+                            
+                            base_img = Image.alpha_composite(base_img, watermark_layer)
+                        except Exception as e:
+                            logger.warning(f"⚠️ Watermark logo failed: {e}")
                 
                 logo_position = 'top_right'
             
             # 3. Apply Main Logo (based on layout)
             if logo_url and layout != 'watermark':  # Watermark already has logos
-                try:
-                    logo_response = requests.get(logo_url, timeout=15)
-                    logo_response.raise_for_status()
-                    
-                    # V7.1 FIX: Proper BytesIO handling with seek and validation
-                    logo_stream = io.BytesIO(logo_response.content)
-                    logo_stream.seek(0)  # CRITICAL: Reset pointer to start
-                    
-                    # Verify it's a valid image before using
+                logo_img = self._load_logo_image(logo_url, "logo placement")
+                if logo_img:
                     try:
-                        logo_img = Image.open(logo_stream)
-                        logo_img.verify()  # Verify it's actually an image
-                        logo_stream.seek(0)  # Reset again after verify
-                        logo_img = Image.open(logo_stream)  # Re-open for use
-                        logo_img = logo_img.convert("RGBA")
-                    except Exception as verify_err:
-                        logger.warning(f"⚠️ Invalid logo file: {verify_err}. Skipping logo placement.")
-                        raise  # Re-raise to skip logo processing
-                    
-                    # Resize logo to 18% of image width
-                    target_logo_width = int(base_img.width * 0.18)
-                    aspect_ratio = logo_img.height / logo_img.width
-                    target_logo_height = int(target_logo_width * aspect_ratio)
-                    logo_img = logo_img.resize((target_logo_width, target_logo_height), Image.Resampling.LANCZOS)
-                    
-                    # Position based on layout
-                    padding = int(base_img.width * 0.05)
-                    
-                    if logo_position == 'top_right':
-                        x_pos = base_img.width - target_logo_width - padding
-                        y_pos = padding
-                    else:  # bottom_center
-                        x_pos = (base_img.width - target_logo_width) // 2
-                        y_pos = base_img.height - target_logo_height - padding
-                    
-                    # Composite logo
-                    logo_layer = Image.new("RGBA", base_img.size, (0, 0, 0, 0))
-                    logo_layer.paste(logo_img, (x_pos, y_pos), mask=logo_img)
-                    base_img = Image.alpha_composite(base_img, logo_layer)
-                except Exception as e:
-                    logger.warning(f"⚠️ Logo placement failed: {e}")
+                        # Resize logo to 18% of image width
+                        target_logo_width = int(base_img.width * 0.18)
+                        aspect_ratio = logo_img.height / logo_img.width
+                        target_logo_height = int(target_logo_width * aspect_ratio)
+                        logo_img = logo_img.resize((target_logo_width, target_logo_height), Image.Resampling.LANCZOS)
+                        
+                        # Position based on layout
+                        padding = int(base_img.width * 0.05)
+                        
+                        if logo_position == 'top_right':
+                            x_pos = base_img.width - target_logo_width - padding
+                            y_pos = padding
+                        else:  # bottom_center
+                            x_pos = (base_img.width - target_logo_width) // 2
+                            y_pos = base_img.height - target_logo_height - padding
+                        
+                        # Composite logo
+                        logo_layer = Image.new("RGBA", base_img.size, (0, 0, 0, 0))
+                        logo_layer.paste(logo_img, (x_pos, y_pos), mask=logo_img)
+                        base_img = Image.alpha_composite(base_img, logo_layer)
+                    except Exception as e:
+                        logger.warning(f"⚠️ Logo placement failed: {e}")
             
             # 4. Save and Upload
             output = io.BytesIO()
@@ -1456,7 +1474,8 @@ class AssetProcessor:
             project_id_int = int(os.getenv("GENAI_PROJECT_ID")) 
             vertexai.init(project=project_id_int, location="us-central1")
 
-            model = ImageGenerationModel.from_pretrained("veo-2.0-generate-preview-001")
+            veo_model_name = os.getenv("VEO_VIDEO_MODEL_NAME", "veo-3.1-generate")
+            model = ImageGenerationModel.from_pretrained(veo_model_name)
 
             # Generate video (returns an Operation)
             operation = model.generate_video(
