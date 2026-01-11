@@ -255,6 +255,59 @@ class OrchestratorAgent(BaseAgent):
         """
         return [ch for ch in all_channels if ch not in completed]
 
+    # =========================================================================
+    # V6.2: Granular AI Image Caching - Skip expensive AI calls on resume
+    # Saves the AI-generated image URL before rendering, so on resume we only
+    # need to redo the fast render step (0.5s image or 4s video) instead of
+    # the expensive AI generation (15s per image)
+    # =========================================================================
+    
+    def _save_ai_image_cache(self, campaign_id: str, channel: str, format_label: str, image_url: str):
+        """
+        Cache the AI-generated image URL before rendering.
+        On resume, this allows skipping the expensive AI call.
+        """
+        try:
+            cache_key = f"{channel}_{format_label}"
+            checkpoint_ref = self.db.collection('generation_checkpoints').document(campaign_id)
+            checkpoint_ref.set({
+                f"aiImageCache.{cache_key}": image_url,
+                "updatedAt": firestore.SERVER_TIMESTAMP
+            }, merge=True)
+            logger.debug(f"💾 Cached AI image for {cache_key}")
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to cache AI image: {e}")
+    
+    def _get_cached_ai_image(self, campaign_id: str, channel: str, format_label: str) -> str:
+        """
+        Retrieve cached AI image URL if available.
+        Returns None if no cache exists.
+        """
+        try:
+            checkpoint_doc = self.db.collection('generation_checkpoints').document(campaign_id).get()
+            if checkpoint_doc.exists:
+                data = checkpoint_doc.to_dict()
+                cache_key = f"{channel}_{format_label}"
+                cached_url = data.get("aiImageCache", {}).get(cache_key)
+                if cached_url:
+                    logger.info(f"♻️ Using cached AI image for {cache_key} (skipping 15s AI call)")
+                    return cached_url
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to load cached AI image: {e}")
+        return None
+    
+    def _clear_ai_image_cache(self, campaign_id: str, channel: str, format_label: str):
+        """Remove cached AI image after successful completion of this asset."""
+        try:
+            cache_key = f"{channel}_{format_label}"
+            checkpoint_ref = self.db.collection('generation_checkpoints').document(campaign_id)
+            checkpoint_ref.update({
+                f"aiImageCache.{cache_key}": firestore.DELETE_FIELD
+            })
+        except Exception:
+            pass  # Non-critical
+
+
     def _save_draft_immediately(self, uid, campaign_id, goal, channel, asset_payload, meta, blueprint):
         """
         V5.1: Progressive draft saving - saves draft immediately after asset is processed.
@@ -418,12 +471,23 @@ class OrchestratorAgent(BaseAgent):
 
                     else:
                         # Standard Single Image (may be upgraded to Motion later)
-                        task = asyncio.to_thread(
-                            image_agent.generate_image, 
-                            enhanced_prompt, 
-                            brand_dna=dna_str, 
-                            folder=f"campaigns/{channel}"
-                        )
+                        
+                        # V6.2: Check for cached AI image (from interrupted generation)
+                        cached_url = self._get_cached_ai_image(campaign_id, channel, format_label)
+                        if cached_url:
+                            # Use cached image - skip expensive AI call!
+                            async def return_cached(url):
+                                return {"url": url}
+                            task = return_cached(cached_url)
+                        else:
+                            # No cache - generate new image
+                            task = asyncio.to_thread(
+                                image_agent.generate_image, 
+                                enhanced_prompt, 
+                                brand_dna=dna_str, 
+                                folder=f"campaigns/{channel}"
+                            )
+                        
                         tasks.append(task)
                         task_metadata.append({
                             "channel": channel,
@@ -433,6 +497,7 @@ class OrchestratorAgent(BaseAgent):
                             "size": primary_format["size"],
                             "tone": tone
                         })
+
             
             self._update_progress(uid, campaign_id, f"Generating {len(tasks)} Channel Assets...", 40)
             
@@ -501,10 +566,16 @@ class OrchestratorAgent(BaseAgent):
                     assets_metadata[channel] = {**meta, "error": "No URL generated", "status": "FAILED"}
                     continue
                 
+                # V6.2: CACHE AI IMAGE URL before rendering
+                # This is the expensive step (15s) - cache it so resume can skip AI
+                format_label = meta.get("format_label", "primary")
+                self._save_ai_image_cache(campaign_id, channel, format_label, raw_url)
+                
                 # FIX 1: Apply Advanced Branding
                 # Use the new apply_advanced_branding with layout styles
                 if channel not in ['blog', 'email']:
                     try:
+
                         # Apply advanced branding with layout styles
                         final_url = await asyncio.to_thread(
                             asset_processor.apply_advanced_branding,
