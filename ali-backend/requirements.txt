@@ -1,5 +1,6 @@
 fastapi
 uvicorn
+python-multipart
 google-cloud-firestore
 google-cloud-kms
 google-cloud-aiplatform==1.50.0
