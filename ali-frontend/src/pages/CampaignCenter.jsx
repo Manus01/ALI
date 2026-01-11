@@ -75,6 +75,8 @@ export default function CampaignCenter() {
     const [remixingId, setRemixingId] = useState(null); // New for Remix
     const [viewMode, setViewMode] = useState('wizard'); // 'wizard' or 'library'
     const [expandedGroups, setExpandedGroups] = useState({}); // v4.0: Track expanded/collapsed groups
+    const [expandedResultGroups, setExpandedResultGroups] = useState({}); // v4.1: Track expanded/collapsed result groups
+    const [resultActionState, setResultActionState] = useState({}); // v4.2: Track per-channel bulk actions
 
     // --- WIZARD DRAFT PERSISTENCE (v4.0) ---
     const [currentDraftId, setCurrentDraftId] = useState(null);
@@ -268,11 +270,20 @@ export default function CampaignCenter() {
     };
 
     // --- DELETE ASSET HANDLER (v4.0) ---
-    const handleDeleteAsset = async (draftId) => {
+    const handleDeleteAsset = async (draftId, assetKey = null) => {
         if (!confirm("Are you sure you want to delete this asset? This cannot be undone.")) return;
 
         try {
             await api.delete(`/api/creatives/${draftId}`);
+            if (assetKey && finalAssets?.assets) {
+                setFinalAssets(prev => {
+                    if (!prev?.assets || !prev.assets[assetKey]) {
+                        return prev;
+                    }
+                    const { [assetKey]: _, ...remainingAssets } = prev.assets;
+                    return { ...prev, assets: remainingAssets };
+                });
+            }
             await fetchUserDrafts();
         } catch (err) {
             console.error("Delete failed", err);
@@ -283,16 +294,26 @@ export default function CampaignCenter() {
     // --- REGENERATE FAILED ASSET HANDLER (v4.0) ---
     const [regeneratingId, setRegeneratingId] = useState(null);
 
-    const handleRegenerateFailed = async (draftId) => {
-        setRegeneratingId(draftId);
+    const regenerateDraft = async (draftId, shouldNotify = true) => {
         try {
             await api.post(`/api/creatives/${draftId}/regenerate`);
-            alert("Regeneration started! The asset will update shortly.");
-            // Refresh after a short delay
+            if (shouldNotify) {
+                alert("Regeneration started! The asset will update shortly.");
+            }
             setTimeout(() => fetchUserDrafts(), 3000);
         } catch (err) {
             console.error("Regeneration failed", err);
-            alert("Regeneration failed: " + (err.response?.data?.detail || err.message));
+            if (shouldNotify) {
+                alert("Regeneration failed: " + (err.response?.data?.detail || err.message));
+            }
+            throw err;
+        }
+    };
+
+    const handleRegenerateFailed = async (draftId) => {
+        setRegeneratingId(draftId);
+        try {
+            await regenerateDraft(draftId, true);
         } finally {
             setRegeneratingId(null);
         }
@@ -594,13 +615,14 @@ export default function CampaignCenter() {
 
             await api.post(`/api/creatives/${draftId}/publish`);
             const approvalKey = formatLabel ? `${cleanChannel}_${formatLabel}` : cleanChannel;
-            const newApproved = [...approvedChannels, approvalKey];
-            setApprovedChannels(newApproved);
-
-            const totalAssets = getTotalAssetCount();
-            if (totalAssets > 0 && newApproved.length >= totalAssets) {
-                setShowAllApprovedModal(true);
-            }
+            setApprovedChannels(prev => {
+                const newApproved = prev.includes(approvalKey) ? prev : [...prev, approvalKey];
+                const totalAssets = getTotalAssetCount();
+                if (totalAssets > 0 && newApproved.length >= totalAssets) {
+                    setShowAllApprovedModal(true);
+                }
+                return newApproved;
+            });
         } catch (err) {
             console.error("Approval failed", err);
             alert("Failed to approve asset: " + (err.response?.data?.detail || err.message));
@@ -640,22 +662,83 @@ export default function CampaignCenter() {
     };
 
     // Export all approved assets as ZIP
-    const handleExportZip = async () => {
+    const handleExportZip = async (channelId = null) => {
         if (!campaignId) return;
         try {
-            const response = await api.post(`/api/creatives/${campaignId}/export-zip`, {}, {
-                responseType: 'blob'
-            });
+            const response = await api.post(
+                `/api/creatives/${campaignId}/export-zip`,
+                {},
+                {
+                    responseType: 'blob',
+                    params: channelId ? { channel: channelId } : undefined
+                }
+            );
             const url = window.URL.createObjectURL(new Blob([response.data]));
             const link = document.createElement('a');
             link.href = url;
-            link.setAttribute('download', `campaign_${campaignId}_assets_${Date.now()}.zip`);
+            const channelSuffix = channelId ? `_${channelId}` : '';
+            link.setAttribute('download', `campaign_${campaignId}${channelSuffix}_assets_${Date.now()}.zip`);
             document.body.appendChild(link);
             link.click();
             link.remove();
         } catch (err) {
             console.error("Export failed", err);
             alert("Export failed: " + (err.response?.data?.detail || err.message));
+        }
+    };
+
+    const updateResultActionState = (channelId, updates) => {
+        setResultActionState(prev => ({
+            ...prev,
+            [channelId]: {
+                ...(prev[channelId] || {}),
+                ...updates
+            }
+        }));
+    };
+
+    const handleApproveAllChannelAssets = async (channelId, channelAssets) => {
+        if (!campaignId || channelAssets.length === 0) return;
+        updateResultActionState(channelId, { approving: true });
+        try {
+            const pendingAssets = channelAssets.filter(({ formatLabel }) => {
+                const approvalKey = `${channelId}_${formatLabel}`;
+                return !approvedChannels.includes(approvalKey);
+            });
+            await Promise.all(
+                pendingAssets.map(({ formatLabel }) => handleApproveAsset(channelId, formatLabel))
+            );
+        } catch (err) {
+            console.error("Approve all failed", err);
+            alert("Failed to approve all assets: " + (err.response?.data?.detail || err.message));
+        } finally {
+            updateResultActionState(channelId, { approving: false });
+        }
+    };
+
+    const handleRegenerateAllChannelAssets = async (channelAssets, channelId) => {
+        const failedAssets = channelAssets.filter(({ url }) => !url || url === 'FAILED');
+        if (failedAssets.length === 0) return;
+        updateResultActionState(channelId, { regenerating: true });
+        try {
+            await Promise.all(
+                failedAssets.map(({ draftId }) => regenerateDraft(draftId, false))
+            );
+        } catch (err) {
+            console.error("Regenerate all failed", err);
+            alert("Failed to regenerate assets: " + (err.response?.data?.detail || err.message));
+        } finally {
+            updateResultActionState(channelId, { regenerating: false });
+        }
+    };
+
+    const handleChannelExportZip = async (channelId) => {
+        if (!campaignId) return;
+        updateResultActionState(channelId, { exporting: true });
+        try {
+            await handleExportZip(channelId);
+        } finally {
+            updateResultActionState(channelId, { exporting: false });
         }
     };
 
@@ -716,6 +799,20 @@ export default function CampaignCenter() {
         if (!finalAssets?.assets || !selectedChannels.length) return 0;
         return selectedChannels.reduce((count, channelId) => count + getChannelAssets(channelId).length, 0);
     }, [finalAssets, selectedChannels, getChannelAssets]);
+
+    const resetCampaignWizard = useCallback(() => {
+        setGoal('');
+        setStage('input');
+        setQuestions([]);
+        setAnswers({});
+        setSelectedChannels([]);
+        setCampaignId(null);
+        setFinalAssets(null);
+        setApprovedChannels([]);
+        setCurrentDraftId(null);
+        setViewMode('wizard');
+        navigate('/campaign-center');
+    }, [navigate]);
 
     // --- RENDER: BRAND DNA CHECK ---
     // If logic detects missing brand DNA, redirect to the dedicated onboarding page
@@ -1378,13 +1475,21 @@ export default function CampaignCenter() {
                                 {selectedChannels.length} channels • {approvedChannels.length}/{getTotalAssetCount()} approved
                             </p>
                         </div>
-                        <button
-                            onClick={handleExportZip}
-                            disabled={approvedChannels.length === 0}
-                            className="bg-gradient-to-r from-green-600 to-emerald-600 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:scale-105 transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                            <FaDownload /> Export ZIP
-                        </button>
+                        <div className="flex items-center gap-3">
+                            <button
+                                onClick={resetCampaignWizard}
+                                className="border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 px-5 py-3 rounded-xl font-bold flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all"
+                            >
+                                <FaMagic /> New Campaign
+                            </button>
+                            <button
+                                onClick={handleExportZip}
+                                disabled={approvedChannels.length === 0}
+                                className="bg-gradient-to-r from-green-600 to-emerald-600 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:scale-105 transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                <FaDownload /> Export ZIP
+                            </button>
+                        </div>
                     </div>
 
                     {/* Vertical Review Feed - Grouped by Channel */}
@@ -1396,6 +1501,19 @@ export default function CampaignCenter() {
                             const textCopy = channelBlueprint.caption || channelBlueprint.body ||
                                 (channelBlueprint.headlines ? channelBlueprint.headlines.join(' | ') : '') ||
                                 channelBlueprint.video_script || '';
+                            const isExpanded = expandedResultGroups[channelId] !== false;
+                            const toggleChannelGroup = () => {
+                                setExpandedResultGroups(prev => ({ ...prev, [channelId]: !isExpanded }));
+                            };
+                            const channelActionState = resultActionState[channelId] || {};
+                            const pendingApprovals = channelAssets.filter(({ formatLabel }) => {
+                                const approvalKey = `${channelId}_${formatLabel}`;
+                                return !approvedChannels.includes(approvalKey);
+                            });
+                            const failedAssets = channelAssets.filter(({ url }) => !url || url === 'FAILED');
+                            const approvedChannelCount = approvedChannels.filter(key =>
+                                key === channelId || key.startsWith(`${channelId}_`)
+                            ).length;
 
                             return (
                                 <div key={channelId} className="bg-white dark:bg-slate-800 rounded-[2rem] border-2 border-slate-100 dark:border-slate-700 shadow-sm">
@@ -1405,14 +1523,46 @@ export default function CampaignCenter() {
                                             <span className="text-2xl">{channel.icon}</span>
                                             <span className="font-black text-slate-800 dark:text-white text-lg">{channel.name}</span>
                                         </div>
-                                        <div className="text-xs text-slate-400 dark:text-slate-500">
-                                            {finalAssets.assets_metadata?.[channelId]?.size || 'Standard'}
+                                        <div className="flex flex-wrap items-center justify-end gap-2 text-xs text-slate-400 dark:text-slate-500">
+                                            <span className="px-3 py-2">{finalAssets.assets_metadata?.[channelId]?.size || 'Standard'}</span>
+                                            <button
+                                                onClick={() => handleApproveAllChannelAssets(channelId, channelAssets)}
+                                                disabled={pendingApprovals.length === 0 || channelActionState.approving}
+                                                className="flex items-center gap-2 px-3 py-2 rounded-lg border border-green-200 text-green-600 hover:bg-green-50 dark:border-green-800 dark:text-green-400 dark:hover:bg-green-900/30 transition-all disabled:opacity-50"
+                                            >
+                                                {channelActionState.approving ? <FaSpinner className="animate-spin" /> : <FaCheckCircle />}
+                                                Approve All
+                                            </button>
+                                            <button
+                                                onClick={() => handleRegenerateAllChannelAssets(channelAssets, channelId)}
+                                                disabled={failedAssets.length === 0 || channelActionState.regenerating}
+                                                className="flex items-center gap-2 px-3 py-2 rounded-lg border border-amber-200 text-amber-600 hover:bg-amber-50 dark:border-amber-800 dark:text-amber-400 dark:hover:bg-amber-900/30 transition-all disabled:opacity-50"
+                                            >
+                                                {channelActionState.regenerating ? <FaSpinner className="animate-spin" /> : <FaRedo />}
+                                                Retry Failed
+                                            </button>
+                                            <button
+                                                onClick={() => handleChannelExportZip(channelId)}
+                                                disabled={approvedChannelCount === 0 || channelActionState.exporting}
+                                                className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all disabled:opacity-50"
+                                            >
+                                                {channelActionState.exporting ? <FaSpinner className="animate-spin" /> : <FaDownload />}
+                                                Export ZIP
+                                            </button>
+                                            <button
+                                                onClick={toggleChannelGroup}
+                                                className="flex items-center gap-2 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 transition-all"
+                                            >
+                                                {isExpanded ? <FaChevronUp /> : <FaChevronDown />}
+                                                {isExpanded ? 'Collapse' : 'Expand'}
+                                            </button>
                                         </div>
                                     </div>
 
                                     {/* Split View: Asset + Copy */}
-                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6">
-                                        <div className="space-y-4">
+                                    {isExpanded && (
+                                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6">
+                                            <div className="space-y-4">
                                             <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Visual Assets</p>
                                             <div className="space-y-6">
                                                 {channelAssets.map(({ assetKey, formatLabel, url, draftId }) => {
@@ -1462,7 +1612,7 @@ export default function CampaignCenter() {
                                                                         </button>
                                                                     )}
                                                                     <button
-                                                                        onClick={() => handleDeleteAsset(draftId)}
+                                                                        onClick={() => handleDeleteAsset(draftId, assetKey)}
                                                                         className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 transition-all"
                                                                         title="Delete"
                                                                     >
@@ -1528,13 +1678,16 @@ export default function CampaignCenter() {
                                                 </p>
                                             </div>
                                         </div>
-                                    </div>
-
-                                    <div className="flex justify-between items-center p-6 pt-0">
-                                        <div className="text-xs text-slate-400 font-bold uppercase">
-                                            Review each format above to approve, reject, or regenerate.
                                         </div>
-                                    </div>
+                                    )}
+
+                                    {isExpanded && (
+                                        <div className="flex justify-between items-center p-6 pt-0">
+                                            <div className="text-xs text-slate-400 font-bold uppercase">
+                                                Review each format above to approve, reject, or regenerate.
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             );
                         })}
