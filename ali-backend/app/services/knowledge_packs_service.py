@@ -431,6 +431,7 @@ class KnowledgePacksService:
                         similarity = dot_product / (norm_a * norm_b) if norm_a and norm_b else 0
                         
                         scored_facts.append({
+                            "fact_id": fact_data.get("fact_id"),
                             "text": fact_text,
                             "citation": fact_data.get("citation"),
                             "similarity": similarity,

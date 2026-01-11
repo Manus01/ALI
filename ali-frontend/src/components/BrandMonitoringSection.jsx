@@ -1,11 +1,14 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
     FaShieldAlt, FaExclamationTriangle, FaCheckCircle, FaMinusCircle,
     FaNewspaper, FaExternalLinkAlt, FaRobot, FaTimes, FaSpinner,
     FaArrowRight, FaFireAlt, FaLightbulb, FaClock, FaCog, FaPlus, FaTrash,
     FaThumbsUp, FaThumbsDown
 } from 'react-icons/fa';
+import { useNavigate } from 'react-router-dom';
 import api from '../api/axiosInterceptor';
+import { useNotification } from '../context/NotificationContext';
+import { fetchMonitoringAlerts } from '../services/webResearchApi';
 
 // Sentiment color mapping
 const SENTIMENT_CONFIG = {
@@ -15,6 +18,10 @@ const SENTIMENT_CONFIG = {
 };
 
 export default function BrandMonitoringSection({ brandName }) {
+    const navigate = useNavigate();
+    const { requestConfirmation } = useNotification();
+    const alertedMentionsRef = useRef(new Set());
+    const alertedMonitoringRef = useRef(new Set());
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [mentionsData, setMentionsData] = useState(null);
@@ -67,6 +74,98 @@ export default function BrandMonitoringSection({ brandName }) {
     useEffect(() => {
         fetchMentions();
     }, [fetchMentions]);
+
+    const getAlertLevel = (mention) => {
+        const rawLevel = mention?.severity_level || mention?.escalation_level || mention?.alert_level;
+        if (rawLevel && typeof rawLevel === 'string') {
+            const normalized = rawLevel.toLowerCase();
+            if (['high', 'critical', 'serious', 'severe'].includes(normalized)) {
+                return 'serious';
+            }
+            if (['medium', 'important'].includes(normalized)) {
+                return 'medium';
+            }
+        }
+
+        const severityScore = typeof mention?.severity === 'number'
+            ? mention.severity
+            : Number.parseFloat(mention?.severity);
+
+        if (Number.isFinite(severityScore)) {
+            if (severityScore >= 7) return 'serious';
+            if (severityScore >= 4) return 'medium';
+        }
+
+        return null;
+    };
+
+    useEffect(() => {
+        if (!mentionsData?.mentions?.length) return;
+
+        mentionsData.mentions.forEach((mention) => {
+            if (mention?.sentiment !== 'negative') return;
+
+            const alertLevel = getAlertLevel(mention);
+            if (!alertLevel) return;
+
+            const mentionKey = mention.id || mention.url || mention.title;
+            if (!mentionKey || alertedMentionsRef.current.has(mentionKey)) return;
+
+            alertedMentionsRef.current.add(mentionKey);
+
+            const keyword = mention.match_keyword || mention.keyword || mention.topic || mention.tracked_keyword;
+            const keywordMessage = keyword
+                ? `Keyword: ${keyword}.`
+                : 'Tracked keyword mention detected.';
+            const brandLabel = mentionsData?.brand_name || brandName || 'Your brand';
+            const sourceLabel = mention.title ? `Source: ${mention.title}.` : '';
+
+            requestConfirmation({
+                title: `Brand Monitoring ${alertLevel === 'serious' ? 'Serious' : 'Medium'} Alert`,
+                message: `${brandLabel} needs attention. ${keywordMessage} ${sourceLabel}`,
+                confirmLabel: 'Review alert',
+                cancelLabel: 'Dismiss',
+                onConfirm: () => navigate('/brand-monitoring')
+            });
+        });
+    }, [mentionsData, requestConfirmation, navigate, brandName]);
+
+    useEffect(() => {
+        let isMounted = true;
+
+        const loadMonitoringAlerts = async () => {
+            try {
+                const data = await fetchMonitoringAlerts({ severity: ['CRITICAL', 'IMPORTANT'] });
+                if (!isMounted) return;
+
+                (data.alerts || []).forEach((alert) => {
+                    const alertKey = alert.id || `${alert.packId || 'pack'}_${alert.detectedAt || ''}`;
+                    if (!alertKey || alertedMonitoringRef.current.has(alertKey)) return;
+
+                    alertedMonitoringRef.current.add(alertKey);
+
+                    const severityLabel = alert.severity === 'CRITICAL' ? 'Serious' : 'Medium';
+                    const topicLabel = alert.topicTags?.length ? `Topics: ${alert.topicTags.join(', ')}.` : '';
+                    const summary = alert.description || alert.summary || 'Monitoring update detected.';
+
+                    requestConfirmation({
+                        title: `Monitoring ${severityLabel} Alert`,
+                        message: `${summary} ${topicLabel}`.trim(),
+                        confirmLabel: 'Review alert',
+                        cancelLabel: 'Dismiss',
+                        onConfirm: () => navigate('/brand-monitoring')
+                    });
+                });
+            } catch (err) {
+                console.warn('Failed to load monitoring alerts', err);
+            }
+        };
+
+        loadMonitoringAlerts();
+        return () => {
+            isMounted = false;
+        };
+    }, [requestConfirmation, navigate]);
 
     // --- SETTINGS HANDLERS ---
 
