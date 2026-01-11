@@ -334,6 +334,8 @@ class OrchestratorAgent(BaseAgent):
                     thumbnail_url = asset_payload[0]
                 elif isinstance(asset_payload, str) and asset_payload.startswith("data:text/html"):
                     thumbnail_url = asset_payload
+                if isinstance(asset_payload, str) and asset_payload.startswith("data:text/html"):
+                    asset_payload = None
             else:
                 status = "FAILED"
                 thumbnail_url = "https://placehold.co/600x400?text=Generation+Failed"
