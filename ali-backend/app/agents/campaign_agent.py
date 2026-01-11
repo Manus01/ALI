@@ -3,12 +3,14 @@ import json
 import logging
 from .base_agent import BaseAgent
 from app.services.llm_factory import get_model
+from app.services.knowledge_service import get_knowledge_service
 
 class CampaignAgent(BaseAgent):
     def __init__(self):
         super().__init__("CampaignAgent")
         # Using Pro for complex strategic reasoning
         self.model = get_model(intent='complex')
+        self.knowledge_service = get_knowledge_service()
 
     async def generate_clarifying_questions(self, goal: str, brand_dna: dict, connected_platforms: list = None, selected_channels: list = None):
         """Analyze goal vs Brand DNA and ask 3-4 strategic questions."""
@@ -59,6 +61,13 @@ class CampaignAgent(BaseAgent):
     async def create_campaign_blueprint(self, goal: str, brand_dna: dict, answers: dict, selected_channels: list = None):
         """Create the full multi-channel plan once questions are answered."""
         self.log_task("Formulating final campaign blueprint...")
+
+        brand_id = (
+            brand_dna.get("brand_id")
+            or brand_dna.get("brandId")
+            or brand_dna.get("id")
+        )
+        rag_facts = self.knowledge_service.query(brand_id)
         
         # Build channel-specific instructions
         channels = selected_channels if selected_channels else ["instagram", "linkedin"]
@@ -69,6 +78,7 @@ class CampaignAgent(BaseAgent):
         Brand DNA: {json.dumps(brand_dna)}
         Goal: {goal}
         User Clarifications: {json.dumps(answers)}
+        Latest Monitoring Facts: {json.dumps(rag_facts)}
         Target Channels: {', '.join(channels)}
 
         Create a Campaign Blueprint. 
