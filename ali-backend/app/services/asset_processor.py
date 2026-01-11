@@ -766,8 +766,24 @@ class AssetProcessor:
                 # WATERMARK: Repeated logo tiles at 5% opacity
                 if logo_url:
                     try:
-                        logo_response = requests.get(logo_url)
-                        logo_img = Image.open(io.BytesIO(logo_response.content)).convert("RGBA")
+                        logo_response = requests.get(logo_url, timeout=15)
+                        logo_response.raise_for_status()
+                        
+                        # V7.1 FIX: Proper BytesIO handling with seek and validation
+                        logo_stream = io.BytesIO(logo_response.content)
+                        logo_stream.seek(0)  # CRITICAL: Reset pointer to start
+                        
+                        # Verify it's a valid image before using
+                        try:
+                            logo_img = Image.open(logo_stream)
+                            logo_img.verify()  # Verify it's actually an image
+                            logo_stream.seek(0)  # Reset again after verify
+                            logo_img = Image.open(logo_stream)  # Re-open for use
+                            logo_img = logo_img.convert("RGBA")
+                        except Exception as verify_err:
+                            logger.warning(f"⚠️ Invalid logo file: {verify_err}. Skipping watermark.")
+                            logo_position = 'top_right'
+                            raise  # Re-raise to skip watermark processing
                         
                         # Make logo very transparent (5% opacity)
                         logo_small = logo_img.resize(
@@ -798,8 +814,23 @@ class AssetProcessor:
             # 3. Apply Main Logo (based on layout)
             if logo_url and layout != 'watermark':  # Watermark already has logos
                 try:
-                    logo_response = requests.get(logo_url)
-                    logo_img = Image.open(io.BytesIO(logo_response.content)).convert("RGBA")
+                    logo_response = requests.get(logo_url, timeout=15)
+                    logo_response.raise_for_status()
+                    
+                    # V7.1 FIX: Proper BytesIO handling with seek and validation
+                    logo_stream = io.BytesIO(logo_response.content)
+                    logo_stream.seek(0)  # CRITICAL: Reset pointer to start
+                    
+                    # Verify it's a valid image before using
+                    try:
+                        logo_img = Image.open(logo_stream)
+                        logo_img.verify()  # Verify it's actually an image
+                        logo_stream.seek(0)  # Reset again after verify
+                        logo_img = Image.open(logo_stream)  # Re-open for use
+                        logo_img = logo_img.convert("RGBA")
+                    except Exception as verify_err:
+                        logger.warning(f"⚠️ Invalid logo file: {verify_err}. Skipping logo placement.")
+                        raise  # Re-raise to skip logo processing
                     
                     # Resize logo to 18% of image width
                     target_logo_width = int(base_img.width * 0.18)
@@ -1395,10 +1426,21 @@ class AssetProcessor:
             
             logger.info(f"🎬 Starting Veo hybrid video for channel: {channel}")
             
+            # V7.1 FIX: Sanitize prompt input - extract string from dict/list if necessary
+            if isinstance(prompt, dict):
+                # Try specific keys likely used by the agent
+                prompt_text = prompt.get('visual_prompt') or prompt.get('description') or prompt.get('prompt') or str(prompt)
+                logger.debug(f"📝 Extracted prompt from dict: {prompt_text[:100]}...")
+            elif isinstance(prompt, list):
+                prompt_text = " ".join([str(p) for p in prompt])
+                logger.debug(f"📝 Joined prompt from list: {prompt_text[:100]}...")
+            else:
+                prompt_text = str(prompt)
+            
             # 1. Generate Veo video background
             veo = get_veo_client()
             veo_result = await veo.generate_video_for_channel(
-                prompt=prompt,
+                prompt=prompt_text,
                 channel=channel,
                 user_id=user_id,
                 asset_id=asset_id,
