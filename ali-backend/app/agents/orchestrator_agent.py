@@ -15,6 +15,19 @@ logger = logging.getLogger("ali_platform.agents.orchestrator_agent")
 # V4.0 Configuration
 IMAGE_GENERATION_TIMEOUT = 120  # Seconds per image
 
+# V5.1: Graceful shutdown support - set by main.py SIGTERM handler
+_shutdown_requested = False
+
+def request_shutdown():
+    """Called by main.py when SIGTERM is received."""
+    global _shutdown_requested
+    _shutdown_requested = True
+    logger.warning("🛑 Orchestrator: Shutdown requested - will save progress and exit gracefully")
+
+def is_shutdown_requested():
+    """Check if shutdown has been requested."""
+    return _shutdown_requested
+
 # ============================================================================
 # 2025/2026 MASTER CHANNEL SPECIFICATIONS
 # Enforces dimension-accurate, platform-compliant asset generation
@@ -87,6 +100,65 @@ class OrchestratorAgent(BaseAgent):
     def __init__(self):
         super().__init__("Orchestrator")
         self.db = db
+
+    def _save_draft_immediately(self, uid, campaign_id, goal, channel, asset_payload, meta, blueprint):
+        """
+        V5.1: Progressive draft saving - saves draft immediately after asset is processed.
+        This ensures drafts are persisted even if the instance is terminated mid-generation.
+        """
+        try:
+            clean_channel = channel.lower().replace(" ", "_")
+            format_label = meta.get("format_label", "primary")
+            suffix = f"_{format_label}" if format_label and format_label not in ["feed", "primary"] else ""
+            draft_id = f"draft_{campaign_id}_{clean_channel}{suffix}"
+            
+            channel_blueprint = blueprint.get(channel, blueprint.get('instagram', {}))
+            
+            # Determine status and thumbnail
+            if asset_payload:
+                status = "DRAFT"
+                thumbnail_url = asset_payload
+                if isinstance(asset_payload, list):
+                    thumbnail_url = asset_payload[0]
+                elif isinstance(asset_payload, str) and asset_payload.startswith("data:text/html"):
+                    thumbnail_url = asset_payload
+            else:
+                status = "FAILED"
+                thumbnail_url = "https://placehold.co/600x400?text=Generation+Failed"
+            
+            # Build text copy
+            text_copy = channel_blueprint.get("caption") or channel_blueprint.get("body")
+            if not text_copy and channel_blueprint.get("headlines"):
+                text_copy = channel_blueprint["headlines"][0]
+            if not text_copy:
+                text_copy = goal or "Brand Campaign Asset"
+            
+            draft_data = {
+                "userId": uid,
+                "campaignId": campaign_id,
+                "campaignGoal": goal,
+                "channel": clean_channel,
+                "thumbnailUrl": thumbnail_url,
+                "assetPayload": asset_payload,
+                "asset_url": asset_payload if asset_payload else None,
+                "title": f"{goal[:50]}..." if len(goal) > 50 else goal,
+                "format": meta.get("format_type", "Image"),
+                "size": f"{meta.get('size', (0,0))[0]}x{meta.get('size', (0,0))[1]}" if meta.get('size') else "N/A",
+                "tone": meta.get("tone", "professional"),
+                "status": status,
+                "approvalStatus": "pending",
+                "createdAt": firestore.SERVER_TIMESTAMP,
+                "blueprint": channel_blueprint,
+                "textCopy": text_copy
+            }
+            
+            self.db.collection('creative_drafts').document(draft_id).set(draft_data)
+            logger.info(f"📦 Saved draft {draft_id} [{status}] immediately for {clean_channel}")
+            return True
+        except Exception as e:
+            logger.error(f"❌ Failed to save draft immediately for {channel}: {e}")
+            return False
+
 
     async def run_full_campaign_flow(self, uid, campaign_id, goal, brand_dna, answers, selected_channels: list = None):
         """
@@ -438,6 +510,34 @@ class OrchestratorAgent(BaseAgent):
                 
                 # Save metadata (overwrite is fine for carousel as base props are same)
                 assets_metadata[channel] = meta
+                
+                # V5.1: Progressive draft saving - save immediately after processing
+                # This ensures the draft is persisted even if SIGTERM interrupts the generation
+                if meta.get("format_type") != "carousel":  # Carousel handled separately
+                    asset_key = f"{channel}_{meta.get('format_label', 'primary')}" if meta.get('format_label') not in [None, 'primary', 'feed'] else channel
+                    self._save_draft_immediately(
+                        uid, campaign_id, goal, channel,
+                        assets.get(asset_key) or assets.get(channel),
+                        meta, blueprint
+                    )
+                
+                # V5.1: Check for graceful shutdown between assets
+                if is_shutdown_requested():
+                    logger.warning(f"⚠️ Shutdown requested after processing {channel} - saving progress...")
+                    self._update_progress(uid, campaign_id, f"Generation paused - {len(assets)} assets saved", 90)
+                    # Save campaign with partial results
+                    partial_data = {
+                        "status": "interrupted",
+                        "blueprint": blueprint,
+                        "assets": assets,
+                        "assets_metadata": assets_metadata,
+                        "selected_channels": target_channels,
+                        "goal": goal,
+                        "campaign_id": campaign_id
+                    }
+                    self.db.collection('users').document(uid).collection('campaigns').document(campaign_id).set(partial_data, merge=True)
+                    logger.info(f"💾 Saved partial campaign progress before shutdown")
+                    return  # Exit gracefully
 
             # Finalize Carousels: Convert dict to sorted list
             for channel, slides in temp_carousel_storage.items():
@@ -458,91 +558,46 @@ class OrchestratorAgent(BaseAgent):
             # Use set with merge=True to handle new campaign documents correctly
             self.db.collection('users').document(uid).collection('campaigns').document(campaign_id).set(final_data, merge=True)
             
-            # 5. Save drafts per channel + format for User Self-Approval (Review Feed)
-            for channel in target_channels:
-                clean_channel = channel.lower().replace(" ", "_")
-                try:
-                    channel_assets = []
-                    for asset_key, asset_payload in assets.items():
-                        if asset_key == clean_channel:
-                            channel_assets.append((None, asset_payload))
-                        elif asset_key.startswith(f"{clean_channel}_"):
-                            fmt = asset_key[len(clean_channel) + 1:]
-                            channel_assets.append((fmt, asset_payload))
-
-                    if not channel_assets:
-                        channel_assets = [(None, None)]
-
-                    for fmt, asset_payload in channel_assets:
-                        suffix = f"_{fmt}" if fmt and fmt != "feed" else ""
-                        draft_id = f"draft_{campaign_id}_{clean_channel}{suffix}"
-
-                        meta = assets_metadata.get(channel, {})
+            # 5. V5.1: Handle carousel draft finalization (progressive saving handles most drafts already)
+            # Save carousel drafts that weren't handled in the loop
+            for channel, slides in temp_carousel_storage.items():
+                if slides:
+                    try:
+                        clean_channel = channel.lower().replace(" ", "_")
+                        draft_id = f"draft_{campaign_id}_{clean_channel}"
                         channel_blueprint = blueprint.get(channel, blueprint.get('instagram', {}))
-
-                        if asset_payload:
-                            status = "DRAFT"
-                            thumbnail_url = asset_payload
-                            if isinstance(asset_payload, list):
-                                thumbnail_url = asset_payload[0]
-                            elif isinstance(asset_payload, str) and asset_payload.startswith("data:text/html"):
-                                thumbnail_url = asset_payload
-                        else:
-                            status = "FAILED"
-                            thumbnail_url = "https://placehold.co/600x400?text=Generation+Failed"
-                            # Capture specific error if available in payload (which might be Exception object)
-                            error_msg = str(asset_payload) if asset_payload and isinstance(asset_payload, (Exception, str)) else "Unknown Error"
-                            asset_payload = None
-
+                        meta = assets_metadata.get(channel, {})
+                        
+                        sorted_slides = [slides[k] for k in sorted(slides.keys())]
+                        
                         text_copy = channel_blueprint.get("caption") or channel_blueprint.get("body")
                         if not text_copy and channel_blueprint.get("headlines"):
                             text_copy = channel_blueprint["headlines"][0]
                         if not text_copy:
                             text_copy = goal or "Brand Campaign Asset"
-
+                        
                         draft_data = {
                             "userId": uid,
                             "campaignId": campaign_id,
-                            "campaignGoal": goal,  # V4.0: For frontend grouping by goal
+                            "campaignGoal": goal,
                             "channel": clean_channel,
-                            "thumbnailUrl": thumbnail_url,
-                            "assetPayload": asset_payload,
-                            "asset_url": asset_payload if asset_payload else None,
+                            "thumbnailUrl": sorted_slides[0] if sorted_slides else "https://placehold.co/600x400",
+                            "assetPayload": sorted_slides,
+                            "asset_url": sorted_slides,
                             "title": f"{goal[:50]}..." if len(goal) > 50 else goal,
-                            "format": meta.get("format_type", "Image"),
+                            "format": "carousel",
                             "size": f"{meta.get('size', (0,0))[0]}x{meta.get('size', (0,0))[1]}" if meta.get('size') else "N/A",
                             "tone": meta.get("tone", "professional"),
-                            "status": status,
+                            "status": "DRAFT",
                             "approvalStatus": "pending",
                             "createdAt": firestore.SERVER_TIMESTAMP,
                             "blueprint": channel_blueprint,
                             "textCopy": text_copy
                         }
-
                         self.db.collection('creative_drafts').document(draft_id).set(draft_data)
-                        logger.info(f"📦 Saved draft {draft_id} [{status}] for user {uid} (channel: {clean_channel})")
-                except Exception as save_err:
-                    logger.error(f"❌ Failed to save drafts for {clean_channel}: {save_err}")
-                    failed_draft_id = f"draft_{campaign_id}_{clean_channel}"
-                    failed_draft = {
-                        "userId": uid,
-                        "campaignId": campaign_id,
-                        "campaignGoal": goal,  # V4.0: For frontend grouping by goal
-                        "channel": clean_channel,
-                        "thumbnailUrl": "https://placehold.co/600x400?text=Generation+Failed",
-                        "assetPayload": None,
-                        "asset_url": None,
-                        "title": f"{goal[:50]}..." if len(goal) > 50 else goal,
-                        "format": "Image",
-                        "size": "N/A",
-                        "tone": "professional",
-                        "status": "FAILED",
-                        "approvalStatus": "pending",
-                        "createdAt": firestore.SERVER_TIMESTAMP,
-                        "blueprint": blueprint.get(channel, blueprint.get('instagram', {})),
-                        "textCopy": goal or "Brand Campaign Asset"
-                    }
-                    self.db.collection('creative_drafts').document(failed_draft_id).set(failed_draft)
+                        logger.info(f"📦 Saved carousel draft {draft_id} for {clean_channel}")
+                    except Exception as carousel_err:
+                        logger.error(f"❌ Failed to save carousel draft for {channel}: {carousel_err}")
             
             # V4.0: Enhanced completion notification with details
             success_count = len([k for k, v in assets.items() if v and not isinstance(v, dict) or (isinstance(v, dict) and 'error' not in v)])

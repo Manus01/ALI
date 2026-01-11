@@ -29,16 +29,24 @@ _instance_start_time = time.time()
 
 # --- 1b. GRACEFUL SHUTDOWN HANDLER ---
 def handle_sigterm(signum, frame):
-    """Handle SIGTERM from Cloud Run - log context for debugging"""
+    """Handle SIGTERM from Cloud Run - log context for debugging and notify agents"""
     uptime_seconds = time.time() - _instance_start_time
     
     # If instance has been running < 60 seconds, this is likely a deployment rollover
     if uptime_seconds < 60:
         logger.info(f"🔄 SIGTERM received after {uptime_seconds:.1f}s - likely deployment rollover (normal)")
     else:
-        # Instance was running for a while - this might be unexpected
+        # Instance was running for a while - notify ongoing operations
         logger.warning(f"🛑 SIGTERM received after {uptime_seconds:.1f}s - Cloud Run is shutting down this instance!")
         logger.warning("💡 If this interrupts long-running operations, check Cloud Run scaling settings.")
+        
+        # V5.1: Notify orchestrator to save progress before shutdown
+        try:
+            from app.agents.orchestrator_agent import request_shutdown
+            request_shutdown()
+            logger.info("✅ Notified orchestrator to save progress")
+        except ImportError:
+            pass  # Orchestrator not loaded - no ongoing operations
     # Note: We have 10 seconds to clean up before SIGKILL
 
 signal.signal(signal.SIGTERM, handle_sigterm)
