@@ -668,16 +668,18 @@ class OrchestratorAgent(BaseAgent):
                     # Get dimensions
                     w, h = meta.get("size", (1080, 1920))
                     
+                    # ------------------------------------------------------------------------
+                    # V7.1: STRICT VEO PIPELINE - NO FALLBACK VIDEO
+                    # ------------------------------------------------------------------------
+                    use_veo = ENABLE_VEO_VIDEO and channel in ['tiktok', 'instagram', 'facebook_story']
+                    
                     if is_video:
-                        # V7.0: Try Veo hybrid video if enabled
-                        # Uses constant flag (can be overridden by env var if needed)
-                        use_veo = ENABLE_VEO_VIDEO and channel in ['tiktok', 'instagram', 'facebook_story']
                         asset_url = None
                         
                         if use_veo:
+                            # 1. Attempt VEO (Strict Mode)
                             try:
                                 logger.info(f"🎬 Generating VEO hybrid video for {channel} ({w}x{h})...")
-                                # Get visual prompt from blueprint for Veo
                                 visual_prompt = channel_blueprint.get('visual_prompt', 'Professional brand video')
                                 headline = channel_blueprint.get('headline', '')
                                 
@@ -692,12 +694,14 @@ class OrchestratorAgent(BaseAgent):
                                     width=w,
                                     height=h
                                 )
+                                if not asset_url:
+                                    logger.warning(f"⚠️ Veo generation returned None. Strict mode: SKIPPING HTML VIDEO FALLBACK.")
                             except Exception as veo_err:
-                                logger.warning(f"⚠️ Veo failed, falling back to HTML: {veo_err}")
+                                logger.warning(f"⚠️ Veo failed: {veo_err}. Strict mode: SKIPPING HTML VIDEO FALLBACK.")
                                 asset_url = None
                         
-                        # V5.0 Fallback: Use generate_video_asset with HTML animations
-                        if not asset_url:
+                        else:
+                            # 2. Standard HTML Video (Only if Veo wasn't requested)
                             logger.info(f"🎥 Generating HTML video asset for {channel} ({w}x{h})...")
                             asset_url = await asset_processor.generate_video_asset(
                                 html_content=html_content,
@@ -714,14 +718,14 @@ class OrchestratorAgent(BaseAgent):
                             # Determine if it's video or fallback image
                             if asset_url.endswith('.mp4') or asset_url.endswith('.webm') or 'video' in asset_url:
                                 meta["format_type"] = "video"
-                                # If webm, warn about potential compatibility
                                 if asset_url.endswith('.webm'):
                                     meta["compatibility_warning"] = "WebM format - may not play on all mobile devices"
                             else:
                                 meta["format_type"] = "image"  # Fallback occurred
                         else:
-                            # Both video and fallback failed - use HTML as last resort
-                            logger.warning(f"⚠️ All rendering failed for {channel}, using HTML fallback")
+                            # Both video and fallback failed (or Veo failed strict mode)
+                            # Return base64 HTML as a last-resort crash protection
+                            logger.warning(f"⚠️ All video rendering options failed for {channel}, using HTML fallback")
                             encoded = base64.b64encode(html_content.encode('utf-8')).decode('utf-8')
                             assets[asset_key] = f"data:text/html;charset=utf-8;base64,{encoded}"
                             meta["format_type"] = "html"
