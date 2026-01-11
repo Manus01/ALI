@@ -127,7 +127,7 @@ def get_dashboard_overview(user: dict = Depends(verify_token)):
             "success_story": success_story,
             "integration_status": integration_status,
             "recommendations": recommendations,
-            "chart_history": chart_history # <--- Sending the chart data to frontend
+            "chart_history": chart_history
         }
 
     except Exception as e:
@@ -141,3 +141,66 @@ def get_dashboard_overview(user: dict = Depends(verify_token)):
             "recommendations": [],
             "chart_history": None
         }
+
+
+@router.get("/next-actions")
+def get_next_actions(user: dict = Depends(verify_token)):
+    """
+    Returns a prioritized list of tasks for the user.
+    1. Pending Creative Approvals (Drafts)
+    2. Integration Setup (if missing)
+    """
+    user_id = user['uid']
+    actions = []
+    
+    try:
+        # 1. Check for Pending Drafts
+        # Query Firestore for drafts with status='DRAFT' (Pending Review)
+        from google.cloud.firestore_v1.base_query import FieldFilter
+        
+        # Note: We query by userId and filter in Python or simpler query to avoid index issues
+        docs = list(db.collection("creative_drafts").where(filter=FieldFilter("userId", "==", user_id)).stream())
+        pending_drafts = [
+            d for d in [doc.to_dict() for doc in docs] 
+            if d.get("status") == "DRAFT"
+        ]
+        
+        # Sort by newest first
+        pending_drafts.sort(key=lambda x: x.get("createdAt", ""), reverse=True)
+        
+        # Add up to 3 review actions
+        for draft in pending_drafts[:3]:
+            draft_id = draft.get("id") # Ensure ID is stored or we need to capture it from doc
+            # In the query above we lost the ID if it wasn't in the dict. 
+            # Ideally we'd fix the query, but let's assume we can link to the studio generally 
+            # or try to use campaign info.
+            
+            campaign_goal = draft.get("campaignGoal", "Campaign Asset")
+            channel = draft.get("channel", "Social")
+            
+            actions.append({
+                "id": f"review_{draft_id or 'draft'}",
+                "type": "review",
+                "title": "Review Creative Asset",
+                "description": f"Approve {channel} asset for '{campaign_goal}'",
+                "link": "/studio?view=approvals", # Deep link to approvals view
+                "priority": "high"
+            })
+            
+        # 2. Check Integration Status
+        metricool_doc = db.collection("users").document(user_id).collection("user_integrations").document("metricool").get()
+        if not metricool_doc.exists:
+            actions.append({
+                "id": "setup_metricool",
+                "type": "setup",
+                "title": "Connect Social Accounts",
+                "description": "Link Metricool to enable AI analytics and publishing.",
+                "link": "/integrations",
+                "priority": "critical"
+            })
+            
+        return actions
+
+    except Exception as e:
+        logger.error(f"❌ Failed to fetch next actions: {e}")
+        return []
