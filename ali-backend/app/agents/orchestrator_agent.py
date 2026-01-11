@@ -660,17 +660,45 @@ class OrchestratorAgent(BaseAgent):
                     w, h = meta.get("size", (1080, 1920))
                     
                     if is_video:
-                        # V5.0: Use generate_video_asset with automatic fallback
-                        logger.info(f"🎥 Generating VIDEO asset for {channel} ({w}x{h})...")
-                        asset_url = await asset_processor.generate_video_asset(
-                            html_content=html_content,
-                            user_id=uid,
-                            asset_id=f"{campaign_id}_{asset_key}",
-                            width=w,
-                            height=h,
-                            duration=6.0,
-                            fallback_to_image=True  # Auto-fallback on failure
-                        )
+                        # V7.0: Try Veo hybrid video if enabled (feature flag)
+                        use_veo = os.getenv("ENABLE_VEO_VIDEO", "false").lower() == "true"
+                        asset_url = None
+                        
+                        if use_veo:
+                            try:
+                                logger.info(f"🎬 Generating VEO hybrid video for {channel} ({w}x{h})...")
+                                # Get visual prompt from blueprint for Veo
+                                visual_prompt = channel_blueprint.get('visual_prompt', 'Professional brand video')
+                                headline = channel_blueprint.get('headline', '')
+                                
+                                asset_url = await asset_processor.generate_veo_video_asset(
+                                    prompt=visual_prompt,
+                                    text_content=headline,
+                                    logo_url=brand_dna.get('logo_url', ''),
+                                    user_id=uid,
+                                    asset_id=f"{campaign_id}_{asset_key}",
+                                    channel=channel,
+                                    brand_dna=brand_dna,
+                                    width=w,
+                                    height=h
+                                )
+                            except Exception as veo_err:
+                                logger.warning(f"⚠️ Veo failed, falling back to HTML: {veo_err}")
+                                asset_url = None
+                        
+                        # V5.0 Fallback: Use generate_video_asset with HTML animations
+                        if not asset_url:
+                            logger.info(f"🎥 Generating HTML video asset for {channel} ({w}x{h})...")
+                            asset_url = await asset_processor.generate_video_asset(
+                                html_content=html_content,
+                                user_id=uid,
+                                asset_id=f"{campaign_id}_{asset_key}",
+                                width=w,
+                                height=h,
+                                duration=6.0,
+                                fallback_to_image=True  # Auto-fallback on failure
+                            )
+
                         if asset_url:
                             assets[asset_key] = asset_url
                             # Determine if it's video or fallback image

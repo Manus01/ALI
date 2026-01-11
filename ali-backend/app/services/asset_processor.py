@@ -1400,8 +1400,11 @@ class AssetProcessor:
             veo_result = await veo.generate_video_for_channel(
                 prompt=prompt,
                 channel=channel,
+                user_id=user_id,
+                asset_id=asset_id,
                 brand_dna=brand_dna
             )
+
             
             if not veo_result.get("video_url"):
                 logger.error(f"❌ Veo generation failed: {veo_result.get('error')}")
