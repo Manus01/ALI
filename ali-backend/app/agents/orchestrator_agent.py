@@ -15,6 +15,11 @@ logger = logging.getLogger("ali_platform.agents.orchestrator_agent")
 # V4.0 Configuration
 IMAGE_GENERATION_TIMEOUT = 120  # Seconds per image
 
+# V7.0: Enable Veo Video Pipeline
+# When True, uses Google Veo for AI-generated video backgrounds
+# with HTML text overlays. Falls back to HTML animations if Veo fails.
+ENABLE_VEO_VIDEO = True
+
 # V5.1: Graceful shutdown support - set by main.py SIGTERM handler
 _shutdown_requested = False
 
@@ -664,8 +669,9 @@ class OrchestratorAgent(BaseAgent):
                     w, h = meta.get("size", (1080, 1920))
                     
                     if is_video:
-                        # V7.0: Try Veo hybrid video if enabled (feature flag)
-                        use_veo = os.getenv("ENABLE_VEO_VIDEO", "false").lower() == "true"
+                        # V7.0: Try Veo hybrid video if enabled
+                        # Uses constant flag (can be overridden by env var if needed)
+                        use_veo = ENABLE_VEO_VIDEO and channel in ['tiktok', 'instagram', 'facebook_story']
                         asset_url = None
                         
                         if use_veo:

@@ -103,7 +103,10 @@ class VeoClient:
     
     def _upload_video_to_gcs(self, video_bytes: bytes, user_id: str, asset_id: str) -> str:
         """
-        Upload video bytes to GCS and return public URL.
+        Upload video bytes to GCS and return Signed URL.
+        
+        V7.0 CRITICAL: Uses Signed URLs instead of public URLs.
+        This ensures Playwright renderer can access videos even with private buckets.
         
         Args:
             video_bytes: Raw video bytes (decoded from base64)
@@ -111,8 +114,10 @@ class VeoClient:
             asset_id: Asset ID for filename
             
         Returns:
-            Public URL of the uploaded video
+            V4 Signed URL of the uploaded video (valid for 15 minutes)
         """
+        import datetime
+        
         try:
             bucket = self._storage_client.bucket(self.bucket_name)
             blob_path = f"veo-videos/{user_id}/{asset_id}_{uuid.uuid4().hex[:8]}.mp4"
@@ -120,11 +125,17 @@ class VeoClient:
             
             blob.upload_from_string(video_bytes, content_type="video/mp4")
             
-            # Make public or return signed URL
-            blob.make_public()
+            # V7.0 CRITICAL: Generate V4 Signed URL for renderer access
+            # This allows Playwright HTML renderer to access the video background
+            # even when the GCS bucket is private (prevents black background issue)
+            signed_url = blob.generate_signed_url(
+                version="v4",
+                expiration=datetime.timedelta(minutes=15),  # Valid for 15 mins (enough for rendering)
+                method="GET"
+            )
             
-            logger.info(f"✅ Video uploaded to GCS: {blob.public_url}")
-            return blob.public_url
+            logger.info(f"✅ Video uploaded to GCS with signed URL: {blob_path}")
+            return signed_url
             
         except Exception as e:
             logger.error(f"❌ Failed to upload video to GCS: {e}")
