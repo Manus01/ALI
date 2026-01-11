@@ -43,6 +43,21 @@ class KnowledgeService:
 
         return facts
 
+    def query_knowledge_base(
+        self,
+        user_id: Optional[str],
+        query: Optional[str] = None,
+        limit: int = 25,
+    ) -> List[Dict[str, Any]]:
+        if not user_id:
+            return []
+
+        try:
+            return self.query(user_id, limit=limit)
+        except Exception as exc:
+            logger.warning("⚠️ KnowledgeService query_knowledge_base failed: %s", exc)
+            return []
+
 
 _knowledge_service: Optional[KnowledgeService] = None
 
