@@ -106,8 +106,8 @@ export default function CampaignCenter() {
             try {
                 // We use the Metricool endpoint as it aggregates providers
                 const res = await api.get('/connect/metricool/status');
-                if (res.data.status === 'connected' && res.data.providers) {
-                    setDetectedPlatforms(res.data.providers);
+                if (res.data.status === 'active' && res.data.connected_providers) {
+                    setDetectedPlatforms(res.data.connected_providers);
                 }
             } catch (e) {
                 console.warn("Could not fetch integrations for context", e);

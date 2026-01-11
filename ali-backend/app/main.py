@@ -69,7 +69,6 @@ jobs = safe_import_router("jobs")
 assessments = safe_import_router("assessments")
 notifications = safe_import_router("notifications")
 publisher = safe_import_router("publisher")
-webhook = safe_import_router("webhook")
 integration = safe_import_router("integration")
 admin = safe_import_router("admin")
 tutorials = safe_import_router("tutorials")
@@ -202,7 +201,6 @@ routers_map = [
     ("/api/auth", (auth, ["Auth"])),
     ("/api/dashboard", (dashboard, ["Dashboard"])),
     ("/api/notifications", (notifications, ["Notifications"])),
-    ("/api", (webhook, ["Webhooks"])), # Webhook shares prefix
     ("/api", (integration, ["Integrations"])), # Integration shares prefix
     ("/api/admin", (admin, ["Admin"])),
     ("/api", (publisher, ["Publisher"])), # Publisher shares prefix

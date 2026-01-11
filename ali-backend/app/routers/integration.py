@@ -2,10 +2,21 @@
 from app.core.security import verify_token, db
 from app.services.metricool_client import MetricoolClient
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+CACHE_TTL = timedelta(minutes=15)
+
+def _parse_timestamp(value):
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value.replace("Z", ""))
+        except ValueError:
+            return None
+    return None
 
 @router.get("/integrations/status")
 def get_integrations(user: dict = Depends(verify_token)):
@@ -93,10 +104,22 @@ def get_metricool_status(user: dict = Depends(verify_token)):
             return {"status": "not_connected", "connected_providers": []}
             
         data = doc.to_dict()
+        if data.get("status") == "disconnected":
+            return {"status": "disconnected", "connected_providers": data.get("connected_providers", [])}
         blog_id = data.get("metricool_blog_id")
         
         if not blog_id:
             return {"status": "pending", "connected_providers": []}
+        
+        cached_providers = data.get("connected_providers", [])
+        last_synced = _parse_timestamp(data.get("connected_providers_synced_at"))
+        if cached_providers and last_synced and datetime.utcnow() - last_synced < CACHE_TTL:
+            return {
+                "status": "active",
+                "connected_providers": cached_providers,
+                "blog_id": blog_id,
+                "cached": True
+            }
             
         # Fetch live data from Metricool
         try:
@@ -105,7 +128,10 @@ def get_metricool_status(user: dict = Depends(verify_token)):
             connected = info.get("connected", [])
             
             # CACHE UPDATE: Sync to Firestore for Admin Visibility
-            doc.reference.update({"connected_providers": connected})
+            doc.reference.update({
+                "connected_providers": connected,
+                "connected_providers_synced_at": datetime.utcnow().isoformat()
+            })
             
             return {
                 "status": "active", 
@@ -115,7 +141,11 @@ def get_metricool_status(user: dict = Depends(verify_token)):
         except Exception as e:
             logger.warning(f"⚠️ Metricool Status Fetch Error: {e}")
             # Return active but with error note, so UI doesn't break
-            return {"status": "active", "connected_providers": data.get("connected_providers", []), "error": "Could not fetch live providers"}
+            return {
+                "status": "active",
+                "connected_providers": cached_providers,
+                "error": "Could not fetch live providers"
+            }
             
     except Exception as e:
         logger.error(f"❌ Metricool Status Error: {e}")

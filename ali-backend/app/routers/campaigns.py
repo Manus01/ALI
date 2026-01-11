@@ -34,7 +34,7 @@ async def initiate_campaign(payload: dict, user: dict = Depends(verify_token)):
         try:
             metricool_ref = db.collection('users').document(uid).collection('user_integrations').document('metricool').get()
             if metricool_ref.exists and metricool_ref.to_dict().get('status') == 'active':
-                blog_id = metricool_ref.to_dict().get('blog_id')
+                blog_id = metricool_ref.to_dict().get('metricool_blog_id') or metricool_ref.to_dict().get('blog_id')
                 client = MetricoolClient(blog_id=blog_id)
                 # Fetch live providers to know exactly what is connected
                 account_info = client.get_account_info()
@@ -81,7 +81,7 @@ async def finalize_campaign(payload: dict, background_tasks: BackgroundTasks, us
             try:
                 metricool_ref = db.collection('users').document(uid).collection('user_integrations').document('metricool').get()
                 if metricool_ref.exists and metricool_ref.to_dict().get('status') == 'active':
-                    blog_id = metricool_ref.to_dict().get('blog_id')
+                    blog_id = metricool_ref.to_dict().get('metricool_blog_id') or metricool_ref.to_dict().get('blog_id')
                     client = MetricoolClient(blog_id=blog_id)
                     account_info = client.get_account_info()
                     selected_channels = account_info.get('connected', ["instagram", "linkedin"])
