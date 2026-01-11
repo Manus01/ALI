@@ -58,7 +58,7 @@ async def publish_video(payload: Dict[str, Any] = Body(...), user: dict = Depend
         return {
             "status": "success", 
             "message": "Scheduled via Metricool", 
-            "metricool_id": result.get('postId')
+            "metricool_id": res.get('postId')
         }
 
     except Exception as e:

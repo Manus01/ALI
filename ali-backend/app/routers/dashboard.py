@@ -2,6 +2,7 @@
 from app.core.security import verify_token, db
 from app.services.metricool_client import MetricoolClient
 from typing import List, Dict, Any, Optional
+from datetime import datetime, timedelta
 import os
 import logging
 
@@ -9,6 +10,17 @@ import logging
 router = APIRouter()
 
 logger = logging.getLogger(__name__)
+CACHE_TTL = timedelta(minutes=30)
+
+def _parse_timestamp(value):
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value.replace("Z", ""))
+        except ValueError:
+            return None
+    return None
 
 @router.get("/overview")
 def get_dashboard_overview(user: dict = Depends(verify_token)):
@@ -47,10 +59,24 @@ def get_dashboard_overview(user: dict = Depends(verify_token)):
             
             if blog_id:
                 try:
-                    # FETCH LIVE DATA
-                    client = MetricoolClient()
-                    snapshot = client.get_dashboard_snapshot(blog_id)
-                    
+                    last_synced = _parse_timestamp(m_data.get("dashboard_snapshot_synced_at"))
+                    cached_snapshot = m_data.get("dashboard_snapshot")
+                    cached_history = m_data.get("chart_history")
+
+                    if cached_snapshot and cached_history and last_synced and datetime.utcnow() - last_synced < CACHE_TTL:
+                        snapshot = cached_snapshot
+                        chart_history = cached_history
+                    else:
+                        # FETCH LIVE DATA
+                        client = MetricoolClient()
+                        snapshot = client.get_dashboard_snapshot(blog_id)
+                        chart_history = client.get_historical_breakdown(blog_id)
+                        metricool_doc.reference.update({
+                            "dashboard_snapshot": snapshot,
+                            "chart_history": chart_history,
+                            "dashboard_snapshot_synced_at": datetime.utcnow().isoformat()
+                        })
+
                     if snapshot.get("status") != "error":
                         integration_status = "active"
                         
@@ -76,10 +102,6 @@ def get_dashboard_overview(user: dict = Depends(verify_token)):
                                 "text": "Ad Spend is low. Generate new creative assets in Studio.",
                                 "link": "/studio"
                             })
-
-                        # C. Process Chart History (Multi-Channel)
-                        # This fetches the daily breakdown we created in the Client
-                        chart_history = client.get_historical_breakdown(blog_id)
 
                 except Exception as e:
                     logger.warning(f"⚠️ Metricool Fetch Failed: {e}")
