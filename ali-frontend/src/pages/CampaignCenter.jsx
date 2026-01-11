@@ -38,11 +38,12 @@ export default function CampaignCenter() {
     const [channelConfirmed, setChannelConfirmed] = useState(false);
 
     // --- REVIEW FEED STATES (v3.0) ---
-    const [rejectionModal, setRejectionModal] = useState({ open: false, channel: null, assetId: null });
+    const [rejectionModal, setRejectionModal] = useState({ open: false, channel: null, formatLabel: null, assetId: null });
     const [rejectionFeedback, setRejectionFeedback] = useState('');
     const [isRegenerating, setIsRegenerating] = useState(false);
-    const [approvedChannels, setApprovedChannels] = useState([]);
+    const [approvedAssets, setApprovedAssets] = useState([]);
     const [showAllApprovedModal, setShowAllApprovedModal] = useState(false);
+    const [selectedFormats, setSelectedFormats] = useState({});
 
     // --- BRAND DNA STATES (Merged from BrandOnboarding) ---
     const [dnaStep, setDnaStep] = useState('input'); // input, loading, results
@@ -545,19 +546,59 @@ export default function CampaignCenter() {
     // --- REVIEW FEED HANDLERS (v3.0) ---
 
     // Approve a channel's asset
-    const handleApproveAsset = async (channel) => {
-        if (!campaignId) return;
-        try {
-            // FIX: Consistent ID generation logic (lower + spaces to underscores only)
-            const cleanChannel = channel.toLowerCase().replace(/ /g, "_");
-            const draftId = `draft_${campaignId}_${cleanChannel}`;
+    const getDraftIdForFormat = useCallback((channelId, formatLabel) => {
+        if (!campaignId) return null;
+        const cleanChannel = channelId.toLowerCase().replace(/ /g, "_").replace(/-/g, "_");
+        const normalizedLabel = (formatLabel || "primary").toLowerCase();
+        const suffix = normalizedLabel && !["feed", "primary"].includes(normalizedLabel)
+            ? `_${normalizedLabel}`
+            : "";
+        return `draft_${campaignId}_${cleanChannel}${suffix}`;
+    }, [campaignId]);
 
+    const getChannelAssets = useCallback((channelId) => {
+        if (!finalAssets?.assets) return [];
+        const channelPrefix = `${channelId}_`;
+        const channelEntries = Object.entries(finalAssets.assets)
+            .filter(([assetKey]) => assetKey === channelId || assetKey.startsWith(channelPrefix))
+            .map(([assetKey, assetUrl]) => {
+                const rawLabel = assetKey === channelId ? (finalAssets.assets_metadata?.[channelId]?.format_label || "primary") : assetKey.replace(channelPrefix, "");
+                return {
+                    assetKey,
+                    assetUrl,
+                    formatLabel: rawLabel
+                };
+            });
+
+        const labelOrder = ["primary", "feed", "story"];
+        return channelEntries.sort((a, b) => {
+            const aIndex = labelOrder.indexOf(a.formatLabel);
+            const bIndex = labelOrder.indexOf(b.formatLabel);
+            if (aIndex === -1 && bIndex === -1) return a.formatLabel.localeCompare(b.formatLabel);
+            if (aIndex === -1) return 1;
+            if (bIndex === -1) return -1;
+            return aIndex - bIndex;
+        });
+    }, [finalAssets]);
+
+    const getTotalAssetCount = useCallback(() => {
+        if (!finalAssets?.assets) return selectedChannels.length;
+        return selectedChannels.reduce((total, channelId) => total + getChannelAssets(channelId).length, 0);
+    }, [finalAssets, selectedChannels, getChannelAssets]);
+
+    const handleApproveAsset = async (channelId, formatLabel) => {
+        if (!campaignId) return;
+        const draftId = getDraftIdForFormat(channelId, formatLabel);
+        if (!draftId) return;
+        try {
             await api.post(`/api/creatives/${draftId}/publish`);
-            const newApproved = [...approvedChannels, channel];
-            setApprovedChannels(newApproved);
+            const newApproved = approvedAssets.includes(draftId)
+                ? approvedAssets
+                : [...approvedAssets, draftId];
+            setApprovedAssets(newApproved);
 
             // V4.0: Check if all assets are now approved
-            if (newApproved.length === selectedChannels.length) {
+            if (newApproved.length === getTotalAssetCount()) {
                 setShowAllApprovedModal(true);
             }
         } catch (err) {
@@ -566,9 +607,9 @@ export default function CampaignCenter() {
         }
     };
 
-    const handleOpenRejection = (channel) => {
-        const cleanChannel = channel.toLowerCase().replace(/ /g, "_").replace(/-/g, "_");
-        setRejectionModal({ open: true, channel, assetId: `draft_${campaignId}_${cleanChannel}` });
+    const handleOpenRejection = (channelId, formatLabel) => {
+        const draftId = getDraftIdForFormat(channelId, formatLabel);
+        setRejectionModal({ open: true, channel: channelId, formatLabel, assetId: draftId });
         setRejectionFeedback('');
     };
 
@@ -580,12 +621,13 @@ export default function CampaignCenter() {
             await api.post('/campaign/regenerate', {
                 campaign_id: campaignId,
                 channel: rejectionModal.channel,
+                format_label: rejectionModal.formatLabel,
                 feedback: rejectionFeedback
             });
             // Refresh results
             const res = await api.get(`/campaign/results/${campaignId}`);
             setFinalAssets(res.data);
-            setRejectionModal({ open: false, channel: null, assetId: null });
+            setRejectionModal({ open: false, channel: null, formatLabel: null, assetId: null });
             setRejectionFeedback('');
         } catch (err) {
             console.error("Regeneration failed", err);
@@ -1296,12 +1338,12 @@ export default function CampaignCenter() {
                             </div>
                             <h3 className="text-2xl font-black text-slate-800 dark:text-white tracking-tight">{finalAssets.blueprint?.theme || 'Campaign Assets'}</h3>
                             <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">
-                                {selectedChannels.length} channels • {approvedChannels.length} approved
+                                {selectedChannels.length} channels • {approvedAssets.length} approved
                             </p>
                         </div>
                         <button
                             onClick={handleExportZip}
-                            disabled={approvedChannels.length === 0}
+                            disabled={approvedAssets.length === 0}
                             className="bg-gradient-to-r from-green-600 to-emerald-600 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 hover:scale-105 transition-all shadow-lg disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             <FaDownload /> Export ZIP
@@ -1312,12 +1354,24 @@ export default function CampaignCenter() {
                     <div className="space-y-6 pr-2">
                         {selectedChannels.map(channelId => {
                             const channel = AVAILABLE_CHANNELS.find(c => c.id === channelId) || { name: channelId, icon: '📊' };
-                            const assetUrl = finalAssets.assets?.[channelId];
+                            const channelAssets = getChannelAssets(channelId);
+                            const selectedAssetKey = selectedFormats[channelId] || channelAssets[0]?.assetKey;
+                            const selectedAsset = channelAssets.find(asset => asset.assetKey === selectedAssetKey) || channelAssets[0];
+                            const assetUrl = selectedAsset?.assetUrl;
+                            const selectedFormatLabel = selectedAsset?.formatLabel || 'primary';
+                            const draftId = getDraftIdForFormat(channelId, selectedFormatLabel);
                             const channelBlueprint = finalAssets.blueprint?.[channelId] || {};
-                            const isApproved = approvedChannels.includes(channelId);
+                            const isApproved = draftId ? approvedAssets.includes(draftId) : false;
                             const textCopy = channelBlueprint.caption || channelBlueprint.body ||
                                 (channelBlueprint.headlines ? channelBlueprint.headlines.join(' | ') : '') ||
                                 channelBlueprint.video_script || '';
+                            const formatLabelDisplay = (label) => {
+                                const normalized = (label || 'primary').toLowerCase();
+                                if (normalized === 'primary') return 'Primary';
+                                if (normalized === 'feed') return 'Feed';
+                                if (normalized === 'story') return 'Story';
+                                return normalized.replace(/_/g, ' ');
+                            };
 
                             return (
                                 <div key={channelId} className={`bg-white dark:bg-slate-800 rounded-[2rem] border-2 transition-all ${isApproved
@@ -1345,6 +1399,22 @@ export default function CampaignCenter() {
                                         {/* Visual Asset */}
                                         <div className="space-y-4">
                                             <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Visual Asset</p>
+                                            {channelAssets.length > 1 && (
+                                                <div className="flex flex-wrap gap-2">
+                                                    {channelAssets.map(asset => (
+                                                        <button
+                                                            key={asset.assetKey}
+                                                            onClick={() => setSelectedFormats(prev => ({ ...prev, [channelId]: asset.assetKey }))}
+                                                            className={`px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider border transition-all ${asset.assetKey === selectedAssetKey
+                                                                ? 'bg-primary text-white border-primary'
+                                                                : 'bg-white dark:bg-slate-700 text-slate-500 dark:text-slate-300 border-slate-200 dark:border-slate-600 hover:border-primary'
+                                                                }`}
+                                                        >
+                                                            {formatLabelDisplay(asset.formatLabel)}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
 
                                             {/* RENDER LOGIC: Carousel vs Motion vs Static */}
                                             {Array.isArray(assetUrl) ? (
@@ -1365,7 +1435,7 @@ export default function CampaignCenter() {
                                             ) : assetUrl ? (
                                                 /* STANDARD IMAGE */
                                                 <div className="aspect-video bg-slate-50 dark:bg-slate-700 rounded-2xl overflow-hidden border border-slate-100 dark:border-slate-600">
-                                                    <img src={assetUrl} alt={channel.name} className="w-full h-full object-cover" />
+                                                    <img src={assetUrl} alt={`${channel.name} ${formatLabelDisplay(selectedFormatLabel)}`} className="w-full h-full object-cover" />
                                                 </div>
                                             ) : (
                                                 /* FAILED / EMPTY - Show Failed State (V4.0) */
@@ -1391,9 +1461,9 @@ export default function CampaignCenter() {
                                     <div className="flex justify-between items-center p-6 pt-0">
                                         {/* Left: Utility Buttons */}
                                         <div className="flex items-center gap-2">
-                                            {assetUrl && assetUrl !== 'FAILED' && (
+                                            {assetUrl && assetUrl !== 'FAILED' && draftId && (
                                                 <button
-                                                    onClick={() => window.open(`/api/creatives/draft_${campaignId}_${channelId.toLowerCase().replace(/ /g, '_')}/download`, '_blank')}
+                                                    onClick={() => window.open(`/api/creatives/${draftId}/download`, '_blank')}
                                                     className="p-2 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-all"
                                                     title="Download"
                                                 >
@@ -1401,7 +1471,7 @@ export default function CampaignCenter() {
                                                 </button>
                                             )}
                                             <button
-                                                onClick={() => handleDeleteAsset(`draft_${campaignId}_${channelId.toLowerCase().replace(/ /g, '_')}`)}
+                                                onClick={() => draftId && handleDeleteAsset(draftId)}
                                                 className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 transition-all"
                                                 title="Delete"
                                             >
@@ -1419,11 +1489,11 @@ export default function CampaignCenter() {
                                                                 <FaExclamationTriangle /> Failed
                                                             </div>
                                                             <button
-                                                                onClick={() => handleRegenerateFailed(`draft_${campaignId}_${channelId.toLowerCase().replace(/ /g, '_')}`)}
-                                                                disabled={regeneratingId === `draft_${campaignId}_${channelId.toLowerCase().replace(/ /g, '_')}`}
+                                                                onClick={() => draftId && handleRegenerateFailed(draftId)}
+                                                                disabled={draftId ? regeneratingId === draftId : false}
                                                                 className="px-4 py-2 rounded-xl font-bold text-amber-600 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-all flex items-center gap-2 disabled:opacity-50"
                                                             >
-                                                                {regeneratingId === `draft_${campaignId}_${channelId.toLowerCase().replace(/ /g, '_')}` ? (
+                                                                {draftId && regeneratingId === draftId ? (
                                                                     <><FaSpinner className="animate-spin" /> Regenerating...</>
                                                                 ) : (
                                                                     <><FaRedo /> Retry</>
@@ -1433,13 +1503,13 @@ export default function CampaignCenter() {
                                                     ) : (
                                                         <>
                                                             <button
-                                                                onClick={() => handleOpenRejection(channelId)}
+                                                                onClick={() => handleOpenRejection(channelId, selectedFormatLabel)}
                                                                 className="px-5 py-3 rounded-xl font-bold text-red-600 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-900/50 transition-all flex items-center gap-2"
                                                             >
                                                                 <FaTimes /> Reject
                                                             </button>
                                                             <button
-                                                                onClick={() => handleApproveAsset(channelId)}
+                                                                onClick={() => handleApproveAsset(channelId, selectedFormatLabel)}
                                                                 className="px-6 py-3 rounded-xl font-bold text-white bg-green-600 hover:bg-green-700 transition-all flex items-center gap-2 shadow-lg"
                                                             >
                                                                 <FaCheckCircle /> Approve
@@ -1468,13 +1538,13 @@ export default function CampaignCenter() {
                     <div className="bg-white dark:bg-slate-800 rounded-[3rem] w-full max-w-xl overflow-hidden shadow-2xl animate-scale-up border border-white/20">
                         <div className="p-8 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center bg-slate-50/50 dark:bg-slate-900/50">
                             <h3 className="font-black text-slate-800 dark:text-white uppercase tracking-tight">Request Revision</h3>
-                            <button onClick={() => setRejectionModal({ open: false, channel: null, assetId: null })} aria-label="Close Modal" className="p-2 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-all">
+                            <button onClick={() => setRejectionModal({ open: false, channel: null, formatLabel: null, assetId: null })} aria-label="Close Modal" className="p-2 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-full transition-all">
                                 <FaTimes className="text-slate-400" />
                             </button>
                         </div>
                         <div className="p-10">
                             <p className="text-sm text-slate-500 dark:text-slate-400 font-medium mb-4">
-                                Tell us what needs to change for the <strong className="text-slate-800 dark:text-white">{rejectionModal.channel}</strong> asset. We'll regenerate it based on your feedback.
+                                Tell us what needs to change for the <strong className="text-slate-800 dark:text-white">{rejectionModal.channel}</strong>{rejectionModal.formatLabel ? ` (${rejectionModal.formatLabel})` : ''} asset. We'll regenerate it based on your feedback.
                             </p>
                             <textarea
                                 name="rejectionFeedback"
@@ -1551,7 +1621,7 @@ export default function CampaignCenter() {
                             </div>
                             <h3 className="text-2xl font-black text-slate-800 dark:text-white mb-2">All Assets Approved! 🎉</h3>
                             <p className="text-slate-500 dark:text-slate-400 text-sm mb-6">
-                                You've approved all {approvedChannels.length} assets in this campaign.
+                                You've approved all {approvedAssets.length} assets in this campaign.
                             </p>
                         </div>
                         <div className="p-6 space-y-4">
