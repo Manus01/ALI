@@ -13,7 +13,7 @@ COPY requirements.txt .
 # (previously ttf-ubuntu-font-family and ttf-unifont)
 RUN apt-get update && apt-get install -y \
     ffmpeg \
-    fonts-ubuntu \
+    fonts-liberation \
     fonts-unifont \
     fonts-noto-color-emoji \
     libnss3 \
