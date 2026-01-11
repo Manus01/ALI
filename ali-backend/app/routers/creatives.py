@@ -1,10 +1,12 @@
 """
 Creative drafts endpoints for authenticated users.
 """
+import base64
 import io
 import zipfile
 import logging
 from typing import List, Optional
+from urllib.parse import unquote
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -163,6 +165,24 @@ def download_asset(draft_id: str, user_id: str = Depends(get_current_user_id)):
         if not asset_url:
             raise HTTPException(status_code=404, detail="No asset URL found")
         
+        if asset_url.startswith("data:"):
+            header, data_payload = asset_url.split(",", 1)
+            header_meta = header[5:]
+            parts = header_meta.split(";")
+            content_type = parts[0] if parts[0] else "text/plain"
+            if "base64" in parts:
+                raw_bytes = base64.b64decode(data_payload)
+            else:
+                raw_bytes = unquote(data_payload).encode("utf-8")
+            ext = "html" if "html" in content_type else "png"
+            channel = data.get("channel", "asset")
+            filename = f"{channel}_{draft_id}.{ext}"
+            return StreamingResponse(
+                io.BytesIO(raw_bytes),
+                media_type=content_type,
+                headers={"Content-Disposition": f"attachment; filename={filename}"}
+            )
+
         # Fetch the asset
         response = requests.get(asset_url, timeout=30)
         response.raise_for_status()
