@@ -134,6 +134,7 @@ GLOBAL_LAYOUT_CSS = '''
         height: 100%;
     }
     
+    /* === ORIGINAL LAYOUTS === */
     .variant-hero-center {
         justify-content: center;
         align-items: center;
@@ -144,14 +145,141 @@ GLOBAL_LAYOUT_CSS = '''
         justify-content: center;
         align-items: flex-start;
         text-align: left;
+        padding-left: 5%;
     }
     
     .variant-editorial-right {
         justify-content: center;
         align-items: flex-end;
         text-align: right;
+        padding-right: 5%;
+    }
+    
+    /* === V7.0 NEW LAYOUTS === */
+    
+    /* Lower-Third: TV/News style - text at bottom */
+    .variant-lower-third {
+        justify-content: flex-end;
+        align-items: flex-start;
+        text-align: left;
+        padding: 0 5% 15% 5%;
+    }
+    .variant-lower-third .text-container {
+        background: linear-gradient(transparent, rgba(0,0,0,0.7));
+        padding: 30px;
+        width: 100%;
+    }
+    
+    /* Top-Banner: Safe for TikTok/Reels (avoid bottom UI) */
+    .variant-top-banner {
+        justify-content: flex-start;
+        align-items: center;
+        text-align: center;
+        padding-top: 15%;
+    }
+    
+    /* Corner-Badge: Minimal branding - logo in corner */
+    .variant-corner-badge {
+        justify-content: flex-end;
+        align-items: flex-end;
+        text-align: right;
+        padding: 5%;
+    }
+    .variant-corner-badge .headline {
+        font-size: 2rem !important;
+    }
+    
+    /* Split-Screen: Half video, half text (for explainers) */
+    .variant-split-screen {
+        justify-content: center;
+        align-items: center;
+        text-align: center;
+    }
+    .variant-split-screen .text-container {
+        background: rgba(0,0,0,0.85);
+        padding: 40px;
+        width: 90%;
+        border-radius: 20px;
     }
 '''
+
+# V7.0 Layout Variant Configuration
+LAYOUT_VARIANTS = {
+    "hero-center": {
+        "css_class": "variant-hero-center",
+        "description": "Centered text, balanced composition",
+        "best_for": ["general", "brand", "announcement"]
+    },
+    "editorial-left": {
+        "css_class": "variant-editorial-left",
+        "description": "Left-aligned text, magazine style",
+        "best_for": ["text-heavy", "quotes", "testimonials"]
+    },
+    "editorial-right": {
+        "css_class": "variant-editorial-right", 
+        "description": "Right-aligned text, asymmetric balance",
+        "best_for": ["product", "feature-highlight"]
+    },
+    "lower-third": {
+        "css_class": "variant-lower-third",
+        "description": "TV/News style bottom bar",
+        "best_for": ["news", "updates", "professional"]
+    },
+    "top-banner": {
+        "css_class": "variant-top-banner",
+        "description": "Text at top, safe for TikTok/Reels",
+        "best_for": ["tiktok", "reels", "shorts"],
+        "safe_for_channels": ["tiktok", "instagram", "youtube_shorts"]
+    },
+    "corner-badge": {
+        "css_class": "variant-corner-badge",
+        "description": "Minimal branding, logo focus",
+        "best_for": ["minimal", "brand-only", "teaser"]
+    },
+    "split-screen": {
+        "css_class": "variant-split-screen",
+        "description": "Text box overlay, explainer style",
+        "best_for": ["explainer", "tutorial", "tips"]
+    }
+}
+
+# Channel-aware layout recommendations
+CHANNEL_LAYOUT_PREFERENCE = {
+    "tiktok": ["top-banner", "hero-center", "split-screen"],
+    "instagram": ["hero-center", "editorial-left", "lower-third"],
+    "instagram_story": ["top-banner", "hero-center", "split-screen"],
+    "youtube_shorts": ["top-banner", "hero-center", "lower-third"],
+    "linkedin": ["hero-center", "editorial-left", "lower-third"],
+    "facebook": ["hero-center", "editorial-left", "split-screen"],
+    "twitter": ["hero-center", "corner-badge", "editorial-left"]
+}
+
+def get_layout_for_channel(channel: str, content_type: str = "general") -> str:
+    """
+    Get the best layout variant for a given channel and content type.
+    Returns the CSS class name for the layout.
+    """
+    import random
+    
+    # Get channel preferences or default
+    preferences = CHANNEL_LAYOUT_PREFERENCE.get(channel, ["hero-center", "editorial-left"])
+    
+    # Pick from top preferences with some randomization
+    if len(preferences) > 1:
+        # 60% chance of first choice, 30% second, 10% random
+        roll = random.random()
+        if roll < 0.6:
+            choice = preferences[0]
+        elif roll < 0.9:
+            choice = preferences[1] if len(preferences) > 1 else preferences[0]
+        else:
+            choice = random.choice(preferences)
+    else:
+        choice = preferences[0]
+    
+    return LAYOUT_VARIANTS[choice]["css_class"]
+
+
 
 # V4.1 Animation Fail-Safe CSS
 # Ensures content is VISIBLE by default - GSAP will handle hiding & revealing

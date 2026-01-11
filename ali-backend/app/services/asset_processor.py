@@ -1354,8 +1354,215 @@ class AssetProcessor:
         except Exception as e:
             logger.error(f"❌ Video recording failed: {e}")
             return None
+    
+    async def generate_veo_video_asset(
+        self,
+        prompt: str,
+        text_content: str,
+        logo_url: str,
+        user_id: str,
+        asset_id: str,
+        channel: str = "instagram",
+        brand_dna: dict = None,
+        width: int = 1080,
+        height: int = 1920
+    ) -> Optional[str]:
+        """
+        V7.0 Hybrid Video Pipeline: Veo AI background + HTML text overlay.
+        
+        Combines:
+        1. Veo video generation (realistic motion background)
+        2. HTML/GSAP text overlay (perfect font rendering)
+        3. Playwright recording (composite final video)
+        
+        Args:
+            prompt: Description of the video background to generate
+            text_content: Headline/copy text to overlay
+            logo_url: URL of the brand logo
+            user_id: User ID for storage path
+            asset_id: Asset ID for filename
+            channel: Target channel (affects layout and aspect ratio)
+            brand_dna: Brand DNA with colors, fonts, etc.
+            width: Output width in pixels
+            height: Output height in pixels
+            
+        Returns:
+            URL of the final composite video
+        """
+        try:
+            from app.services.veo_client import get_veo_client
+            from app.core.templates import get_layout_for_channel, LAYOUT_VARIANTS
+            
+            logger.info(f"🎬 Starting Veo hybrid video for channel: {channel}")
+            
+            # 1. Generate Veo video background
+            veo = get_veo_client()
+            veo_result = await veo.generate_video_for_channel(
+                prompt=prompt,
+                channel=channel,
+                brand_dna=brand_dna
+            )
+            
+            if not veo_result.get("video_url"):
+                logger.error(f"❌ Veo generation failed: {veo_result.get('error')}")
+                # Fall back to current image+animation approach
+                return None
+            
+            video_url = veo_result["video_url"]
+            logger.info(f"✅ Veo video generated: {video_url}")
+            
+            # 2. Analyze first frame for luminance (text color mode)
+            luminance_mode = "dark"  # Default to white text
+            try:
+                # TODO: Extract first frame and analyze
+                # For now, use dark mode (white text) which works on most backgrounds
+                pass
+            except Exception as lum_err:
+                logger.warning(f"⚠️ Luminance analysis failed: {lum_err}")
+            
+            # 3. Get channel-appropriate layout
+            layout_class = get_layout_for_channel(channel)
+            
+            # 4. Build HTML template with video background + text overlay
+            brand_color = brand_dna.get("color_palette", {}).get("primary", "#ffffff") if brand_dna else "#ffffff"
+            
+            html_content = self._build_video_overlay_template(
+                video_url=video_url,
+                text=text_content,
+                logo_url=logo_url,
+                layout_class=layout_class,
+                luminance_mode=luminance_mode,
+                brand_color=brand_color,
+                width=width,
+                height=height
+            )
+            
+            # 5. Record the composite with Playwright
+            final_url = await self.record_html_animation(
+                html_content=html_content,
+                user_id=user_id,
+                asset_id=asset_id,
+                width=width,
+                height=height,
+                duration=veo_result.get("duration", 4)
+            )
+            
+            logger.info(f"🎥 Hybrid video complete: {final_url}")
+            return final_url
+            
+        except Exception as e:
+            logger.error(f"❌ Veo hybrid video failed: {e}")
+            return None
+    
+    def _build_video_overlay_template(
+        self,
+        video_url: str,
+        text: str,
+        logo_url: str,
+        layout_class: str,
+        luminance_mode: str = "dark",
+        brand_color: str = "#ffffff",
+        width: int = 1080,
+        height: int = 1920
+    ) -> str:
+        """
+        Build HTML template with video background and text overlay.
+        """
+        # Text color based on luminance
+        text_color = "#ffffff" if luminance_mode == "dark" else "#000000"
+        shadow_color = "rgba(0,0,0,0.8)" if luminance_mode == "dark" else "rgba(255,255,255,0.8)"
+        
+        return f'''
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+            <style>
+                * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+                body {{ 
+                    width: {width}px; 
+                    height: {height}px; 
+                    font-family: 'Inter', sans-serif;
+                    overflow: hidden;
+                }}
+                
+                .video-bg {{
+                    position: absolute;
+                    top: 0; left: 0;
+                    width: 100%; height: 100%;
+                    object-fit: cover;
+                    z-index: 1;
+                }}
+                
+                .overlay {{
+                    position: absolute;
+                    top: 0; left: 0;
+                    width: 100%; height: 100%;
+                    z-index: 10;
+                    display: flex;
+                    flex-direction: column;
+                    padding: 60px;
+                }}
+                
+                .{layout_class} {{
+                    /* Layout applied via class */
+                }}
+                
+                .text-container {{
+                    max-width: 90%;
+                }}
+                
+                .headline {{
+                    font-size: 4rem;
+                    font-weight: 800;
+                    color: {text_color};
+                    text-shadow: 0 0 30px {shadow_color}, 0 0 60px {shadow_color};
+                    line-height: 1.1;
+                    opacity: 0;
+                }}
+                
+                .logo {{
+                    width: 120px;
+                    height: auto;
+                    opacity: 0;
+                    filter: drop-shadow(0 0 20px {shadow_color});
+                }}
+                
+                .accent-bar {{
+                    width: 100px;
+                    height: 6px;
+                    background: {brand_color};
+                    margin: 20px 0;
+                    opacity: 0;
+                }}
+            </style>
+        </head>
+        <body>
+            <video class="video-bg" autoplay muted loop playsinline>
+                <source src="{video_url}" type="video/mp4">
+            </video>
+            
+            <div class="overlay {layout_class}">
+                <div class="text-container">
+                    <img src="{logo_url}" class="logo" id="logo">
+                    <div class="accent-bar" id="accent"></div>
+                    <h1 class="headline" id="text">{text}</h1>
+                </div>
+            </div>
+            
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+            <script>
+                gsap.timeline()
+                    .to("#logo", {{opacity: 1, y: 0, duration: 0.6, ease: "power2.out"}})
+                    .to("#accent", {{opacity: 1, width: 150, duration: 0.4}}, "-=0.3")
+                    .to("#text", {{opacity: 1, y: 0, duration: 0.8, ease: "power2.out"}}, "-=0.2");
+            </script>
+        </body>
+        </html>
+        '''
 
 _asset_processor: Optional[AssetProcessor] = None
+
 
 def get_asset_processor() -> AssetProcessor:
     """Get or create singleton AssetProcessor."""
