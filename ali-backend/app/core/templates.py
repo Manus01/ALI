@@ -313,17 +313,25 @@ def get_motion_template(template_name: str, image_url: str, logo_url: str, color
     Returns complete HTML5 motion asset for the given template.
     
     Args:
-        template_name: One of 'luxury', 'cyber', 'editorial', 'minimal', 'aurora', 'gridlock'
+        template_name: One of 'luxury', 'cyber', 'editorial', 'minimal', 'aurora', 'gridlock', 'scrapbook', 'pop', 'swiss'
         image_url: Background image URL
         logo_url: Brand logo URL
         color: Primary brand color (hex)
         text: Headline/caption text
         luminance_mode: 'dark' (needs white text) or 'light' (needs black text)
-        layout_variant: 'hero-center', 'editorial-left', 'editorial-right'
+        layout_variant: V7.0 expanded options:
+            - 'hero-center': Centered text, balanced composition
+            - 'editorial-left': Left-aligned text, magazine style
+            - 'editorial-right': Right-aligned text, asymmetric
+            - 'lower-third': TV/news style bottom bar
+            - 'top-banner': Text at top, safe for TikTok/Reels
+            - 'corner-badge': Minimal branding, logo focus
+            - 'split-screen': Text box overlay, explainer style
     
     Returns:
         Complete HTML string ready for base64 encoding
     """
+
     if template_name == "luxury":
         return _luxury_template(image_url, logo_url, color, text, layout_variant)
     elif template_name == "cyber":

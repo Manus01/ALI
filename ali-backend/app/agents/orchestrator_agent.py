@@ -626,8 +626,12 @@ class OrchestratorAgent(BaseAgent):
                     )
                     logger.info(f"🎨 V6.0 Template Selected: {template_name} (complexity: {TEMPLATE_COMPLEXITY.get(template_name, 'unknown')})")
                     
-                    # Randomize Layout Variant
-                    layout_variant = random.choice(['hero-center', 'editorial-left', 'editorial-right'])
+                    # V7.0: Use channel-aware layout selection (includes new layouts)
+                    from app.core.templates import get_layout_for_channel, LAYOUT_VARIANTS
+                    layout_class = get_layout_for_channel(channel)
+                    # Extract variant name from CSS class (e.g., 'variant-hero-center' -> 'hero-center')
+                    layout_variant = layout_class.replace('variant-', '') if layout_class.startswith('variant-') else 'hero-center'
+
                     
                     # Generate motion HTML from template library with luminance mode and layout variant
                     html_content = get_motion_template(template_name, final_url, logo_url, primary_color, copy_text, luminance_mode, layout_variant)
