@@ -327,6 +327,7 @@ class OrchestratorAgent(BaseAgent):
             channel_blueprint = blueprint.get(channel, blueprint.get('instagram', {}))
             
             # Determine status and thumbnail
+            original_asset_payload = asset_payload
             if asset_payload:
                 status = "DRAFT"
                 thumbnail_url = asset_payload
@@ -354,7 +355,7 @@ class OrchestratorAgent(BaseAgent):
                 "channel": clean_channel,
                 "thumbnailUrl": thumbnail_url,
                 "assetPayload": asset_payload,
-                "asset_url": asset_payload if asset_payload else None,
+                "asset_url": original_asset_payload if original_asset_payload else None,
                 "title": f"{goal[:50]}..." if len(goal) > 50 else goal,
                 "format": meta.get("format_type", "Image"),
                 "size": f"{meta.get('size', (0,0))[0]}x{meta.get('size', (0,0))[1]}" if meta.get('size') else "N/A",

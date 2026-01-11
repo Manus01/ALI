@@ -5,8 +5,8 @@ import base64
 import io
 import zipfile
 import logging
-from typing import List, Optional
-from urllib.parse import unquote
+from typing import List, Optional, Tuple
+from urllib.parse import unquote, urlparse
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -14,9 +14,34 @@ import requests
 from google.cloud.firestore_v1.base_query import FieldFilter
 
 from app.core.security import db, get_current_user_id
+from app.services.gcs_service import GCSService
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+
+def _extract_gcs_blob(asset_url: str) -> Optional[Tuple[str, str]]:
+    parsed = urlparse(asset_url)
+    if parsed.scheme == "gs":
+        bucket, _, blob_path = parsed.path.lstrip("/").partition("/")
+        if bucket and blob_path:
+            return bucket, blob_path
+        return None
+
+    if "storage.googleapis.com" not in parsed.netloc:
+        return None
+
+    if parsed.netloc == "storage.googleapis.com":
+        bucket, _, blob_path = parsed.path.lstrip("/").partition("/")
+    elif parsed.netloc.endswith(".storage.googleapis.com"):
+        bucket = parsed.netloc.split(".storage.googleapis.com")[0]
+        blob_path = parsed.path.lstrip("/")
+    else:
+        return None
+
+    if bucket and blob_path:
+        return bucket, blob_path
+    return None
 
 
 @router.get("/my-drafts")
@@ -164,6 +189,14 @@ def download_asset(draft_id: str, user_id: str = Depends(get_current_user_id)):
         asset_url = data.get("asset_url") or data.get("url")
         if not asset_url:
             raise HTTPException(status_code=404, detail="No asset URL found")
+
+        gcs_blob = _extract_gcs_blob(asset_url)
+        if gcs_blob:
+            bucket_name, blob_path = gcs_blob
+            gcs_service = GCSService()
+            refreshed_url = gcs_service.generate_signed_url(bucket_name, blob_path)
+            if refreshed_url:
+                asset_url = refreshed_url
         
         if asset_url.startswith("data:"):
             header, data_payload = asset_url.split(",", 1)
