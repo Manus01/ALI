@@ -101,6 +101,72 @@ class OrchestratorAgent(BaseAgent):
         super().__init__("Orchestrator")
         self.db = db
 
+    # =========================================================================
+    # V6.1: Generation Checkpointing - Resumable Campaign Generation
+    # Saves state after each asset, allows resuming from interruption points
+    # =========================================================================
+    
+    def _save_checkpoint(self, uid: str, campaign_id: str, checkpoint_data: dict):
+        """
+        Save generation checkpoint to Firestore.
+        Called after blueprint generation and after each asset completion.
+        """
+        try:
+            checkpoint_ref = self.db.collection('generation_checkpoints').document(campaign_id)
+            checkpoint_data.update({
+                "userId": uid,
+                "campaignId": campaign_id,
+                "updatedAt": firestore.SERVER_TIMESTAMP
+            })
+            checkpoint_ref.set(checkpoint_data, merge=True)
+            logger.debug(f"💾 Checkpoint saved for campaign {campaign_id}")
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to save checkpoint: {e}")
+    
+    def _load_checkpoint(self, campaign_id: str) -> dict:
+        """
+        Load existing checkpoint for resume capability.
+        Returns empty dict if no checkpoint exists.
+        """
+        try:
+            checkpoint_ref = self.db.collection('generation_checkpoints').document(campaign_id)
+            doc = checkpoint_ref.get()
+            if doc.exists:
+                return doc.to_dict()
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to load checkpoint: {e}")
+        return {}
+    
+    def _mark_channel_complete(self, campaign_id: str, channel: str, format_label: str = "primary"):
+        """
+        Mark a specific channel/format as completed in the checkpoint.
+        Called immediately after each asset is successfully generated.
+        """
+        try:
+            checkpoint_ref = self.db.collection('generation_checkpoints').document(campaign_id)
+            checkpoint_ref.set({
+                "completedChannels": firestore.ArrayUnion([f"{channel}_{format_label}"]),
+                "updatedAt": firestore.SERVER_TIMESTAMP
+            }, merge=True)
+            logger.debug(f"✅ Marked {channel}_{format_label} as complete")
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to mark channel complete: {e}")
+    
+    def _clear_checkpoint(self, campaign_id: str):
+        """Remove checkpoint after successful completion."""
+        try:
+            self.db.collection('generation_checkpoints').document(campaign_id).delete()
+            logger.info(f"🧹 Cleared checkpoint for completed campaign {campaign_id}")
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to clear checkpoint: {e}")
+    
+    def _get_pending_channels(self, all_channels: list, completed: list) -> list:
+        """
+        Filter out already-completed channels from the generation list.
+        Used when resuming from a checkpoint.
+        """
+        return [ch for ch in all_channels if ch not in completed]
+
     def _save_draft_immediately(self, uid, campaign_id, goal, channel, asset_payload, meta, blueprint):
         """
         V5.1: Progressive draft saving - saves draft immediately after asset is processed.
@@ -499,11 +565,15 @@ class OrchestratorAgent(BaseAgent):
                 # This ensures the draft is persisted even if SIGTERM interrupts the generation
                 if meta.get("format_type") != "carousel":  # Carousel handled separately
                     asset_key = f"{channel}_{meta.get('format_label', 'primary')}" if meta.get('format_label') not in [None, 'primary', 'feed'] else channel
-                    self._save_draft_immediately(
+                    draft_saved = self._save_draft_immediately(
                         uid, campaign_id, goal, channel,
                         assets.get(asset_key) or assets.get(channel),
                         meta, blueprint
                     )
+                    # V6.1: Mark channel as complete for resume capability
+                    if draft_saved:
+                        self._mark_channel_complete(campaign_id, channel, meta.get("format_label", "primary"))
+
                 
                 # V5.1: Check for graceful shutdown between assets
                 if is_shutdown_requested():
@@ -587,6 +657,9 @@ class OrchestratorAgent(BaseAgent):
             success_count = len([k for k, v in assets.items() if v and not isinstance(v, dict) or (isinstance(v, dict) and 'error' not in v)])
             goal_short = f"{goal[:40]}..." if len(goal) > 40 else goal
             self._update_progress(uid, campaign_id, f"Campaign Ready! {success_count} assets for: {goal_short}", 100)
+            
+            # V6.1: Clear checkpoint on successful completion
+            self._clear_checkpoint(campaign_id)
 
         except Exception as e:
             self.handle_error(e)

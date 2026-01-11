@@ -124,6 +124,115 @@ async def get_results(campaign_id: str, user: dict = Depends(verify_token)):
         raise HTTPException(status_code=404, detail="Campaign not found")
     return doc.to_dict()
 
+
+@router.post("/resume/{campaign_id}")
+async def resume_campaign(campaign_id: str, background_tasks: BackgroundTasks, user: dict = Depends(verify_token)):
+    """
+    V6.1: Resume an interrupted campaign generation.
+    Checks for checkpoint and continues from where it left off.
+    """
+    try:
+        from app.agents.orchestrator_agent import OrchestratorAgent
+        
+        uid = user['uid']
+        
+        if not db:
+            raise HTTPException(status_code=503, detail="Database Unavailable")
+        
+        # Check for existing checkpoint
+        checkpoint_doc = db.collection('generation_checkpoints').document(campaign_id).get()
+        if not checkpoint_doc.exists:
+            raise HTTPException(status_code=404, detail="No checkpoint found for this campaign")
+        
+        checkpoint = checkpoint_doc.to_dict()
+        
+        # Verify ownership
+        if checkpoint.get("userId") != uid:
+            raise HTTPException(status_code=403, detail="Not authorized to resume this campaign")
+        
+        # Get original campaign data
+        campaign_doc = db.collection('users').document(uid).collection('campaigns').document(campaign_id).get()
+        if not campaign_doc.exists:
+            raise HTTPException(status_code=404, detail="Campaign not found")
+        
+        campaign_data = campaign_doc.to_dict()
+        brand_dna = db.collection('users').document(uid).collection('brand_profile').document('current').get().to_dict()
+        
+        completed_channels = checkpoint.get("completedChannels", [])
+        all_channels = campaign_data.get("selected_channels", [])
+        
+        # Calculate pending channels (channels that haven't been completed)
+        pending_channels = []
+        for ch in all_channels:
+            # Check if this channel (with any format label) is completed
+            if not any(comp.startswith(ch) for comp in completed_channels):
+                pending_channels.append(ch)
+        
+        if not pending_channels:
+            # All channels are already completed
+            return {
+                "status": "already_complete",
+                "campaign_id": campaign_id,
+                "completed_count": len(completed_channels)
+            }
+        
+        logger.info(f"🔄 Resuming campaign {campaign_id} - {len(pending_channels)} channels remaining: {pending_channels}")
+        
+        # Resume generation for pending channels only
+        orchestrator = OrchestratorAgent()
+        background_tasks.add_task(
+            orchestrator.run_full_campaign_flow,
+            uid, campaign_id, 
+            campaign_data.get("goal", ""),
+            brand_dna,
+            {},  # answers not needed for resume
+            pending_channels  # Only generate for pending channels
+        )
+        
+        return {
+            "status": "resuming",
+            "campaign_id": campaign_id,
+            "completed_channels": completed_channels,
+            "pending_channels": pending_channels
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Resume Campaign Failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/checkpoint/{campaign_id}")
+async def get_checkpoint(campaign_id: str, user: dict = Depends(verify_token)):
+    """
+    Check if a campaign has an interrupted checkpoint.
+    Frontend can use this to show a "Resume" button.
+    """
+    uid = user['uid']
+    
+    if not db:
+        raise HTTPException(status_code=503, detail="Database Unavailable")
+    
+    checkpoint_doc = db.collection('generation_checkpoints').document(campaign_id).get()
+    
+    if not checkpoint_doc.exists:
+        return {"has_checkpoint": False, "campaign_id": campaign_id}
+    
+    checkpoint = checkpoint_doc.to_dict()
+    
+    # Verify ownership
+    if checkpoint.get("userId") != uid:
+        return {"has_checkpoint": False, "campaign_id": campaign_id}
+    
+    return {
+        "has_checkpoint": True,
+        "campaign_id": campaign_id,
+        "completed_channels": checkpoint.get("completedChannels", []),
+        "updated_at": checkpoint.get("updatedAt")
+    }
+
+
 @router.post("/recycle")
 async def recycle_asset(payload: dict, background_tasks: BackgroundTasks, user: dict = Depends(verify_token)):
     try:
