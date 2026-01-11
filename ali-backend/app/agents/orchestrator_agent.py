@@ -3,9 +3,11 @@ import logging
 import base64
 import json
 import random
+from urllib.parse import unquote
 from app.agents.base_agent import BaseAgent
 from app.agents.campaign_agent import CampaignAgent
 from app.services.image_agent import ImageAgent
+from app.services.gcs_service import GCSService
 from app.core.security import db
 from app.core.templates import get_motion_template, get_template_for_tone, get_random_template, get_optimized_template, MOTION_TEMPLATES, FONT_MAP, TEMPLATE_COMPLEXITY
 from firebase_admin import firestore
@@ -329,14 +331,34 @@ class OrchestratorAgent(BaseAgent):
             # Determine status and thumbnail
             if asset_payload:
                 status = "DRAFT"
+                asset_url = None
                 thumbnail_url = asset_payload
                 if isinstance(asset_payload, list):
                     thumbnail_url = asset_payload[0]
+                    asset_url = asset_payload[0]
                 elif isinstance(asset_payload, str) and asset_payload.startswith("data:text/html"):
-                    thumbnail_url = asset_payload
+                    thumbnail_url = "https://placehold.co/600x400?text=HTML+Preview"
+                    try:
+                        header, data_payload = asset_payload.split(",", 1)
+                        is_base64 = ";base64" in header
+                        raw_bytes = base64.b64decode(data_payload) if is_base64 else unquote(data_payload).encode("utf-8")
+                        gcs_service = GCSService()
+                        filename = f"{draft_id}.html"
+                        asset_url = gcs_service.upload_video(
+                            file_obj=raw_bytes,
+                            filename=filename,
+                            content_type="text/html"
+                        )
+                        asset_payload = None
+                    except Exception as upload_error:
+                        logger.warning(f"⚠️ Failed to upload HTML asset for {draft_id}: {upload_error}")
+                        asset_url = asset_payload
+                else:
+                    asset_url = asset_payload
             else:
                 status = "FAILED"
                 thumbnail_url = "https://placehold.co/600x400?text=Generation+Failed"
+                asset_url = None
             
             # Build text copy
             text_copy = channel_blueprint.get("caption") or channel_blueprint.get("body")
@@ -352,7 +374,7 @@ class OrchestratorAgent(BaseAgent):
                 "channel": clean_channel,
                 "thumbnailUrl": thumbnail_url,
                 "assetPayload": asset_payload,
-                "asset_url": asset_payload if asset_payload else None,
+                "asset_url": asset_url,
                 "title": f"{goal[:50]}..." if len(goal) > 50 else goal,
                 "format": meta.get("format_type", "Image"),
                 "size": f"{meta.get('size', (0,0))[0]}x{meta.get('size', (0,0))[1]}" if meta.get('size') else "N/A",

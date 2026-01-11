@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import api from '../api/axiosInterceptor';
 import { useAuth } from '../hooks/useAuth';
 import {
@@ -15,6 +15,8 @@ import { allCountries } from '../data/countries';
 export default function CampaignCenter() {
     const { currentUser, userProfile, refreshProfile } = useAuth();
     const location = useLocation();
+    const navigate = useNavigate();
+    const { campaignId: campaignIdParam } = useParams();
     const [goal, setGoal] = useState('');
     const [stage, setStage] = useState('input'); // input, channels, loading, questioning, generating, results, error
     const [questions, setQuestions] = useState([]);
@@ -107,6 +109,31 @@ export default function CampaignCenter() {
         };
         fetchIntegrations();
     }, []);
+
+    useEffect(() => {
+        const params = new URLSearchParams(location.search);
+        const view = params.get('view');
+
+        if (view === 'library') return;
+        if (!campaignIdParam || !currentUser) return;
+        if (campaignIdParam === campaignId && finalAssets) return;
+
+        const restoreCampaignResults = async () => {
+            try {
+                const res = await api.get(`/campaign/results/${campaignIdParam}`);
+                setCampaignId(campaignIdParam);
+                setFinalAssets(res.data);
+                setSelectedChannels(res.data.selected_channels || []);
+                setGoal(res.data.goal || '');
+                setStage('results');
+                setViewMode('wizard');
+            } catch (err) {
+                console.warn("Failed to load campaign results", err);
+            }
+        };
+
+        restoreCampaignResults();
+    }, [campaignId, campaignIdParam, currentUser, finalAssets, location.search]);
 
     // --- USER DRAFT REVIEW FUNCTIONS ---
     const fetchUserDrafts = useCallback(async () => {
@@ -278,10 +305,7 @@ export default function CampaignCenter() {
         // Alternatively, we can call the API and set state.
 
         try {
-            const res = await api.get(`/campaign/results/${asset.campaignId}`);
-            setFinalAssets(res.data);
-            setStage('results');
-            setViewMode('wizard'); // Switch back to wizard view to see the results
+            navigate(`/campaign-center/${asset.campaignId}`);
         } catch (err) {
             console.error("Failed to load campaign for review", err);
             // If results aren't ready (e.g. still generating), maybe show status? 
@@ -347,14 +371,19 @@ export default function CampaignCenter() {
         try {
             const res = await api.get(`/campaign/results/${campaignId}`);
             setFinalAssets(res.data);
+            setSelectedChannels(res.data.selected_channels || []);
+            setGoal(res.data.goal || '');
             setStage('results');
+            if (campaignId && campaignIdParam !== campaignId) {
+                navigate(`/campaign-center/${campaignId}`);
+            }
             // Refresh drafts so the user sees their new draft immediately
             fetchUserDrafts();
         } catch (err) {
             console.error("Failed to fetch results", err);
             // Don't change stage on fetch error - show what we have
         }
-    }, [campaignId, fetchUserDrafts]);
+    }, [campaignId, campaignIdParam, fetchUserDrafts, navigate]);
 
     // --- 1. REAL-TIME PROGRESS LISTENER (SECURE PATH) ---
     useEffect(() => {

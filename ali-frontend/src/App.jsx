@@ -92,6 +92,7 @@ function App() {
                             <Route path="/onboarding" element={<BrandOnboarding />} />
                             <Route path="/integrations" element={<IntegrationsPage />} />
                             <Route path="/campaign-center" element={<CampaignCenter />} />
+                            <Route path="/campaign-center/:campaignId" element={<CampaignCenter />} />
 
                             {/* 🔐 The Admin Route (Now inside Layout!) */}
                             <Route path="/admin" element={
