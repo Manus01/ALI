@@ -99,7 +99,8 @@ class MetricoolClient:
                     elif 'providers' in found_blog:
                         logger.info(f"📱 providers found: {found_blog.get('providers')}")
                     else:
-                        logger.warning(f"⚠️ No socialNetworks or providers in blog response. Full response: {found_blog}")
+                        # This is expected for newer Metricool API - extraction uses flat keys
+                        logger.debug(f"ℹ️ Using flat-key extraction for blog response")
                     return found_blog
                     
             except requests.exceptions.RequestException as e:
