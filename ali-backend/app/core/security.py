@@ -53,21 +53,16 @@ def initialize_firebase():
 # Define the OAuth2 scheme (Bearer token in Authorization header)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
-# Ensure verify_token is present below as we restored it earlier
 def verify_token(token: str = Depends(oauth2_scheme)):
     """
     Verifies the Firebase ID token in the Authorization header.
     Returns the decoded token or raises HTTP 401.
     """
     try:
-        # TEST BYPASS
-        if token == "test-token-123":
-             return {"uid": "test-automated-user", "email": "automated@test.com", "is_admin": True}
-
         decoded_token = auth.verify_id_token(token)
         return decoded_token
     except Exception as e:
-        logger.error(f"🛡️ Token verification failed: {e}")
+        logger.error(f"Token verification failed: {e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid authentication credentials",

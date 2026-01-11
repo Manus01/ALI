@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState } from 'react';
+﻿import React, { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '../hooks/useAuth';
 import api from '../api/axiosInterceptor';
 import {
@@ -86,7 +86,7 @@ export default function IntegrationsPage() {
     }, [currentUser]);
 
     // --- 2. Fetch Detailed Status (Providers) ---
-    const fetchDetails = async () => {
+    const fetchDetails = useCallback(async () => {
         if (status !== 'active') return;
         setRefreshing(true);
         try {
@@ -104,13 +104,13 @@ export default function IntegrationsPage() {
         } finally {
             setRefreshing(false);
         }
-    };
+    }, [status]);
 
     useEffect(() => {
         if (status === 'active') {
             fetchDetails();
         }
-    }, [status]);
+    }, [status, fetchDetails]);
 
     // --- 2. Request Access Handler ---
     const handleRequestAccess = async () => {

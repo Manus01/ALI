@@ -1,7 +1,7 @@
 ﻿import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FaPlus, FaRobot, FaCheckCircle, FaLightbulb, FaSearch, FaArrowRight, FaGraduationCap, FaTrash, FaTimes, FaClock, FaSpinner, FaCheck } from 'react-icons/fa';
-import { getFirestore, collection, query, onSnapshot, orderBy, where } from 'firebase/firestore';
+import { getFirestore, collection, query, onSnapshot, orderBy } from 'firebase/firestore';
 import api from '../api/axiosInterceptor';
 import { useAuth } from '../hooks/useAuth';
 import SagaMapNavigator from '../components/SagaMapNavigator';

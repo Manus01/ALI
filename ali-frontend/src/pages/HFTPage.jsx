@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState, useMemo } from "react";
+﻿import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import { API_URL } from "../api_config";
@@ -37,6 +37,72 @@ const SHAPES = [
     { id: 'z_shape', points: "10,10 70,10 70,40 30,40 30,90 90,90 90,60 10,60", label: "Z-Block" }
 ];
 
+// Helper function to generate puzzle data (pure function with explicit randomness)
+function generatePuzzleData(currentRound) {
+    // === DIFFICULTY SCALING FORMULA ===
+    const shapeCount = 12 + (currentRound * 3);
+    const lineCount = currentRound < 2 ? 0 : (currentRound * 3);
+    const useSmartLines = currentRound > 2;
+    const rotation = currentRound > 5 ? Math.floor(Math.random() * 360) : 0;
+
+    let targetColor = "#000000";
+    let palette = [];
+    let strokeWidth = 2.5;
+
+    if (currentRound < 3) {
+        targetColor = "#1e293b";
+        palette = ["#FCA5A5", "#93C5FD", "#86EFAC", "#FDE047"];
+    } else if (currentRound < 6) {
+        targetColor = "#1D4ED8";
+        palette = ["#60A5FA", "#3B82F6", "#2563EB", "#93C5FD"];
+        strokeWidth = 2.0;
+    } else {
+        targetColor = "#78350F";
+        palette = ["#92400E", "#B45309", "#D97706", "#78350F"];
+        strokeWidth = 1.8;
+    }
+
+    const target = SHAPES[Math.floor(Math.random() * SHAPES.length)];
+    const distractors = SHAPES.filter(s => s.id !== target.id)
+        .sort(() => 0.5 - Math.random())
+        .slice(0, 9);
+    const options = [target, ...distractors].sort(() => 0.5 - Math.random());
+
+    const noiseElements = [];
+    const rp = () => Math.random() * 100;
+
+    for (let i = 0; i < shapeCount; i++) {
+        noiseElements.push({
+            type: "polygon",
+            points: `${rp()},${rp()} ${rp()},${rp()} ${rp()},${rp()}`,
+            fill: palette[Math.floor(Math.random() * palette.length)],
+            opacity: 0.4 + (currentRound * 0.035)
+        });
+    }
+
+    for (let i = 0; i < lineCount; i++) {
+        noiseElements.push({
+            type: "line",
+            x1: rp(), y1: rp(),
+            x2: rp(), y2: rp(),
+            stroke: targetColor,
+            width: 1
+        });
+    }
+
+    if (useSmartLines) {
+        const coords = target.points.split(' ').map(p => p.split(',').map(Number));
+        coords.forEach(([cx, cy]) => {
+            noiseElements.push({ type: "line", x1: cx, y1: cy, x2: rp(), y2: rp(), stroke: targetColor, width: strokeWidth });
+            if (currentRound > 7) {
+                noiseElements.push({ type: "line", x1: cx, y1: cy, x2: rp(), y2: rp(), stroke: targetColor, width: strokeWidth });
+            }
+        });
+    }
+
+    return { target, options, noiseElements, rotation, targetColor, strokeWidth };
+}
+
 export default function HFTPage() {
     const navigate = useNavigate();
     const { currentUser } = useAuth();
@@ -46,93 +112,23 @@ export default function HFTPage() {
     const [results, setResults] = useState([]);
     const [timeLeft, setTimeLeft] = useState(45);
     const [isSaving, setIsSaving] = useState(false);
+    const [roundData, setRoundData] = useState(() => generatePuzzleData(0));
 
     const TOTAL_ROUNDS = 10;
 
-    // --- GENERATE PUZZLE ---
-    const roundData = useMemo(() => {
-        // === DIFFICULTY SCALING FORMULA ===
-
-        // 1. Density: Starts at 12, adds 3 shapes per round (Max 42)
-        const shapeCount = 12 + (currentRound * 3);
-
-        // 2. Chaos Lines: Starts at 0, ramps up quickly after Round 2
-        const lineCount = currentRound < 2 ? 0 : (currentRound * 3);
-
-        // 3. Smart Camouflage: Turns on at Round 3
-        const useSmartLines = currentRound > 2;
-
-        // 4. Rotation: Turns on at Round 6
-        const rotation = currentRound > 5 ? Math.floor(Math.random() * 360) : 0;
-
-        // 5. Color Strategy (The biggest difficulty lever)
-        let targetColor = "#000000";
-        let palette = [];
-        let strokeWidth = 2.5;
-
-        if (currentRound < 3) {
-            // Rounds 1-3: High Contrast (Easy)
-            targetColor = "#1e293b"; // Dark Slate
-            palette = ["#FCA5A5", "#93C5FD", "#86EFAC", "#FDE047"]; // Pastels
-        } else if (currentRound < 6) {
-            // Rounds 4-6: Medium Contrast (Target matches Noise family)
-            targetColor = "#1D4ED8"; // Blue
-            palette = ["#60A5FA", "#3B82F6", "#2563EB", "#93C5FD"]; // Blue Noise
-            strokeWidth = 2.0; // Thinner lines are harder to see
-        } else {
-            // Rounds 7-10: Camouflage (Target is part of the noise)
-            targetColor = "#78350F"; // Dark Brown
-            palette = ["#92400E", "#B45309", "#D97706", "#78350F"]; // Exact matches
-            strokeWidth = 1.8;
+    // --- GENERATE PUZZLE ON ROUND CHANGE ---
+    useEffect(() => {
+        if (currentRound < TOTAL_ROUNDS) {
+            setRoundData(generatePuzzleData(currentRound));
         }
-
-        // B. Select Target & Distractors
-        const target = SHAPES[Math.floor(Math.random() * SHAPES.length)];
-        const distractors = SHAPES.filter(s => s.id !== target.id)
-            .sort(() => 0.5 - Math.random())
-            .slice(0, 9);
-        const options = [target, ...distractors].sort(() => 0.5 - Math.random());
-
-        // C. Generate Noise Elements
-        const noiseElements = [];
-        const rp = () => Math.random() * 100;
-
-        // 1. Shapes (Overlays)
-        for (let i = 0; i < shapeCount; i++) {
-            noiseElements.push({
-                type: "polygon",
-                points: `${rp()},${rp()} ${rp()},${rp()} ${rp()},${rp()}`,
-                fill: palette[Math.floor(Math.random() * palette.length)],
-                // Opacity increases with round difficulty (0.4 -> 0.7)
-                opacity: 0.4 + (currentRound * 0.035)
-            });
-        }
-
-        // 2. Lines (Scratches)
-        for (let i = 0; i < lineCount; i++) {
-            noiseElements.push({
-                type: "line",
-                x1: rp(), y1: rp(),
-                x2: rp(), y2: rp(),
-                stroke: targetColor,
-                width: 1
-            });
-        }
-
-        // 3. Smart Lines (Corner Breakers)
-        if (useSmartLines) {
-            const coords = target.points.split(' ').map(p => p.split(',').map(Number));
-            coords.forEach(([cx, cy]) => {
-                // Draw TWO lines per corner for maximum confusion
-                noiseElements.push({ type: "line", x1: cx, y1: cy, x2: rp(), y2: rp(), stroke: targetColor, width: strokeWidth });
-                if (currentRound > 7) {
-                    noiseElements.push({ type: "line", x1: cx, y1: cy, x2: rp(), y2: rp(), stroke: targetColor, width: strokeWidth });
-                }
-            });
-        }
-
-        return { target, options, noiseElements, rotation, targetColor, strokeWidth };
     }, [currentRound]);
+
+    // --- HANDLE ANSWER (defined before timer to avoid stale closure) ---
+    const handleAnswer = useCallback((selectedShapeId) => {
+        setResults(prev => [...prev, { round: currentRound + 1, success: selectedShapeId === roundData?.target?.id }]);
+        if (selectedShapeId === roundData?.target?.id) setScore(s => s + 1);
+        setCurrentRound(r => r + 1);
+    }, [currentRound, roundData]);
 
     // --- TIMER ---
     useEffect(() => {
@@ -145,7 +141,7 @@ export default function HFTPage() {
             });
         }, 1000);
         return () => clearInterval(interval);
-    }, [currentRound]);
+    }, [currentRound, handleAnswer]);
 
     // --- SAVE ---
     useEffect(() => {
@@ -164,18 +160,11 @@ export default function HFTPage() {
                         params: { id_token: token }
                     });
                     setTimeout(() => navigate('/quiz/marketing'), 1500);
-                } catch (error) { console.error("❌ Save failed:", error); setIsSaving(false); }
+                } catch (error) { console.error("Save failed:", error); setIsSaving(false); }
             }
         };
         saveToBackend();
-    }, [currentRound, results, score, currentUser, navigate]);
-
-    const handleAnswer = (selectedShapeId) => {
-        const isSuccess = selectedShapeId === roundData.target.id;
-        setResults(prev => [...prev, { round: currentRound + 1, success: isSuccess }]);
-        if (isSuccess) setScore(s => s + 1);
-        setCurrentRound(r => r + 1);
-    };
+    }, [currentRound, results, score, currentUser, navigate, isSaving]);
 
     if (currentRound >= TOTAL_ROUNDS) {
         return (

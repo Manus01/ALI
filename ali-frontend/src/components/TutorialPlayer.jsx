@@ -4,12 +4,12 @@ import remarkBreaks from 'remark-breaks';
 import { FaPlay, FaHeadphones, FaChartBar, FaCheck, FaRedo, FaTrophy, FaChevronRight, FaChevronLeft } from 'react-icons/fa';
 
 const MarkdownComponents = {
-    h2: ({ node, ...props }) => <h2 className="text-lg font-bold text-slate-800 mt-4 mb-2 border-b pb-1" {...props} />,
-    h3: ({ node, ...props }) => <h3 className="text-md font-bold text-slate-800 mt-3 mb-2" {...props} />,
-    strong: ({ node, ...props }) => <strong className="font-bold text-slate-900" {...props} />,
-    em: ({ node, ...props }) => <em className="italic text-slate-600" {...props} />,
-    li: ({ node, ...props }) => <li className="ml-4 list-disc text-slate-700 text-sm" {...props} />,
-    p: ({ node, ...props }) => <p className="mb-3 text-sm" {...props} />
+    h2: (props) => <h2 className="text-lg font-bold text-slate-800 mt-4 mb-2 border-b pb-1" {...props} />,
+    h3: (props) => <h3 className="text-md font-bold text-slate-800 mt-3 mb-2" {...props} />,
+    strong: (props) => <strong className="font-bold text-slate-900" {...props} />,
+    em: (props) => <em className="italic text-slate-600" {...props} />,
+    li: (props) => <li className="ml-4 list-disc text-slate-700 text-sm" {...props} />,
+    p: (props) => <p className="mb-3 text-sm" {...props} />
 };
 
 export default function TutorialPlayer({ tutorial }) {

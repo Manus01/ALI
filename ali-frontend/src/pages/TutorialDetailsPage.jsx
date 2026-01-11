@@ -7,14 +7,45 @@ import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
 import { FaArrowLeft, FaHeadphones, FaCheck, FaTrophy, FaChevronRight, FaChevronLeft, FaTimes, FaSearchPlus, FaExclamationTriangle, FaRedo, FaInfoCircle } from 'react-icons/fa';
 
-// Secure Markdown Styling
+// Secure Markdown Styling - removed unused 'node' destructuring
 const MarkdownComponents = {
-    h2: ({ node, ...props }) => <h2 className="text-xl font-bold text-slate-800 mt-8 mb-4" {...props} />,
-    h3: ({ node, ...props }) => <h3 className="text-lg font-bold text-slate-800 mt-6 mb-3" {...props} />,
-    strong: ({ node, ...props }) => <strong className="font-bold text-slate-900" {...props} />,
-    em: ({ node, ...props }) => <em className="italic text-slate-600" {...props} />,
-    li: ({ node, ...props }) => <li className="ml-4 list-disc text-slate-700" {...props} />
+    h2: (props) => <h2 className="text-xl font-bold text-slate-800 mt-8 mb-4" {...props} />,
+    h3: (props) => <h3 className="text-lg font-bold text-slate-800 mt-6 mb-3" {...props} />,
+    strong: (props) => <strong className="font-bold text-slate-900" {...props} />,
+    em: (props) => <em className="italic text-slate-600" {...props} />,
+    li: (props) => <li className="ml-4 list-disc text-slate-700" {...props} />
 };
+
+// Separate component for Audio block to properly use useState
+function AudioBlock({ block, idx }) {
+    const [showTranscript, setShowTranscript] = useState(false);
+    return (
+        <div key={idx} className="mb-8 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+            <div className="flex items-center gap-4 mb-3">
+                <div className="bg-amber-100 p-3 rounded-full text-amber-600 flex-shrink-0"><FaHeadphones /></div>
+                <div className="flex-1 min-w-0">
+                    <p className="text-xs font-bold text-amber-800 uppercase mb-1">Mentor Insight</p>
+                    <audio src={block.url} controls className="w-full h-8" />
+                </div>
+            </div>
+            {block.transcript && (
+                <div className="mt-2">
+                    <button
+                        onClick={() => setShowTranscript(!showTranscript)}
+                        className="text-xs font-bold text-amber-700 hover:text-amber-900 flex items-center gap-1 ml-auto"
+                    >
+                        <FaInfoCircle /> {showTranscript ? "Hide Transcript" : "Read Transcript"}
+                    </button>
+                    {showTranscript && (
+                        <div className="mt-2 p-3 bg-white/60 rounded-lg text-sm text-slate-700 border border-amber-100 italic">
+                            "{block.transcript}"
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
 
 export default function TutorialDetailsPage() {
     const { id } = useParams();
@@ -154,35 +185,7 @@ export default function TutorialDetailsPage() {
                 );
 
             case 'audio':
-                {
-                    const [showTranscript, setShowTranscript] = useState(false);
-                    return (
-                        <div key={idx} className="mb-8 p-4 bg-amber-50 border border-amber-200 rounded-xl">
-                            <div className="flex items-center gap-4 mb-3">
-                                <div className="bg-amber-100 p-3 rounded-full text-amber-600 flex-shrink-0"><FaHeadphones /></div>
-                                <div className="flex-1 min-w-0">
-                                    <p className="text-xs font-bold text-amber-800 uppercase mb-1">Mentor Insight</p>
-                                    <audio src={block.url} controls className="w-full h-8" />
-                                </div>
-                            </div>
-                            {block.transcript && (
-                                <div className="mt-2">
-                                    <button
-                                        onClick={() => setShowTranscript(!showTranscript)}
-                                        className="text-xs font-bold text-amber-700 hover:text-amber-900 flex items-center gap-1 ml-auto"
-                                    >
-                                        <FaInfoCircle /> {showTranscript ? "Hide Transcript" : "Read Transcript"}
-                                    </button>
-                                    {showTranscript && (
-                                        <div className="mt-2 p-3 bg-white/60 rounded-lg text-sm text-slate-700 border border-amber-100 italic">
-                                            "{block.transcript}"
-                                        </div>
-                                    )}
-                                </div>
-                            )}
-                        </div>
-                    );
-                }
+                return <AudioBlock block={block} idx={idx} />;
 
             case 'callout_myth':
                 {
