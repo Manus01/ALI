@@ -661,16 +661,22 @@ export default function CampaignCenter() {
     };
 
     // Export all approved assets as ZIP
-    const handleExportZip = async () => {
+    const handleExportZip = async (channelId = null) => {
         if (!campaignId) return;
         try {
-            const response = await api.post(`/api/creatives/${campaignId}/export-zip`, {}, {
-                responseType: 'blob'
-            });
+            const response = await api.post(
+                `/api/creatives/${campaignId}/export-zip`,
+                {},
+                {
+                    responseType: 'blob',
+                    params: channelId ? { channel: channelId } : undefined
+                }
+            );
             const url = window.URL.createObjectURL(new Blob([response.data]));
             const link = document.createElement('a');
             link.href = url;
-            link.setAttribute('download', `campaign_${campaignId}_assets_${Date.now()}.zip`);
+            const channelSuffix = channelId ? `_${channelId}` : '';
+            link.setAttribute('download', `campaign_${campaignId}${channelSuffix}_assets_${Date.now()}.zip`);
             document.body.appendChild(link);
             link.click();
             link.remove();
@@ -729,7 +735,7 @@ export default function CampaignCenter() {
         if (!campaignId) return;
         updateResultActionState(channelId, { exporting: true });
         try {
-            await handleExportZip();
+            await handleExportZip(channelId);
         } finally {
             updateResultActionState(channelId, { exporting: false });
         }

@@ -8,7 +8,7 @@ import logging
 from typing import List, Optional, Tuple
 from urllib.parse import unquote, urlparse
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 import requests
 from google.cloud.firestore_v1.base_query import FieldFilter
@@ -243,7 +243,11 @@ def download_asset(draft_id: str, user_id: str = Depends(get_current_user_id)):
 
 
 @router.post("/{campaign_id}/export-zip")
-def export_campaign_zip(campaign_id: str, user_id: str = Depends(get_current_user_id)):
+def export_campaign_zip(
+    campaign_id: str,
+    user_id: str = Depends(get_current_user_id),
+    channel: Optional[str] = Query(None)
+):
     """
     Export all PUBLISHED assets from a campaign as a ZIP file.
     Only includes approved (published) assets.
@@ -258,9 +262,17 @@ def export_campaign_zip(campaign_id: str, user_id: str = Depends(get_current_use
             d for d in all_docs 
             if d.get("campaignId") == campaign_id and d.get("status") == "PUBLISHED"
         ]
+
+        if channel:
+            campaign_assets = [
+                d for d in campaign_assets if d.get("channel") == channel
+            ]
         
         if not campaign_assets:
-            raise HTTPException(status_code=404, detail="No approved assets found for this campaign")
+            detail = "No approved assets found for this campaign"
+            if channel:
+                detail = f"No approved assets found for channel {channel}"
+            raise HTTPException(status_code=404, detail=detail)
         
         # Create ZIP in memory
         zip_buffer = io.BytesIO()
@@ -307,12 +319,16 @@ def export_campaign_zip(campaign_id: str, user_id: str = Depends(get_current_use
         zip_buffer.seek(0)
         
         logger.info(f"✅ Created ZIP with {len(campaign_assets)} assets for campaign {campaign_id}")
+
+        filename = f"campaign_{campaign_id}_assets.zip"
+        if channel:
+            filename = f"campaign_{campaign_id}_{channel}_assets.zip"
         
         return StreamingResponse(
             zip_buffer,
             media_type="application/zip",
             headers={
-                "Content-Disposition": f"attachment; filename=campaign_{campaign_id}_assets.zip"
+                "Content-Disposition": f"attachment; filename={filename}"
             }
         )
     
