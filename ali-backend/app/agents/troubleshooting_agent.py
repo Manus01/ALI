@@ -47,7 +47,7 @@ class TroubleshootingAgent:
                 gsr = GoogleSearchRetrieval(disable_attribution=False)
                 self.tools = [Tool.from_google_search_retrieval(gsr)]
             except:
-                logger.warning("⚠️ Google Search Retrieval tool could not be initialized. Web research disabled.")
+                logger.debug("ℹ️ Google Search Retrieval tool not available. Web research disabled (non-critical).")
                 self.tools = []
         
     def fetch_combined_telemetry(self, hours: int = 1, limit: int = 20) -> List[Any]:
