@@ -49,6 +49,126 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+# ============================================================================
+# V6.0: Browser Pool Pattern - Pre-warmed Chromium instances for faster rendering
+# Eliminates cold-start overhead of ~1-2s per asset
+# ============================================================================
+class BrowserPool:
+    """
+    Singleton pool of pre-warmed Chromium browser instances.
+    Reduces browser startup overhead from ~1-2s to near-zero.
+    
+    Usage:
+        browser = await BrowserPool.acquire()
+        try:
+            page = await browser.new_page(...)
+            # ... do work ...
+        finally:
+            await BrowserPool.release(browser)
+    """
+    _playwright = None
+    _browsers: list = []
+    _lock = None
+    _max_browsers = 3
+    _initialized = False
+    
+    @classmethod
+    async def _ensure_initialized(cls):
+        """Initialize the pool on first use."""
+        if cls._initialized:
+            return
+        
+        import asyncio
+        cls._lock = asyncio.Lock()
+        cls._initialized = True
+        logger.info("🔧 BrowserPool initialized")
+    
+    @classmethod
+    async def acquire(cls):
+        """
+        Acquire a browser from the pool.
+        Creates new browser if pool is empty and under limit.
+        """
+        if not PLAYWRIGHT_AVAILABLE:
+            return None
+            
+        await cls._ensure_initialized()
+        
+        async with cls._lock:
+            # Return existing browser if available
+            if cls._browsers:
+                browser = cls._browsers.pop()
+                if browser.is_connected():
+                    logger.debug("♻️ Reusing browser from pool")
+                    return browser
+                else:
+                    logger.debug("⚠️ Discarding disconnected browser")
+            
+            # Create new browser
+            if cls._playwright is None:
+                from playwright.async_api import async_playwright
+                cls._playwright = await async_playwright().start()
+            
+            browser = await cls._playwright.chromium.launch(headless=True)
+            logger.debug("🚀 Created new browser instance")
+            return browser
+    
+    @classmethod
+    async def release(cls, browser):
+        """Return a browser to the pool for reuse."""
+        if browser is None:
+            return
+            
+        await cls._ensure_initialized()
+        
+        async with cls._lock:
+            if len(cls._browsers) < cls._max_browsers and browser.is_connected():
+                # Close all contexts to reset state
+                for context in browser.contexts:
+                    await context.close()
+                cls._browsers.append(browser)
+                logger.debug(f"♻️ Browser returned to pool (size: {len(cls._browsers)})")
+            else:
+                # Pool full or browser invalid, close it
+                try:
+                    await browser.close()
+                except Exception:
+                    pass
+    
+    @classmethod
+    async def warmup(cls, count: int = 2):
+        """Pre-warm the pool with ready browsers."""
+        if not PLAYWRIGHT_AVAILABLE:
+            return
+            
+        await cls._ensure_initialized()
+        
+        for _ in range(count):
+            if len(cls._browsers) < cls._max_browsers:
+                browser = await cls.acquire()
+                if browser:
+                    await cls.release(browser)
+        
+        logger.info(f"🔥 BrowserPool warmed up with {len(cls._browsers)} browsers")
+    
+    @classmethod
+    async def shutdown(cls):
+        """Cleanup all browsers on application shutdown."""
+        async with cls._lock:
+            for browser in cls._browsers:
+                try:
+                    await browser.close()
+                except Exception:
+                    pass
+            cls._browsers.clear()
+            
+            if cls._playwright:
+                await cls._playwright.stop()
+                cls._playwright = None
+            
+            logger.info("🛑 BrowserPool shutdown complete")
+
+
 class AssetType(str, Enum):
     """Supported asset types."""
     IMAGE = "image"
@@ -931,11 +1051,11 @@ class AssetProcessor:
         output_format: str = "png"
     ) -> Optional[str]:
         """
-        V5.0 Smart Format Selection: Generate static image from HTML with GSAP snap-to-finish.
+        V6.0 Browser Pool Optimized: Generate static image from HTML with GSAP snap-to-finish.
         
+        Uses BrowserPool for faster browser acquisition (eliminates ~1-2s cold-start).
         Uses gsap.globalTimeline.progress(1).pause() to instantly snap the animation
-        to its final frame, then captures a screenshot. This provides instant capture
-        without waiting for animation playback.
+        to its final frame, then captures a screenshot.
         
         Args:
             html_content: HTML string with GSAP animations
@@ -953,56 +1073,77 @@ class AssetProcessor:
         if not PLAYWRIGHT_AVAILABLE:
             logger.warning("⚠️ Playwright not available for image generation")
             return None
-            
+        
+        browser = None
+        context = None
         try:
-            async with async_playwright() as p:
-                browser = await p.chromium.launch(headless=True)
-                page = await browser.new_page(viewport={"width": width, "height": height})
-                
-                # Normalize HTML
-                if not html_content.strip().lower().startswith("<!doctype") and not html_content.strip().lower().startswith("<html"):
-                    html_content = f"<!DOCTYPE html><html><body>{html_content}</body></html>"
-                
-                # Load content
-                await page.set_content(html_content, wait_until="networkidle", timeout=60000)
-                
-                # V5.0 SNAP-TO-FINISH: Skip animation to final frame instantly
-                try:
-                    await page.evaluate("""
-                        if (typeof gsap !== 'undefined' && gsap.globalTimeline) {
-                            gsap.globalTimeline.progress(1).pause();
-                        }
-                    """)
-                    logger.debug("⚡ GSAP snapped to final frame")
-                except Exception:
-                    pass
-                
-                # Brief wait for render stabilization
-                await asyncio.sleep(0.5)
-                
-                # Capture screenshot
-                screenshot = await page.screenshot(
-                    type=output_format,
-                    full_page=False,
-                    omit_background=output_format == "png"
-                )
-                
-                await browser.close()
-                
-                # Upload to GCS
-                target_path = f"assets/{user_id}/{asset_id}/static.{output_format}"
-                uploaded_url = self.upload_to_gcs(
-                    screenshot,
-                    target_path,
-                    content_type=f"image/{output_format}"
-                )
-                
-                logger.info(f"📸 Image asset generated & uploaded: {uploaded_url}")
-                return uploaded_url
-                
+            # V6.0: Use BrowserPool for faster acquisition
+            browser = await BrowserPool.acquire()
+            if browser is None:
+                logger.warning("⚠️ Could not acquire browser from pool")
+                return None
+            
+            # Create a new context for isolation
+            context = await browser.new_context(viewport={"width": width, "height": height})
+            page = await context.new_page()
+            
+            # Normalize HTML
+            if not html_content.strip().lower().startswith("<!doctype") and not html_content.strip().lower().startswith("<html"):
+                html_content = f"<!DOCTYPE html><html><body>{html_content}</body></html>"
+            
+            # Load content
+            await page.set_content(html_content, wait_until="networkidle", timeout=60000)
+            
+            # V5.0 SNAP-TO-FINISH: Skip animation to final frame instantly
+            try:
+                await page.evaluate("""
+                    if (typeof gsap !== 'undefined' && gsap.globalTimeline) {
+                        gsap.globalTimeline.progress(1).pause();
+                    }
+                """)
+                logger.debug("⚡ GSAP snapped to final frame")
+            except Exception:
+                pass
+            
+            # Brief wait for render stabilization
+            await asyncio.sleep(0.3)  # Reduced from 0.5s with warmed browser
+            
+            # Capture screenshot
+            screenshot = await page.screenshot(
+                type=output_format,
+                full_page=False,
+                omit_background=output_format == "png"
+            )
+            
+            # Clean up context
+            await context.close()
+            context = None
+            
+            # Upload to GCS
+            target_path = f"assets/{user_id}/{asset_id}/static.{output_format}"
+            uploaded_url = self.upload_to_gcs(
+                screenshot,
+                target_path,
+                content_type=f"image/{output_format}"
+            )
+            
+            logger.info(f"📸 Image asset generated & uploaded: {uploaded_url}")
+            return uploaded_url
+            
         except Exception as e:
             logger.error(f"❌ Image asset generation failed: {e}")
             return None
+        finally:
+            # Clean up context if still open
+            if context:
+                try:
+                    await context.close()
+                except Exception:
+                    pass
+            # Return browser to pool
+            if browser:
+                await BrowserPool.release(browser)
+
 
     async def generate_video_asset(
         self,

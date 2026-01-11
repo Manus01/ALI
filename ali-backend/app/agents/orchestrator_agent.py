@@ -7,7 +7,7 @@ from app.agents.base_agent import BaseAgent
 from app.agents.campaign_agent import CampaignAgent
 from app.services.image_agent import ImageAgent
 from app.core.security import db
-from app.core.templates import get_motion_template, get_template_for_tone, get_random_template, MOTION_TEMPLATES, FONT_MAP
+from app.core.templates import get_motion_template, get_template_for_tone, get_random_template, get_optimized_template, MOTION_TEMPLATES, FONT_MAP, TEMPLATE_COMPLEXITY
 from firebase_admin import firestore
 
 logger = logging.getLogger("ali_platform.agents.orchestrator_agent")
@@ -388,34 +388,18 @@ class OrchestratorAgent(BaseAgent):
                     channel_blueprint = blueprint.get(channel, {})
                     copy_text = channel_blueprint.get("headlines", ["Brand Motion"])[0]
                     
-                    # Select template - V3.0 Smart Priority System
+                    # Select template - V6.0 Optimized Template Selection
                     tone = meta.get("tone", "professional")
-                    template_name = None
                     
-                    # 1. Smart Context Match (New Universal Templates)
-                    try:
-                        # Combine goal words and tone as keywords
-                        context_keywords = goal.split() + [tone]
-                        if brand_dna.get("industry"): 
-                            context_keywords.append(brand_dna.get("industry"))
-                            
-                        smart_match = asset_processor.analyze_image_context(context_keywords)
-                        if smart_match:
-                            template_name = smart_match
-                            logger.info(f"🧠 Smart Context Template Selected: {template_name}")
-                    except Exception as e:
-                        logger.warning(f"Smart selection failed: {e}")
-
-                    # 2. Key Tone Match (Existing Logic)
-                    if not template_name:
-                        # 40% chance to force tone match if not smart matched
-                        if random.random() < 0.4:
-                            template_name = get_template_for_tone(tone)
-                            logger.info(f"🎯 Using tone-matched template: {template_name}")
-                        else:
-                    # 3. Random Rotation (Variety)
-                            template_name = get_random_template()
-                            logger.info(f"🎲 Using random template: {template_name}")
+                    # Use new optimized selection with industry, complexity, and channel awareness
+                    template_name = get_optimized_template(
+                        brand_dna=brand_dna,
+                        goal=goal,
+                        tone=tone,
+                        channel=channel,
+                        prefer_low_complexity=(channel in ['tiktok', 'youtube_shorts'])
+                    )
+                    logger.info(f"🎨 V6.0 Template Selected: {template_name} (complexity: {TEMPLATE_COMPLEXITY.get(template_name, 'unknown')})")
                     
                     # Randomize Layout Variant
                     layout_variant = random.choice(['hero-center', 'editorial-left', 'editorial-right'])

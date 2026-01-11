@@ -1900,8 +1900,60 @@ TEMPLATE_TONES = {
     "swiss": ["professional", "trust", "clean", "finance", "law", "b2b", "corporate"],
 }
 
+# V6.0: Template Complexity Tiers for performance-aware selection
+# High complexity templates have canvas-based animations (particles, blobs, grids)
+# that increase video file size and may cause frame drops on lower-end devices
+TEMPLATE_COMPLEXITY = {
+    "luxury": "high",      # Has canvas particles + light leaks
+    "cyber": "high",       # Has RGB split + glitch effects + scanlines
+    "aurora": "high",      # Has canvas blob animation
+    "gridlock": "high",    # Has SVG perspective grid animation
+    "editorial": "medium", # Has parallax + masked text reveal
+    "scrapbook": "medium", # Has torn edges + stop motion
+    "pop": "medium",       # Has marquee text + hard shadows
+    "minimal": "low",      # Simple fades and scales
+    "swiss": "low"         # Orderly, simple animations
+}
+
+# V6.0: Industry-to-Template mapping for smarter defaults
+INDUSTRY_TEMPLATE_MAP = {
+    # Fashion & Beauty
+    "fashion": "luxury",
+    "beauty": "luxury", 
+    "cosmetics": "luxury",
+    "jewelry": "luxury",
+    # Technology
+    "technology": "cyber",
+    "software": "aurora",
+    "gaming": "cyber",
+    "electronics": "gridlock",
+    # Professional Services
+    "finance": "swiss",
+    "legal": "swiss",
+    "consulting": "editorial",
+    "b2b": "swiss",
+    # Food & Hospitality
+    "restaurant": "scrapbook",
+    "food": "scrapbook",
+    "cafe": "luxury",
+    "travel": "scrapbook",
+    # Health & Wellness
+    "wellness": "minimal",
+    "fitness": "pop",
+    "healthcare": "minimal",
+    # Retail & E-commerce
+    "retail": "pop",
+    "ecommerce": "pop",
+    "sale": "pop",
+    # Creative
+    "art": "editorial",
+    "photography": "editorial",
+    "design": "aurora",
+}
+
 # List of all available templates for random selection
 MOTION_TEMPLATES = ["luxury", "cyber", "editorial", "minimal", "aurora", "gridlock", "scrapbook", "pop", "swiss"]
+
 
 
 def get_template_for_tone(tone: str) -> str:
@@ -1922,3 +1974,86 @@ def get_random_template() -> str:
     import random
     return random.choice(MOTION_TEMPLATES)
 
+
+def get_optimized_template(
+    brand_dna: dict = None,
+    goal: str = "",
+    tone: str = "",
+    channel: str = "",
+    prefer_low_complexity: bool = False
+) -> str:
+    """
+    V6.0: Optimized template selection with industry-awareness and complexity filtering.
+    
+    Priority order:
+    1. Explicit brand_dna["preferred_template"] (user override)
+    2. Industry-specific mapping from INDUSTRY_TEMPLATE_MAP
+    3. Tone matching from TEMPLATE_TONES
+    4. Random from filtered pool (complexity-aware)
+    
+    Args:
+        brand_dna: Brand DNA dict (may contain 'industry', 'preferred_template')
+        goal: Campaign goal text for keyword extraction
+        tone: Tone string (e.g., "professional", "energetic")
+        channel: Target channel (affects complexity preference)
+        prefer_low_complexity: If True, avoid high-complexity templates
+        
+    Returns:
+        Template name string
+    """
+    import random
+    
+    brand_dna = brand_dna or {}
+    
+    # 1. User Override - highest priority
+    if brand_dna.get("preferred_template") in MOTION_TEMPLATES:
+        return brand_dna["preferred_template"]
+    
+    # Determine if we should prefer lower complexity (TikTok, etc.)
+    video_heavy_channels = ["tiktok", "youtube_shorts", "instagram_story", "facebook_story"]
+    if channel.lower() in video_heavy_channels:
+        prefer_low_complexity = True
+    
+    # Build candidate pool based on complexity
+    if prefer_low_complexity:
+        # Prefer low/medium complexity for video channels (smaller files, smoother playback)
+        candidate_templates = [t for t in MOTION_TEMPLATES if TEMPLATE_COMPLEXITY.get(t) != "high"]
+    else:
+        candidate_templates = MOTION_TEMPLATES.copy()
+    
+    # 2. Industry Mapping
+    industry = brand_dna.get("industry", "").lower()
+    if industry in INDUSTRY_TEMPLATE_MAP:
+        matched = INDUSTRY_TEMPLATE_MAP[industry]
+        if matched in candidate_templates:
+            return matched
+        # If complexity filtering excluded it, pick from candidates instead
+    
+    # 3. Tone Matching (improved: 70% chance instead of 40%)
+    if tone and random.random() < 0.70:
+        matched = get_template_for_tone(tone)
+        if matched in candidate_templates:
+            return matched
+    
+    # 4. Goal keyword analysis
+    goal_lower = goal.lower()
+    for template_name, keywords in TEMPLATE_TONES.items():
+        if template_name in candidate_templates:
+            if any(kw in goal_lower for kw in keywords):
+                return template_name
+    
+    # 5. Random from candidates
+    return random.choice(candidate_templates) if candidate_templates else "minimal"
+
+
+def get_templates_by_complexity(complexity: str) -> list:
+    """
+    Returns list of templates matching the given complexity tier.
+    
+    Args:
+        complexity: 'low', 'medium', or 'high'
+        
+    Returns:
+        List of template names
+    """
+    return [t for t, c in TEMPLATE_COMPLEXITY.items() if c == complexity]

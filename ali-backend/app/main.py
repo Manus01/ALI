@@ -100,9 +100,24 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("✅ Firestore DB Connection Verified")
     
+    # V6.0: Pre-warm BrowserPool on startup for faster first render
+    try:
+        from app.services.asset_processor import BrowserPool
+        await BrowserPool.warmup(count=2)
+    except Exception as e:
+        logger.warning(f"⚠️ BrowserPool warmup skipped: {e}")
+    
     yield
-    # Shutdown: Clean up resources if needed (e.g., db connections)
+    
+    # Shutdown: Clean up resources
     logger.info("🛑 Application Shutdown")
+    
+    # V6.0: Cleanup BrowserPool on shutdown
+    try:
+        from app.services.asset_processor import BrowserPool
+        await BrowserPool.shutdown()
+    except Exception as e:
+        logger.warning(f"⚠️ BrowserPool shutdown error: {e}")
 
 app = FastAPI(
     title="ALI Platform", 
@@ -110,6 +125,7 @@ app = FastAPI(
     description="Unified Campaign Intelligence Engine",
     lifespan=lifespan
 )
+
 
 # --- 3b. REQUEST SIZE LIMIT (5MB Guardrail) ---
 MAX_REQUEST_SIZE = int(os.getenv("MAX_REQUEST_SIZE_BYTES", 5 * 1024 * 1024))
@@ -210,6 +226,41 @@ def read_root():
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
+# V6.0: Keep-Alive Heartbeat for long-running campaign generation
+# Frontend polls this every 30s during generation to prevent Cloud Run idle timeout
+@app.get("/api/heartbeat/{campaign_id}")
+async def heartbeat(campaign_id: str, user: dict = Depends(verify_token)):
+    """
+    Keep-alive endpoint polled during campaign generation.
+    Resets Cloud Run idle timer and returns current progress.
+    """
+    uid = user['uid']
+    
+    # Fast Firestore read to get progress
+    try:
+        notif_ref = db.collection('users').document(uid).collection('notifications').document(campaign_id)
+        notif = notif_ref.get()
+        
+        if notif.exists:
+            data = notif.to_dict()
+            return {
+                "campaign_id": campaign_id,
+                "progress": data.get("progress", 0),
+                "status": data.get("status", "unknown"),
+                "message": data.get("message", "")
+            }
+        else:
+            return {
+                "campaign_id": campaign_id,
+                "progress": 0,
+                "status": "not_found",
+                "message": "Campaign not found"
+            }
+    except Exception as e:
+        logger.warning(f"⚠️ Heartbeat error for {campaign_id}: {e}")
+        return {"campaign_id": campaign_id, "progress": 0, "status": "error"}
+
 
 # --- 7. ONBOARDING & BRAND DNA (LAZY LOADED) ---
 
