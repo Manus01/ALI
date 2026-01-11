@@ -15,6 +15,7 @@ import IntegrationsPage from './pages/IntegrationsPage';
 import AdminPage from './pages/AdminPage';
 import CampaignCenter from './pages/CampaignCenter';
 import BrandOnboarding from './pages/BrandOnboarding';
+import BrandMonitoringPage from './pages/BrandMonitoringPage';
 
 // Assessment & Tutorials
 import HFTPage from './pages/HFTPage';
@@ -95,6 +96,7 @@ function App() {
                             <Route path="/integrations" element={<IntegrationsPage />} />
                             <Route path="/campaign-center" element={<CampaignCenter />} />
                             <Route path="/campaign-center/:campaignId" element={<CampaignCenter />} />
+                            <Route path="/brand-monitoring" element={<BrandMonitoringPage />} />
 
                             {/* 🔐 The Admin Route (Now inside Layout!) */}
                             <Route path="/admin" element={

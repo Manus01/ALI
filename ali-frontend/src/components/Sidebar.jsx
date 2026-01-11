@@ -12,7 +12,8 @@ import {
     FaCheckCircle,
     FaClipboardList,
     FaUserCog,
-    FaRocket
+    FaRocket,
+    FaShieldAlt
 } from 'react-icons/fa';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../context/ThemeContext';
@@ -37,6 +38,7 @@ export default function Sidebar() {
         { to: '/dashboard', label: 'Dashboard', icon: <FaHome /> },
         { to: '/campaign-center', label: 'Creative Studio', icon: <FaRocket /> },
         { to: '/tutorials', label: 'Learning Center', icon: <FaGraduationCap /> },
+        { to: '/brand-monitoring', label: 'Brand Monitoring', icon: <FaShieldAlt /> },
         { to: '/integrations', label: 'Vault', icon: <FaLock /> },
     ];
 
