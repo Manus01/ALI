@@ -3,6 +3,12 @@ import logging
 import time
 import signal
 import traceback
+import warnings
+
+# Suppress non-critical deprecation warnings (datetime.utcnow in Python 3.12+)
+warnings.filterwarnings("ignore", category=DeprecationWarning)
+warnings.filterwarnings("ignore", category=FutureWarning)
+
 from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
