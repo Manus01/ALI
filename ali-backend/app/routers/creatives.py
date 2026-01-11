@@ -24,6 +24,7 @@ def _extract_gcs_blob(asset_url: str) -> Optional[Tuple[str, str]]:
     parsed = urlparse(asset_url)
     if parsed.scheme == "gs":
         bucket, _, blob_path = parsed.path.lstrip("/").partition("/")
+        blob_path = unquote(blob_path)
         if bucket and blob_path:
             return bucket, blob_path
         return None
@@ -39,6 +40,7 @@ def _extract_gcs_blob(asset_url: str) -> Optional[Tuple[str, str]]:
     else:
         return None
 
+    blob_path = unquote(blob_path)
     if bucket and blob_path:
         return bucket, blob_path
     return None
