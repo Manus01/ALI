@@ -76,6 +76,7 @@ export default function CampaignCenter() {
     const [publishingId, setPublishingId] = useState(null);
     const [remixingId, setRemixingId] = useState(null); // New for Remix
     const [viewMode, setViewMode] = useState('wizard'); // 'wizard' or 'library'
+    const [libraryTab, setLibraryTab] = useState('pending'); // 'pending' or 'approved' - v5.0: Sub-tabs for library
     const [expandedGroups, setExpandedGroups] = useState({}); // v4.0: Track expanded/collapsed groups
     const [expandedLibraryAssets, setExpandedLibraryAssets] = useState({});
     const [expandedResultGroups, setExpandedResultGroups] = useState({}); // v4.1: Track expanded/collapsed result groups
@@ -387,6 +388,33 @@ export default function CampaignCenter() {
             const bDate = new Date(bAssets[0].createdAt || 0);
             return bDate - aDate;
         });
+    };
+
+    // v5.0: Categorize campaigns by approval status for sub-tabs
+    // v5.0: Categorize campaigns by approval status for sub-tabs (Split View)
+    const getCampaignsByApprovalStatus = () => {
+        const groupedAssets = getGroupedAssets();
+
+        const pendingCampaigns = [];
+        const approvedCampaigns = [];
+
+        groupedAssets.forEach(([groupName, assets]) => {
+            // Split assets based on status
+            const approvedAssets = assets.filter(a => a.status === 'PUBLISHED');
+            const pendingAssets = assets.filter(a => a.status !== 'PUBLISHED');
+
+            // If campaign has approved assets, add to approved list (with ONLY approved assets)
+            if (approvedAssets.length > 0) {
+                approvedCampaigns.push([groupName, approvedAssets]);
+            }
+
+            // If campaign has pending assets, add to pending list (with ONLY pending assets)
+            if (pendingAssets.length > 0) {
+                pendingCampaigns.push([groupName, pendingAssets]);
+            }
+        });
+
+        return { pendingCampaigns, approvedCampaigns };
     };
 
     // V4.0: Read view query parameter from URL (for notification navigation)
@@ -1074,176 +1102,208 @@ export default function CampaignCenter() {
             {/* ASSET LIBRARY VIEW */}
             {viewMode === 'library' && (
                 <div className="space-y-4 animate-fade-in">
-                    {getGroupedAssets().map(([groupName, assets]) => {
-                        const isExpanded = expandedGroups[groupName] !== false; // Default to expanded
-                        const toggleGroup = () => setExpandedGroups(prev => ({ ...prev, [groupName]: !isExpanded }));
+                    {/* v5.0: Library Sub-Tabs */}
+                    <div className="flex justify-center mb-6">
+                        <div className="bg-slate-50 dark:bg-slate-800 p-1 rounded-xl inline-flex border border-slate-200 dark:border-slate-600">
+                            <button
+                                onClick={() => setLibraryTab('pending')}
+                                className={`px-5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${libraryTab === 'pending'
+                                    ? 'bg-amber-500 text-white shadow-sm'
+                                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                                    }`}
+                            >
+                                <span>⏳</span> Pending Approval
+                            </button>
+                            <button
+                                onClick={() => setLibraryTab('approved')}
+                                className={`px-5 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-2 ${libraryTab === 'approved'
+                                    ? 'bg-green-500 text-white shadow-sm'
+                                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                                    }`}
+                            >
+                                <FaCheckCircle className="text-xs" /> Approved Campaigns
+                            </button>
+                        </div>
+                    </div>
 
-                        return (
-                            <div key={groupName} className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 overflow-hidden shadow-sm">
-                                {/* Clickable Header */}
-                                <button
-                                    onClick={toggleGroup}
-                                    className="w-full bg-slate-50 dark:bg-slate-900/50 p-5 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center hover:bg-slate-100 dark:hover:bg-slate-800/50 transition-colors cursor-pointer"
-                                >
-                                    <div className="flex items-center gap-4">
-                                        <div className={`p-2 rounded-lg transition-all ${isExpanded ? 'bg-primary/10 text-primary' : 'bg-slate-200 dark:bg-slate-700 text-slate-400'}`}>
-                                            {isExpanded ? <FaChevronUp /> : <FaChevronDown />}
+                    {/* Campaign List based on selected sub-tab */}
+                    {(() => {
+                        const { pendingCampaigns, approvedCampaigns } = getCampaignsByApprovalStatus();
+                        const campaignsToShow = libraryTab === 'pending' ? pendingCampaigns : approvedCampaigns;
+
+                        if (campaignsToShow.length === 0) {
+                            return (
+                                <div className="text-center py-16 bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700">
+                                    <div className="text-4xl mb-4">{libraryTab === 'pending' ? '✨' : '📭'}</div>
+                                    <h3 className="text-lg font-bold text-slate-700 dark:text-slate-300 mb-2">
+                                        {libraryTab === 'pending' ? 'No Pending Campaigns' : 'No Approved Campaigns Yet'}
+                                    </h3>
+                                    <p className="text-sm text-slate-500 dark:text-slate-400">
+                                        {libraryTab === 'pending'
+                                            ? 'All your campaigns have been reviewed and approved!'
+                                            : 'Start by creating a campaign and approving your assets.'}
+                                    </p>
+                                </div>
+                            );
+                        }
+
+                        return campaignsToShow.map(([groupName, assets]) => {
+                            const isExpanded = expandedGroups[groupName] !== false; // Default to expanded
+                            const toggleGroup = () => setExpandedGroups(prev => ({ ...prev, [groupName]: !isExpanded }));
+
+                            return (
+                                <div key={groupName} className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 overflow-hidden shadow-sm">
+                                    {/* Clickable Header */}
+                                    <button
+                                        onClick={toggleGroup}
+                                        className="w-full bg-slate-50 dark:bg-slate-900/50 p-5 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center hover:bg-slate-100 dark:hover:bg-slate-800/50 transition-colors cursor-pointer"
+                                    >
+                                        <div className="flex items-center gap-4">
+                                            <div className={`p-2 rounded-lg transition-all ${isExpanded ? 'bg-primary/10 text-primary' : 'bg-slate-200 dark:bg-slate-700 text-slate-400'}`}>
+                                                {isExpanded ? <FaChevronUp /> : <FaChevronDown />}
+                                            </div>
+                                            <div className="text-left">
+                                                <h3 className="font-black text-slate-800 dark:text-white text-base truncate max-w-md" title={groupName}>
+                                                    {groupName}
+                                                </h3>
+                                                <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mt-0.5">
+                                                    {assets.length} {assets.length === 1 ? 'asset' : 'assets'} • Last active: {new Date(assets[0].createdAt).toLocaleDateString()}
+                                                </p>
+                                            </div>
                                         </div>
-                                        <div className="text-left">
-                                            <h3 className="font-black text-slate-800 dark:text-white text-base truncate max-w-md" title={groupName}>
-                                                {groupName}
-                                            </h3>
-                                            <p className="text-xs text-slate-400 font-bold uppercase tracking-wider mt-0.5">
-                                                {assets.length} {assets.length === 1 ? 'asset' : 'assets'} • Last active: {new Date(assets[0].createdAt).toLocaleDateString()}
-                                            </p>
+                                        <div className="flex items-center gap-2">
+                                            {assets.filter(a => a.status === 'DRAFT').length > 0 && (
+                                                <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-900/50 text-amber-600 dark:text-amber-400">
+                                                    {assets.filter(a => a.status === 'DRAFT').length} pending
+                                                </span>
+                                            )}
+                                            {assets.filter(a => a.status === 'PUBLISHED').length > 0 && (
+                                                <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-green-100 dark:bg-green-900/50 text-green-600 dark:text-green-400">
+                                                    {assets.filter(a => a.status === 'PUBLISHED').length} published
+                                                </span>
+                                            )}
                                         </div>
-                                    </div>
-                                    <div className="flex items-center gap-2">
-                                        {assets.filter(a => a.status === 'DRAFT').length > 0 && (
-                                            <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-amber-100 dark:bg-amber-900/50 text-amber-600 dark:text-amber-400">
-                                                {assets.filter(a => a.status === 'DRAFT').length} pending
-                                            </span>
-                                        )}
-                                        {assets.filter(a => a.status === 'PUBLISHED').length > 0 && (
-                                            <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-green-100 dark:bg-green-900/50 text-green-600 dark:text-green-400">
-                                                {assets.filter(a => a.status === 'PUBLISHED').length} published
-                                            </span>
-                                        )}
-                                    </div>
-                                </button>
+                                    </button>
 
-                                {/* Collapsible Content */}
-                                {isExpanded && (
-                                    <div className="p-6 space-y-4 animate-fade-in">
-                                        {assets.map(asset => {
-                                            const isAssetExpanded = expandedLibraryAssets[asset.id] === true;
-                                            const toggleAsset = () => {
-                                                setExpandedLibraryAssets(prev => ({ ...prev, [asset.id]: !isAssetExpanded }));
-                                            };
-                                            const createdAt = asset.createdAt?.seconds
-                                                ? new Date(asset.createdAt.seconds * 1000)
-                                                : new Date(asset.createdAt || Date.now());
+                                    {/* Collapsible Content */}
+                                    {isExpanded && (
+                                        <div className="p-6 space-y-4 animate-fade-in">
+                                            {assets.map(asset => {
+                                                const isAssetExpanded = expandedLibraryAssets[asset.id] === true;
+                                                const toggleAsset = () => {
+                                                    setExpandedLibraryAssets(prev => ({ ...prev, [asset.id]: !isAssetExpanded }));
+                                                };
+                                                const createdAt = asset.createdAt?.seconds
+                                                    ? new Date(asset.createdAt.seconds * 1000)
+                                                    : new Date(asset.createdAt || Date.now());
 
-                                            return (
-                                                <div key={asset.id} className="border border-slate-100 dark:border-slate-700 rounded-2xl overflow-hidden bg-white dark:bg-slate-800/60">
-                                                    <button
-                                                        onClick={toggleAsset}
-                                                        className="w-full flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-5 bg-slate-50 dark:bg-slate-900/40 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors"
-                                                    >
-                                                        <div className="flex items-center gap-4">
-                                                            <div className="h-14 w-14 rounded-xl bg-white dark:bg-slate-700 border border-slate-100 dark:border-slate-600 overflow-hidden flex items-center justify-center">
-                                                                {asset.thumbnailUrl ? (
-                                                                    <img src={asset.thumbnailUrl} alt={asset.title} className="h-full w-full object-cover" />
-                                                                ) : (
-                                                                    <FaPalette className="text-xl text-slate-300" />
-                                                                )}
-                                                            </div>
-                                                            <div className="text-left">
-                                                                <h4 className="font-bold text-slate-800 dark:text-white text-sm truncate max-w-[220px]">{asset.title || 'Untitled'}</h4>
-                                                                <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">
-                                                                    {asset.channel || 'Asset'} • {asset.format || 'Format'} • {asset.size || 'Standard'}
-                                                                </p>
-                                                            </div>
-                                                        </div>
-                                                        <div className="flex items-center gap-3">
-                                                            <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${asset.status === 'PUBLISHED'
-                                                                ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
-                                                                : asset.status === 'FAILED'
-                                                                    ? 'bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-300'
-                                                                    : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
-                                                                }`}>
-                                                                {asset.status === 'PUBLISHED' ? 'Approved' : asset.status === 'FAILED' ? 'Failed' : 'Draft'}
-                                                            </span>
-                                                            <span className="text-[11px] text-slate-400 font-semibold">
-                                                                {createdAt.toLocaleDateString()}
-                                                            </span>
-                                                            <div className={`p-2 rounded-lg transition-all ${isAssetExpanded ? 'bg-primary/10 text-primary' : 'bg-slate-200 dark:bg-slate-700 text-slate-400'}`}>
-                                                                {isAssetExpanded ? <FaChevronUp /> : <FaChevronDown />}
-                                                            </div>
-                                                        </div>
-                                                    </button>
-
-                                                    {isAssetExpanded && (
-                                                        <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
-                                                            <div className="lg:col-span-2 space-y-4">
-                                                                <div className="aspect-video bg-slate-50 dark:bg-slate-700/40 rounded-2xl border border-slate-100 dark:border-slate-600 overflow-hidden">
+                                                return (
+                                                    <div key={asset.id} className="border border-slate-100 dark:border-slate-700 rounded-2xl overflow-hidden bg-white dark:bg-slate-800/60">
+                                                        <button
+                                                            onClick={toggleAsset}
+                                                            className="w-full flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-5 bg-slate-50 dark:bg-slate-900/40 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors"
+                                                        >
+                                                            <div className="flex items-center gap-4">
+                                                                <div className="h-14 w-14 rounded-xl bg-white dark:bg-slate-700 border border-slate-100 dark:border-slate-600 overflow-hidden flex items-center justify-center">
                                                                     {asset.thumbnailUrl ? (
-                                                                        <img src={asset.thumbnailUrl} alt={asset.title} className="w-full h-full object-cover" />
+                                                                        <img src={asset.thumbnailUrl} alt={asset.title} className="h-full w-full object-cover" />
                                                                     ) : (
-                                                                        <div className="w-full h-full flex items-center justify-center text-slate-300">
-                                                                            <FaPalette className="text-4xl" />
-                                                                        </div>
+                                                                        <FaPalette className="text-xl text-slate-300" />
                                                                     )}
                                                                 </div>
-                                                                <div className="flex flex-wrap items-center gap-2">
-                                                                    {asset.status === 'PUBLISHED' ? (
-                                                                        <>
-                                                                            <a
-                                                                                href={asset.thumbnailUrl}
-                                                                                download
-                                                                                target="_blank"
-                                                                                rel="noopener noreferrer"
-                                                                                className="px-4 py-2 rounded-full bg-white text-slate-900 text-xs font-bold border border-slate-200 hover:border-slate-300 transition-colors"
-                                                                            >
-                                                                                <FaDownload className="inline mr-2" /> Download
-                                                                            </a>
-                                                                            <button
-                                                                                onClick={() => handleRemix(asset)}
-                                                                                disabled={remixingId === asset.id}
-                                                                                className="px-4 py-2 rounded-full bg-primary text-white text-xs font-bold hover:bg-blue-700 transition-colors disabled:opacity-60"
-                                                                            >
-                                                                                {remixingId === asset.id ? <FaSpinner className="animate-spin inline mr-2" /> : <FaMagic className="inline mr-2" />}
-                                                                                Remix Variant
-                                                                            </button>
-                                                                        </>
-                                                                    ) : (
-                                                                        <button
-                                                                            onClick={() => handleReview(asset)}
-                                                                            className="px-4 py-2 rounded-full bg-amber-500 text-white text-xs font-bold hover:bg-amber-600 transition-colors"
-                                                                        >
-                                                                            Review Pending
-                                                                        </button>
-                                                                    )}
-                                                                    <button
-                                                                        onClick={() => handleDeleteAsset(asset.id)}
-                                                                        className="px-4 py-2 rounded-full bg-red-50 text-red-600 text-xs font-bold hover:bg-red-100 transition-colors"
-                                                                    >
-                                                                        <FaTrash className="inline mr-2" /> Delete
-                                                                    </button>
-                                                                </div>
-                                                            </div>
-                                                            <div className="space-y-3">
-                                                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Text Copy</p>
-                                                                <div className="bg-slate-50 dark:bg-slate-700/60 rounded-2xl border border-slate-100 dark:border-slate-600 p-4 min-h-[160px]">
-                                                                    <p className="text-sm text-slate-600 dark:text-slate-300 whitespace-pre-wrap">
-                                                                        {asset.textCopy || 'No copy stored for this asset yet.'}
+                                                                <div className="text-left">
+                                                                    <h4 className="font-bold text-slate-800 dark:text-white text-sm truncate max-w-[220px]">{asset.title || 'Untitled'}</h4>
+                                                                    <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">
+                                                                        {asset.channel || 'Asset'} • {asset.format || 'Format'} • {asset.size || 'Standard'}
                                                                     </p>
                                                                 </div>
                                                             </div>
-                                                        </div>
-                                                    )}
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                )}
-                            </div>
-                        );
-                    })}
+                                                            <div className="flex items-center gap-3">
+                                                                <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${asset.status === 'PUBLISHED'
+                                                                    ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+                                                                    : asset.status === 'FAILED'
+                                                                        ? 'bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-300'
+                                                                        : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+                                                                    }`}>
+                                                                    {asset.status === 'PUBLISHED' ? 'Approved' : asset.status === 'FAILED' ? 'Failed' : 'Draft'}
+                                                                </span>
+                                                                <span className="text-[11px] text-slate-400 font-semibold">
+                                                                    {createdAt.toLocaleDateString()}
+                                                                </span>
+                                                                <div className={`p-2 rounded-lg transition-all ${isAssetExpanded ? 'bg-primary/10 text-primary' : 'bg-slate-200 dark:bg-slate-700 text-slate-400'}`}>
+                                                                    {isAssetExpanded ? <FaChevronUp /> : <FaChevronDown />}
+                                                                </div>
+                                                            </div>
+                                                        </button>
 
-                    {getGroupedAssets().length === 0 && (
-                        <div className="text-center py-20 bg-slate-50 dark:bg-slate-800/50 rounded-[3rem] border-2 border-dashed border-slate-200 dark:border-slate-700">
-                            <FaPalette className="text-6xl text-slate-200 dark:text-slate-600 mx-auto mb-4" />
-                            <h3 className="text-xl font-black text-slate-400 dark:text-slate-500">Asset Library Empty</h3>
-                            <p className="text-slate-400 mt-2 text-sm">Create your first campaign to build your library.</p>
-                            <button
-                                onClick={() => setViewMode('wizard')}
-                                className="mt-6 text-primary font-bold hover:underline"
-                            >
-                                Start Campaign Wizard
-                            </button>
-                        </div>
-                    )}
+                                                        {isAssetExpanded && (
+                                                            <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
+                                                                <div className="lg:col-span-2 space-y-4">
+                                                                    <div className="aspect-video bg-slate-50 dark:bg-slate-700/40 rounded-2xl border border-slate-100 dark:border-slate-600 overflow-hidden">
+                                                                        {asset.thumbnailUrl ? (
+                                                                            <img src={asset.thumbnailUrl} alt={asset.title} className="w-full h-full object-cover" />
+                                                                        ) : (
+                                                                            <div className="w-full h-full flex items-center justify-center text-slate-300">
+                                                                                <FaPalette className="text-4xl" />
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
+                                                                    <div className="flex flex-wrap items-center gap-2">
+                                                                        {asset.status === 'PUBLISHED' ? (
+                                                                            <>
+                                                                                <a
+                                                                                    href={asset.thumbnailUrl}
+                                                                                    download
+                                                                                    target="_blank"
+                                                                                    rel="noopener noreferrer"
+                                                                                    className="px-4 py-2 rounded-full bg-white text-slate-900 text-xs font-bold border border-slate-200 hover:border-slate-300 transition-colors"
+                                                                                >
+                                                                                    <FaDownload className="inline mr-2" /> Download
+                                                                                </a>
+                                                                                <button
+                                                                                    onClick={() => handleRemix(asset)}
+                                                                                    disabled={remixingId === asset.id}
+                                                                                    className="px-4 py-2 rounded-full bg-primary text-white text-xs font-bold hover:bg-blue-700 transition-colors disabled:opacity-60"
+                                                                                >
+                                                                                    {remixingId === asset.id ? <FaSpinner className="animate-spin inline mr-2" /> : <FaMagic className="inline mr-2" />}
+                                                                                    Remix Variant
+                                                                                </button>
+                                                                            </>
+                                                                        ) : (
+                                                                            <button
+                                                                                onClick={() => handleReview(asset)}
+                                                                                className="px-4 py-2 rounded-full bg-amber-500 text-white text-xs font-bold hover:bg-amber-600 transition-colors"
+                                                                            >
+                                                                                Review Pending
+                                                                            </button>
+                                                                        )}
+                                                                        <button
+                                                                            onClick={() => handleDeleteAsset(asset.id)}
+                                                                            className="px-4 py-2 rounded-full bg-red-50 text-red-600 text-xs font-bold hover:bg-red-100 transition-colors"
+                                                                        >
+                                                                            <FaTrash className="inline mr-2" /> Delete
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
+                                                                <div className="space-y-3">
+                                                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Text Copy</p>
+                                                                    <div className="bg-slate-50 dark:bg-slate-700/60 rounded-2xl border border-slate-100 dark:border-slate-600 p-4 min-h-[160px]">
+                                                                        <p className="text-sm text-slate-600 dark:text-slate-300 whitespace-pre-wrap">
+                                                                            {asset.textCopy || 'No copy stored for this asset yet.'}
+                                                                        </p>
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })
+                    })()}
                 </div>
             )}
 
@@ -1632,121 +1692,121 @@ export default function CampaignCenter() {
                                     {isExpanded && (
                                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6">
                                             <div className="space-y-4">
-                                            <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Visual Assets</p>
-                                            <div className="space-y-6">
-                                                {channelAssets.map(({ assetKey, formatLabel, url, draftId }) => {
-                                                    const approvalKey = `${channelId}_${formatLabel}`;
-                                                    const isApproved = approvedChannels.includes(approvalKey);
-                                                    return (
-                                                        <div key={assetKey} className="space-y-3">
-                                                            <div className="flex items-center justify-between">
-                                                                <span className="text-xs font-bold uppercase tracking-wider text-slate-400">{formatLabel}</span>
-                                                                {isApproved && (
-                                                                    <span className="text-[10px] font-black text-green-600 uppercase">Approved</span>
-                                                                )}
-                                                            </div>
-                                                            {Array.isArray(url) ? (
-                                                                <CarouselViewer slides={url} channelName={`${channel.name} ${formatLabel}`} />
-                                                            ) : (typeof url === 'string' && (url.endsWith('.html') || url.startsWith('data:text/html'))) ? (
-                                                                <div className="aspect-video bg-black rounded-2xl overflow-hidden border border-slate-100 dark:border-slate-600 relative group">
-                                                                    <iframe
-                                                                        src={url}
-                                                                        title={`${channel.name} Motion`}
-                                                                        className="w-full h-full border-0 pointer-events-none"
-                                                                    />
-                                                                    <div className="absolute bottom-2 right-2 bg-black/60 text-white text-[10px] uppercase font-bold px-2 py-1 rounded backdrop-blur">
-                                                                        Motion
-                                                                    </div>
-                                                                </div>
-                                                            ) : url ? (
-                                                                <div className="aspect-video bg-slate-50 dark:bg-slate-700 rounded-2xl overflow-hidden border border-slate-100 dark:border-slate-600">
-                                                                    <img src={url} alt={`${channel.name} ${formatLabel}`} className="w-full h-full object-cover" />
-                                                                </div>
-                                                            ) : (
-                                                                <div className="aspect-video bg-red-50 dark:bg-red-900/20 rounded-2xl flex flex-col items-center justify-center border border-red-200 dark:border-red-800 gap-2">
-                                                                    <FaExclamationTriangle className="text-3xl text-red-400" />
-                                                                    <p className="text-red-500 text-xs font-bold uppercase">Generation Failed</p>
-                                                                </div>
-                                                            )}
-
-                                                            <div className="flex justify-between items-center">
-                                                                <div className="flex items-center gap-2">
-                                                                    {url && url !== 'FAILED' && (
-                                                                        <button
-                                                                            onClick={() => window.open(`/api/creatives/${draftId}/download`, '_blank')}
-                                                                            className="p-2 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-all"
-                                                                            title="Download"
-                                                                        >
-                                                                            <FaDownload />
-                                                                        </button>
+                                                <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Visual Assets</p>
+                                                <div className="space-y-6">
+                                                    {channelAssets.map(({ assetKey, formatLabel, url, draftId }) => {
+                                                        const approvalKey = `${channelId}_${formatLabel}`;
+                                                        const isApproved = approvedChannels.includes(approvalKey);
+                                                        return (
+                                                            <div key={assetKey} className="space-y-3">
+                                                                <div className="flex items-center justify-between">
+                                                                    <span className="text-xs font-bold uppercase tracking-wider text-slate-400">{formatLabel}</span>
+                                                                    {isApproved && (
+                                                                        <span className="text-[10px] font-black text-green-600 uppercase">Approved</span>
                                                                     )}
-                                                                    <button
-                                                                        onClick={() => handleDeleteAsset(draftId, assetKey, channelId)}
-                                                                        className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 transition-all"
-                                                                        title="Delete"
-                                                                    >
-                                                                        <FaTrash />
-                                                                    </button>
                                                                 </div>
-
-                                                                {!isApproved && (
-                                                                    <>
-                                                                        {!url || url === 'FAILED' ? (
-                                                                            <>
-                                                                                <div className="flex items-center gap-2 text-red-400 font-bold text-xs px-4 py-2 bg-red-50 dark:bg-red-900/10 rounded-lg border border-red-100 dark:border-red-900/20">
-                                                                                    <FaExclamationTriangle /> Failed
-                                                                                </div>
-                                                                                <button
-                                                                                    onClick={() => handleRegenerateFailed(draftId)}
-                                                                                    disabled={regeneratingId === draftId}
-                                                                                    className="px-4 py-2 rounded-xl font-bold text-amber-600 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-all flex items-center gap-2 disabled:opacity-50"
-                                                                                >
-                                                                                    {regeneratingId === draftId ? (
-                                                                                        <><FaSpinner className="animate-spin" /> Regenerating...</>
-                                                                                    ) : (
-                                                                                        <><FaRedo /> Retry</>
-                                                                                    )}
-                                                                                </button>
-                                                                            </>
-                                                                        ) : (
-                                                                            <>
-                                                                                <button
-                                                                                    onClick={() => handleOpenRejection(channelId, formatLabel, draftId, assetKey)}
-                                                                                    className="px-5 py-3 rounded-xl font-bold text-red-600 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-900/50 transition-all flex items-center gap-2"
-                                                                                >
-                                                                                    <FaTimes /> Reject
-                                                                                </button>
-                                                                                <button
-                                                                                    onClick={() => handleApproveAsset(channelId, formatLabel)}
-                                                                                    className="px-6 py-3 rounded-xl font-bold text-white bg-green-600 hover:bg-green-700 transition-all flex items-center gap-2 shadow-lg"
-                                                                                >
-                                                                                    <FaCheckCircle /> Approve
-                                                                                </button>
-                                                                            </>
-                                                                        )}
-                                                                    </>
-                                                                )}
-                                                                {isApproved && (
-                                                                    <div className="flex items-center gap-2 text-green-600 dark:text-green-400 font-bold">
-                                                                        <FaCheckCircle /> Approved
+                                                                {Array.isArray(url) ? (
+                                                                    <CarouselViewer slides={url} channelName={`${channel.name} ${formatLabel}`} />
+                                                                ) : (typeof url === 'string' && (url.endsWith('.html') || url.startsWith('data:text/html'))) ? (
+                                                                    <div className="aspect-video bg-black rounded-2xl overflow-hidden border border-slate-100 dark:border-slate-600 relative group">
+                                                                        <iframe
+                                                                            src={url}
+                                                                            title={`${channel.name} Motion`}
+                                                                            className="w-full h-full border-0 pointer-events-none"
+                                                                        />
+                                                                        <div className="absolute bottom-2 right-2 bg-black/60 text-white text-[10px] uppercase font-bold px-2 py-1 rounded backdrop-blur">
+                                                                            Motion
+                                                                        </div>
+                                                                    </div>
+                                                                ) : url ? (
+                                                                    <div className="aspect-video bg-slate-50 dark:bg-slate-700 rounded-2xl overflow-hidden border border-slate-100 dark:border-slate-600">
+                                                                        <img src={url} alt={`${channel.name} ${formatLabel}`} className="w-full h-full object-cover" />
+                                                                    </div>
+                                                                ) : (
+                                                                    <div className="aspect-video bg-red-50 dark:bg-red-900/20 rounded-2xl flex flex-col items-center justify-center border border-red-200 dark:border-red-800 gap-2">
+                                                                        <FaExclamationTriangle className="text-3xl text-red-400" />
+                                                                        <p className="text-red-500 text-xs font-bold uppercase">Generation Failed</p>
                                                                     </div>
                                                                 )}
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                })}
-                                            </div>
-                                        </div>
 
-                                        {/* Text Copy */}
-                                        <div className="space-y-4">
-                                            <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Text Copy</p>
-                                            <div className="bg-slate-50 dark:bg-slate-700 p-5 rounded-2xl border border-slate-100 dark:border-slate-600 min-h-[120px]">
-                                                <p className="text-slate-700 dark:text-slate-300 text-sm leading-relaxed whitespace-pre-wrap">
-                                                    {textCopy || 'No copy generated for this channel.'}
-                                                </p>
+                                                                <div className="flex justify-between items-center">
+                                                                    <div className="flex items-center gap-2">
+                                                                        {url && url !== 'FAILED' && (
+                                                                            <button
+                                                                                onClick={() => window.open(`/api/creatives/${draftId}/download`, '_blank')}
+                                                                                className="p-2 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-all"
+                                                                                title="Download"
+                                                                            >
+                                                                                <FaDownload />
+                                                                            </button>
+                                                                        )}
+                                                                        <button
+                                                                            onClick={() => handleDeleteAsset(draftId, assetKey, channelId)}
+                                                                            className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/30 transition-all"
+                                                                            title="Delete"
+                                                                        >
+                                                                            <FaTrash />
+                                                                        </button>
+                                                                    </div>
+
+                                                                    {!isApproved && (
+                                                                        <>
+                                                                            {!url || url === 'FAILED' ? (
+                                                                                <>
+                                                                                    <div className="flex items-center gap-2 text-red-400 font-bold text-xs px-4 py-2 bg-red-50 dark:bg-red-900/10 rounded-lg border border-red-100 dark:border-red-900/20">
+                                                                                        <FaExclamationTriangle /> Failed
+                                                                                    </div>
+                                                                                    <button
+                                                                                        onClick={() => handleRegenerateFailed(draftId)}
+                                                                                        disabled={regeneratingId === draftId}
+                                                                                        className="px-4 py-2 rounded-xl font-bold text-amber-600 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 hover:bg-amber-100 dark:hover:bg-amber-900/50 transition-all flex items-center gap-2 disabled:opacity-50"
+                                                                                    >
+                                                                                        {regeneratingId === draftId ? (
+                                                                                            <><FaSpinner className="animate-spin" /> Regenerating...</>
+                                                                                        ) : (
+                                                                                            <><FaRedo /> Retry</>
+                                                                                        )}
+                                                                                    </button>
+                                                                                </>
+                                                                            ) : (
+                                                                                <>
+                                                                                    <button
+                                                                                        onClick={() => handleOpenRejection(channelId, formatLabel, draftId, assetKey)}
+                                                                                        className="px-5 py-3 rounded-xl font-bold text-red-600 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 hover:bg-red-100 dark:hover:bg-red-900/50 transition-all flex items-center gap-2"
+                                                                                    >
+                                                                                        <FaTimes /> Reject
+                                                                                    </button>
+                                                                                    <button
+                                                                                        onClick={() => handleApproveAsset(channelId, formatLabel)}
+                                                                                        className="px-6 py-3 rounded-xl font-bold text-white bg-green-600 hover:bg-green-700 transition-all flex items-center gap-2 shadow-lg"
+                                                                                    >
+                                                                                        <FaCheckCircle /> Approve
+                                                                                    </button>
+                                                                                </>
+                                                                            )}
+                                                                        </>
+                                                                    )}
+                                                                    {isApproved && (
+                                                                        <div className="flex items-center gap-2 text-green-600 dark:text-green-400 font-bold">
+                                                                            <FaCheckCircle /> Approved
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
                                             </div>
-                                        </div>
+
+                                            {/* Text Copy */}
+                                            <div className="space-y-4">
+                                                <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Text Copy</p>
+                                                <div className="bg-slate-50 dark:bg-slate-700 p-5 rounded-2xl border border-slate-100 dark:border-slate-600 min-h-[120px]">
+                                                    <p className="text-slate-700 dark:text-slate-300 text-sm leading-relaxed whitespace-pre-wrap">
+                                                        {textCopy || 'No copy generated for this channel.'}
+                                                    </p>
+                                                </div>
+                                            </div>
                                         </div>
                                     )}
 
