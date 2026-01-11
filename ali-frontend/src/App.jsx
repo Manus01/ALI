@@ -5,6 +5,7 @@ import ProtectedRoute from './components/ProtectedRoute';
 import Sidebar from './components/Sidebar'; // <--- Import Sidebar
 import NotificationCenter from './components/NotificationCenter';
 import { ThemeProvider } from './context/ThemeContext';
+import { NotificationProvider } from './context/NotificationContext';
 
 // Page Imports
 import RegisterPage from './pages/RegisterPage';
@@ -76,8 +77,9 @@ function App() {
     return (
         <ThemeProvider>
             <AuthProvider>
-                <Router>
-                    <Routes>
+                <NotificationProvider>
+                    <Router>
+                        <Routes>
                         {/* --- Public Routes (No Sidebar) --- */}
                         <Route path="/register" element={<RegisterPage />} />
                         <Route path="/login" element={<LoginPage />} />
@@ -115,8 +117,9 @@ function App() {
                         <Route path="/" element={<Navigate to="/register" replace />} />
                     </Routes>
 
-                    <NotificationCenter />
-                </Router>
+                        <NotificationCenter />
+                    </Router>
+                </NotificationProvider>
             </AuthProvider>
         </ThemeProvider>
     );
