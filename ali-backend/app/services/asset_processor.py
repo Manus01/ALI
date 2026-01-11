@@ -11,7 +11,7 @@ Provides:
 import os
 import io
 import logging
-from typing import Dict, Any, Optional, List, Tuple
+from typing import Dict, Any, Optional, List, Tuple, Union
 import subprocess
 import shutil
 import tempfile
@@ -1388,7 +1388,7 @@ class AssetProcessor:
     
     async def generate_veo_video_asset(
         self,
-        prompt: str,
+        prompt: Union[str, Dict, List], 
         text_content: str,
         logo_url: str,
         user_id: str,
@@ -1402,12 +1402,12 @@ class AssetProcessor:
         V7.0 Hybrid Video Pipeline: Veo AI background + HTML text overlay.
         
         Combines:
-        1. Veo video generation (realistic motion background)
+        1. Veo video generation (using raw bytes & manual polling)
         2. HTML/GSAP text overlay (perfect font rendering)
         3. Playwright recording (composite final video)
         
         Args:
-            prompt: Description of the video background to generate
+            prompt: Description of the video background to generate (str, dict, or list)
             text_content: Headline/copy text to overlay
             logo_url: URL of the brand logo
             user_id: User ID for storage path
@@ -1418,57 +1418,98 @@ class AssetProcessor:
             height: Output height in pixels
             
         Returns:
-            URL of the final composite video
+            URL of the final composite video or None if failed.
         """
+        logger.info(f"🎬 Starting Veo hybrid video for channel: {channel}")
+        
+        # Imports for strict Veo protocol
+        import vertexai
+        from vertexai.preview.vision_models import ImageGenerationModel
+        import time
+        
+        # ----------------------------------------------------------------
+        # V7.2 FIX: AGGRESSIVE PROMPT SANITIZATION
+        # ----------------------------------------------------------------
+        clean_prompt = ""
         try:
-            from app.services.veo_client import get_veo_client
-            from app.core.templates import get_layout_for_channel, LAYOUT_VARIANTS
-            
-            logger.info(f"🎬 Starting Veo hybrid video for channel: {channel}")
-            
-            # V7.1 FIX: Sanitize prompt input - extract string from dict/list if necessary
             if isinstance(prompt, dict):
-                # Try specific keys likely used by the agent
-                prompt_text = prompt.get('visual_prompt') or prompt.get('description') or prompt.get('prompt') or str(prompt)
-                logger.debug(f"📝 Extracted prompt from dict: {prompt_text[:100]}...")
+                clean_prompt = prompt.get('visual_prompt') or prompt.get('description') or prompt.get('prompt') or str(prompt)
             elif isinstance(prompt, list):
-                prompt_text = " ".join([str(p) for p in prompt])
-                logger.debug(f"📝 Joined prompt from list: {prompt_text[:100]}...")
+                clean_prompt = " ".join([str(p) for p in prompt])
             else:
-                prompt_text = str(prompt)
+                clean_prompt = str(prompt)
             
-            # 1. Generate Veo video background
-            veo = get_veo_client()
-            veo_result = await veo.generate_video_for_channel(
-                prompt=prompt_text,
-                channel=channel,
-                user_id=user_id,
-                asset_id=asset_id,
-                brand_dna=brand_dna
+            if not isinstance(clean_prompt, str):
+                clean_prompt = str(clean_prompt)
+            
+            logger.info(f"Veo Prompt Sanitized: {clean_prompt[:50]}...")
+        except Exception as e:
+            logger.error(f"Error sanitizing prompt: {e}")
+            return None
+        
+        # ----------------------------------------------------------------
+        # 1. Generate Veo Video (Strict Raw Bytes Protocol)
+        # ----------------------------------------------------------------
+        video_url = None
+        try:
+            # [REQUIREMENT] Use Integer GENAI_PROJECT_ID
+            project_id_int = int(os.getenv("GENAI_PROJECT_ID")) 
+            vertexai.init(project=project_id_int, location="us-central1")
+
+            model = ImageGenerationModel.from_pretrained("veo-2.0-generate-preview-001")
+
+            # Generate video (returns an Operation)
+            operation = model.generate_video(
+                prompt=clean_prompt,
+                number_of_videos=1,
+                aspect_ratio=f"{width}x{height}" if width and height else "9:16",
+                add_watermark=False
             )
 
+            # [REQUIREMENT] Manual Polling Loop
+            logger.info("Polling Veo operation...")
+            while not operation.done():
+                time.sleep(10)
+
+            result = operation.result()
             
-            if not veo_result.get("video_url"):
-                logger.error(f"❌ Veo generation failed: {veo_result.get('error')}")
-                # Fall back to current image+animation approach
-                return None
+            # [REQUIREMENT] Handle Raw Bytes
+            video_bytes = None
+            if result.videos and result.videos[0].video_bytes:
+                video_bytes = result.videos[0].video_bytes
+            else:
+                raise ValueError("Veo generation finished but no video_bytes were returned.")
+
+            # Upload raw bytes to GCS
+            timestamp = int(time.time())
+            filename = f"veo_raw_{asset_id}_{timestamp}.mp4"
+            destination_blob_name = f"assets/{user_id}/{asset_id}/{filename}"
             
-            video_url = veo_result["video_url"]
-            logger.info(f"✅ Veo video generated: {video_url}")
+            video_url = self.upload_to_gcs(video_bytes, destination_blob_name, "video/mp4")
             
-            # 2. Analyze first frame for luminance (text color mode)
-            luminance_mode = "dark"  # Default to white text
-            try:
-                # TODO: Extract first frame and analyze
-                # For now, use dark mode (white text) which works on most backgrounds
-                pass
-            except Exception as lum_err:
-                logger.warning(f"⚠️ Luminance analysis failed: {lum_err}")
+            if not video_url:
+                raise ValueError("Failed to upload raw Veo bytes to GCS")
+                
+            logger.info(f"✅ Veo video generated & uploaded: {video_url}")
+
+        except Exception as e:
+            logger.error(f"❌ Veo generation failed: {e}")
+            # [REQUIREMENT] STRICTLY NO FALLBACK. Return None.
+            return None
             
-            # 3. Get channel-appropriate layout
+        # ----------------------------------------------------------------
+        # 2. Build Hybrid Overlay
+        # ----------------------------------------------------------------
+        try:
+            from app.core.templates import get_layout_for_channel
+            
+            # Analyze luminance (placeholder or future implementation)
+            luminance_mode = "dark" 
+            
+            # Get channel layout
             layout_class = get_layout_for_channel(channel)
             
-            # 4. Build HTML template with video background + text overlay
+            # Build HTML
             brand_color = brand_dna.get("color_palette", {}).get("primary", "#ffffff") if brand_dna else "#ffffff"
             
             html_content = self._build_video_overlay_template(
@@ -1482,21 +1523,23 @@ class AssetProcessor:
                 height=height
             )
             
-            # 5. Record the composite with Playwright
+            # ----------------------------------------------------------------
+            # 3. Record Composite Video
+            # ----------------------------------------------------------------
             final_url = await self.record_html_animation(
                 html_content=html_content,
                 user_id=user_id,
                 asset_id=asset_id,
                 width=width,
                 height=height,
-                duration=veo_result.get("duration", 4)
+                duration=4.0  # Default Veo preview duration
             )
             
             logger.info(f"🎥 Hybrid video complete: {final_url}")
             return final_url
             
         except Exception as e:
-            logger.error(f"❌ Veo hybrid video failed: {e}")
+            logger.error(f"❌ Hybrid composition failed: {e}")
             return None
     
     def _build_video_overlay_template(
