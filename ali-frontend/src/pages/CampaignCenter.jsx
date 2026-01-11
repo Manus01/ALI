@@ -615,13 +615,14 @@ export default function CampaignCenter() {
 
             await api.post(`/api/creatives/${draftId}/publish`);
             const approvalKey = formatLabel ? `${cleanChannel}_${formatLabel}` : cleanChannel;
-            const newApproved = [...approvedChannels, approvalKey];
-            setApprovedChannels(newApproved);
-
-            const totalAssets = getTotalAssetCount();
-            if (totalAssets > 0 && newApproved.length >= totalAssets) {
-                setShowAllApprovedModal(true);
-            }
+            setApprovedChannels(prev => {
+                const newApproved = prev.includes(approvalKey) ? prev : [...prev, approvalKey];
+                const totalAssets = getTotalAssetCount();
+                if (totalAssets > 0 && newApproved.length >= totalAssets) {
+                    setShowAllApprovedModal(true);
+                }
+                return newApproved;
+            });
         } catch (err) {
             console.error("Approval failed", err);
             alert("Failed to approve asset: " + (err.response?.data?.detail || err.message));
