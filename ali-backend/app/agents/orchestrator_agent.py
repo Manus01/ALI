@@ -28,6 +28,94 @@ def is_shutdown_requested():
     """Check if shutdown has been requested."""
     return _shutdown_requested
 
+
+async def auto_resume_interrupted_campaigns():
+    """
+    V6.1: Automatically resume all interrupted campaigns on startup.
+    Called during application startup to transparently continue any 
+    campaigns that were interrupted by instance shutdown, memory issues, etc.
+    
+    User never knows the interruption happened - it just continues silently.
+    """
+    try:
+        if not db:
+            logger.warning("⚠️ Database not available, skipping auto-resume")
+            return
+        
+        # Find all checkpoints (interrupted campaigns)
+        checkpoints = db.collection('generation_checkpoints').stream()
+        
+        resume_count = 0
+        for checkpoint_doc in checkpoints:
+            try:
+                checkpoint = checkpoint_doc.to_dict()
+                campaign_id = checkpoint_doc.id
+                uid = checkpoint.get("userId")
+                
+                if not uid:
+                    continue
+                
+                # Get campaign data
+                campaign_doc = db.collection('users').document(uid).collection('campaigns').document(campaign_id).get()
+                if not campaign_doc.exists:
+                    # Campaign was deleted, clean up orphan checkpoint
+                    checkpoint_doc.reference.delete()
+                    continue
+                
+                campaign_data = campaign_doc.to_dict()
+                
+                # Skip if campaign is already completed
+                if campaign_data.get("status") == "completed":
+                    checkpoint_doc.reference.delete()
+                    continue
+                
+                # Get brand DNA for this user
+                brand_doc = db.collection('users').document(uid).collection('brand_profile').document('current').get()
+                brand_dna = brand_doc.to_dict() if brand_doc.exists else {}
+                
+                # Calculate pending channels
+                completed_channels = checkpoint.get("completedChannels", [])
+                all_channels = campaign_data.get("selected_channels", [])
+                
+                pending_channels = []
+                for ch in all_channels:
+                    if not any(comp.startswith(ch) for comp in completed_channels):
+                        pending_channels.append(ch)
+                
+                if not pending_channels:
+                    # All done, clean up checkpoint
+                    checkpoint_doc.reference.delete()
+                    continue
+                
+                logger.info(f"🔄 Auto-resuming campaign {campaign_id} for user {uid} - {len(pending_channels)} channels pending")
+                
+                # Resume generation in background
+                orchestrator = OrchestratorAgent()
+                asyncio.create_task(
+                    orchestrator.run_full_campaign_flow(
+                        uid, campaign_id,
+                        campaign_data.get("goal", ""),
+                        brand_dna,
+                        {},  # answers not needed for resume
+                        pending_channels
+                    )
+                )
+                
+                resume_count += 1
+                
+            except Exception as resume_err:
+                logger.error(f"❌ Failed to auto-resume campaign {checkpoint_doc.id}: {resume_err}")
+                continue
+        
+        if resume_count > 0:
+            logger.info(f"✅ Auto-resume: Restarted {resume_count} interrupted campaign(s)")
+        else:
+            logger.debug("🔍 Auto-resume: No interrupted campaigns found")
+            
+    except Exception as e:
+        logger.error(f"❌ Auto-resume failed: {e}")
+
+
 # ============================================================================
 # 2025/2026 MASTER CHANNEL SPECIFICATIONS
 # Enforces dimension-accurate, platform-compliant asset generation

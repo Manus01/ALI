@@ -107,6 +107,14 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.warning(f"⚠️ BrowserPool warmup skipped: {e}")
     
+    # V6.1: Automatically resume any interrupted campaigns
+    # This runs silently in background - user never knows an interruption occurred
+    try:
+        from app.agents.orchestrator_agent import auto_resume_interrupted_campaigns
+        await auto_resume_interrupted_campaigns()
+    except Exception as e:
+        logger.warning(f"⚠️ Auto-resume skipped: {e}")
+    
     yield
     
     # Shutdown: Clean up resources
@@ -125,6 +133,7 @@ app = FastAPI(
     description="Unified Campaign Intelligence Engine",
     lifespan=lifespan
 )
+
 
 
 # --- 3b. REQUEST SIZE LIMIT (5MB Guardrail) ---
