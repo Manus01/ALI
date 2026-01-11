@@ -24,11 +24,21 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ali_platform")
 load_dotenv()
 
+# Track instance start time for smart SIGTERM handling
+_instance_start_time = time.time()
+
 # --- 1b. GRACEFUL SHUTDOWN HANDLER ---
 def handle_sigterm(signum, frame):
     """Handle SIGTERM from Cloud Run - log context for debugging"""
-    logger.warning("🛑 SIGTERM received - Cloud Run is shutting down this instance!")
-    logger.warning("💡 If this happens during tutorial generation, consider setting 'Minimum instances' to 1 in Cloud Console.")
+    uptime_seconds = time.time() - _instance_start_time
+    
+    # If instance has been running < 60 seconds, this is likely a deployment rollover
+    if uptime_seconds < 60:
+        logger.info(f"🔄 SIGTERM received after {uptime_seconds:.1f}s - likely deployment rollover (normal)")
+    else:
+        # Instance was running for a while - this might be unexpected
+        logger.warning(f"🛑 SIGTERM received after {uptime_seconds:.1f}s - Cloud Run is shutting down this instance!")
+        logger.warning("💡 If this interrupts long-running operations, check Cloud Run scaling settings.")
     # Note: We have 10 seconds to clean up before SIGKILL
 
 signal.signal(signal.SIGTERM, handle_sigterm)
