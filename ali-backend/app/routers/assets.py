@@ -2,6 +2,7 @@
 Assets upload router.
 """
 import logging
+import asyncio
 
 from fastapi import APIRouter, UploadFile, File, HTTPException
 
@@ -25,7 +26,10 @@ async def upload_asset(file: UploadFile = File(...)) -> dict:
 
         processor = AssetProcessor()
         asset_id = file.filename or "asset"
-        result = await processor.process_image(
+        
+        # Run sync method in thread pool to avoid blocking
+        result = await asyncio.to_thread(
+            processor.process_image,
             image_bytes=file_bytes,
             user_id="anonymous",
             asset_id=asset_id,
@@ -40,3 +44,4 @@ async def upload_asset(file: UploadFile = File(...)) -> dict:
     except Exception as e:
         logger.error(f"Error: {e}")
         return {}
+
