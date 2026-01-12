@@ -150,15 +150,6 @@ export default function CampaignCenter() {
         restoreCampaignResults();
     }, [campaignId, campaignIdParam, currentUser, finalAssets, location.search]);
 
-    useEffect(() => {
-        if (!currentUser) return;
-        const params = new URLSearchParams(location.search);
-        if (params.get('view') === 'library') return;
-        const campaignToCheck = campaignIdParam || campaignId;
-        if (!campaignToCheck) return;
-        checkCheckpoint(campaignToCheck);
-    }, [campaignId, campaignIdParam, checkCheckpoint, currentUser, location.search]);
-
     // --- USER DRAFT REVIEW FUNCTIONS ---
     const fetchUserDrafts = useCallback(async () => {
         setLoadingDrafts(true);
@@ -215,6 +206,15 @@ export default function CampaignCenter() {
             setIsResumingCampaign(false);
         }
     };
+
+    useEffect(() => {
+        if (!currentUser) return;
+        const params = new URLSearchParams(location.search);
+        if (params.get('view') === 'library') return;
+        const campaignToCheck = campaignIdParam || campaignId;
+        if (!campaignToCheck) return;
+        checkCheckpoint(campaignToCheck);
+    }, [campaignId, campaignIdParam, checkCheckpoint, currentUser, location.search]);
 
     // Auto-save wizard state (debounced)
     const autoSaveWizardState = useCallback(async () => {
