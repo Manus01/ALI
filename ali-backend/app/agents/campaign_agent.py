@@ -60,68 +60,14 @@ class CampaignAgent(BaseAgent):
         except Exception as e:
             self.handle_error(e)
 
-    async def create_creative_intent(
-        self,
-        goal: str,
-        brand_dna: dict,
-        answers: dict,
-        selected_channels: list = None,
-        creative_memory: Optional[list] = None,
-        competitor_snapshot: Optional[dict] = None,
-    ):
-        """Generate a Creative Intent Object to guide campaign execution."""
-        self.log_task("Generating Creative Intent Object...")
-
-        channels = selected_channels if selected_channels else ["instagram", "linkedin"]
-        memory_block = json.dumps(creative_memory or [])
-        competitor_block = json.dumps(competitor_snapshot or {})
-
-        prompt = f"""
-        You are a Senior Creative Director generating a Creative Intent Object.
-        Brand DNA: {json.dumps(brand_dna)}
-        Goal: {goal}
-        User Clarifications: {json.dumps(answers)}
-        Target Channels: {', '.join(channels)}
-        Creative Memory (reuse only for inspiration): {memory_block}
-        Competitor Snapshot (insights only, no copying): {competitor_block}
-
-        Return ONLY valid JSON with:
-        - objective
-        - audience
-        - primary_angle
-        - hook_type
-        - value_prop
-        - cta
-        - tone
-        - channels
-        """
-
-        try:
-            response = await self.model.generate_content_async(prompt)
-            raw_text = response.text.strip().replace('```json', '').replace('```', '')
-            return json.loads(raw_text)
-        except Exception as e:
-            self.handle_error(e)
-            return {
-                "objective": goal,
-                "audience": brand_dna.get("target_audience", "General"),
-                "primary_angle": "Brand credibility",
-                "hook_type": "Insight-led",
-                "value_prop": brand_dna.get("value_props", "Brand value"),
-                "cta": "Learn more",
-                "tone": brand_dna.get("tone", "professional"),
-                "channels": channels,
-            }
-
     async def create_campaign_blueprint(
         self,
         goal: str,
         brand_dna: dict,
         answers: dict,
         selected_channels: list = None,
-        creative_intent: Optional[dict] = None,
-        creative_memory: Optional[list] = None,
-        competitor_snapshot: Optional[dict] = None,
+        memory_hooks: list = None,
+        competitor_insights: dict = None
     ):
         """Create the full multi-channel plan once questions are answered."""
         self.log_task("Formulating final campaign blueprint...")
@@ -195,6 +141,8 @@ class CampaignAgent(BaseAgent):
         Competitor Snapshot (insights only): {json.dumps(competitor_snapshot or {})}
         {knowledge_block}
         Target Channels: {', '.join(channels)}
+        Reusable Hooks (same brand only): {json.dumps(memory_hooks or [])}
+        Competitor Insights (themes only, do not copy): {json.dumps(competitor_insights or {})}
 
         Create a Campaign Blueprint. 
 
@@ -224,6 +172,50 @@ class CampaignAgent(BaseAgent):
             return json.loads(raw_text)
         except Exception as e:
             self.handle_error(e)
+
+    async def generate_creative_intent(
+        self,
+        goal: str,
+        brand_dna: dict,
+        answers: dict,
+        selected_channels: list = None,
+        memory_hooks: list = None,
+        competitor_insights: dict = None
+    ):
+        """Generate a structured Creative Intent Object for governance and auditability."""
+        self.log_task("Generating creative intent object...")
+
+        channels = selected_channels if selected_channels else ["instagram", "linkedin"]
+        prompt = f"""
+        You are a senior creative strategist.
+        Brand DNA: {json.dumps(brand_dna)}
+        Goal: {goal}
+        User Clarifications: {json.dumps(answers)}
+        Target Channels: {', '.join(channels)}
+        Reusable Hooks (same brand only): {json.dumps(memory_hooks or [])}
+        Competitor Insights (themes only, do not copy): {json.dumps(competitor_insights or {})}
+
+        Return a JSON object with:
+        - objective: short user-facing objective statement
+        - angle: the primary positioning angle
+        - hook_type: e.g., "social proof", "curiosity", "authority", "benefit-led"
+        - hypothesis: a measurable hypothesis for testing
+
+        Return ONLY JSON.
+        """
+
+        try:
+            response = await self.model.generate_content_async(prompt)
+            raw_text = response.text.strip().replace('```json', '').replace('```', '')
+            return json.loads(raw_text)
+        except Exception as e:
+            self.handle_error(e)
+            return {
+                "objective": goal,
+                "angle": "brand-led",
+                "hook_type": "benefit-led",
+                "hypothesis": "On-brand creative will improve engagement."
+            }
     
     def _build_channel_instructions(self, channels: list) -> str:
         """Build channel-specific prompting instructions based on platform tones."""

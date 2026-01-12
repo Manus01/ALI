@@ -7,6 +7,8 @@ from typing import Any, Dict, List, Optional
 from app.agents.base_agent import BaseAgent
 from app.agents.campaign_agent import CampaignAgent
 from app.services.image_agent import ImageAgent
+from app.services.claims_verifier import verify_claims
+from app.services.qc_rubric import evaluate_copy
 from app.core.security import db
 from app.core.templates import get_motion_template, get_template_for_tone, get_random_template, get_optimized_template, MOTION_TEMPLATES, FONT_MAP, TEMPLATE_COMPLEXITY
 from app.services.governance import run_qc_rubric, verify_claims_for_blueprint
@@ -448,9 +450,9 @@ class OrchestratorAgent(BaseAgent):
                 "createdAt": firestore.SERVER_TIMESTAMP,
                 "blueprint": channel_blueprint,
                 "textCopy": text_copy,
-                "creativeIntent": creative_intent or {},
-                "claimsReport": claims_report or {},
-                "qcReport": qc_report or {}
+                "intent": meta.get("intent"),
+                "claimsReport": meta.get("claims_report"),
+                "qcReport": meta.get("qc_report")
             }
             
             self.db.collection('creative_drafts').document(draft_id).set(draft_data)
@@ -460,6 +462,52 @@ class OrchestratorAgent(BaseAgent):
             logger.error(f"❌ Failed to save draft immediately for {channel}: {e}")
             return False
 
+    def _save_creative_memory(self, uid: str, campaign_id: str, intent: dict, blueprint: dict):
+        """Persist reusable creative hooks and intent per tenant."""
+        try:
+            hooks = []
+            for channel, data in blueprint.items():
+                if not isinstance(data, dict):
+                    continue
+                if data.get("headlines"):
+                    hooks.extend(data["headlines"])
+                if data.get("caption"):
+                    hooks.append(data["caption"])
+                if data.get("body"):
+                    hooks.append(data["body"])
+
+            memory_ref = self.db.collection('users').document(uid).collection('creative_memory')
+            memory_ref.add({
+                "campaignId": campaign_id,
+                "intent": intent,
+                "hooks": hooks[:10],
+                "createdAt": firestore.SERVER_TIMESTAMP
+            })
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to save creative memory: {e}")
+
+    def _load_creative_memory(self, uid: str) -> list:
+        """Fetch recent reusable hooks for a tenant."""
+        try:
+            docs = self.db.collection('users').document(uid).collection('creative_memory').order_by("createdAt", direction=firestore.Query.DESCENDING).limit(5).stream()
+            hooks = []
+            for doc in docs:
+                data = doc.to_dict()
+                hooks.extend(data.get("hooks", []))
+            return hooks[:10]
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to load creative memory: {e}")
+            return []
+
+    def _load_competitor_insights(self, uid: str) -> dict:
+        """Fetch latest competitor insights snapshot for context."""
+        try:
+            docs = self.db.collection('competitiveInsights').document(uid).collection('snapshots').order_by("createdAt", direction=firestore.Query.DESCENDING).limit(1).stream()
+            latest = next(docs, None)
+            return latest.to_dict() if latest else {}
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to load competitor insights: {e}")
+            return {}
 
     async def run_full_campaign_flow(self, uid, campaign_id, goal, brand_dna, answers, selected_channels: list = None):
         """
@@ -476,37 +524,71 @@ class OrchestratorAgent(BaseAgent):
             target_channels = [c.strip().lower().replace(" ", "_").replace("-", "_") for c in target_channels]
             logger.info(f"🎯 Channel-Aware Orchestration for: {target_channels}")
 
-            premium_media_enabled = bool(
-                brand_dna.get("premium_media_enabled")
-                or brand_dna.get("veo_enabled")
-                or brand_dna.get("subscription_tier") in ["premium", "enterprise", "pro"]
-            )
-
-            creative_memory = self._get_recent_creative_memory(uid)
-            competitor_snapshot = self._get_latest_competitor_snapshot(uid)
-
-            # 2. Generate Creative Intent + Blueprint with channel context
+            # 1.5 Generate Creative Intent Object
             planner = CampaignAgent()
-            creative_intent = await planner.create_creative_intent(
+            memory_hooks = self._load_creative_memory(uid)
+            competitor_insights = self._load_competitor_insights(uid)
+            intent_object = await planner.generate_creative_intent(
                 goal,
                 brand_dna,
                 answers,
                 selected_channels=target_channels,
-                creative_memory=creative_memory,
-                competitor_snapshot=competitor_snapshot,
+                memory_hooks=memory_hooks,
+                competitor_insights=competitor_insights
             )
+            premium_media_allowed = brand_dna.get("premium_media_enabled", True)
+
+            # 2. Generate Blueprint with channel context
             blueprint = await planner.create_campaign_blueprint(
                 goal,
                 brand_dna,
                 answers,
                 selected_channels=target_channels,
-                creative_intent=creative_intent,
-                creative_memory=creative_memory,
-                competitor_snapshot=competitor_snapshot,
+                memory_hooks=memory_hooks,
+                competitor_insights=competitor_insights
             )
-            blueprint, claims_report = verify_claims_for_blueprint(blueprint)
-            qc_report = run_qc_rubric(blueprint, CHANNEL_SPECS)
             self._update_progress(uid, campaign_id, "Creative Blueprint Ready.", 30)
+
+            # 2.5 Claims Verification + QC Rubric (copy governance)
+            claims_reports = {}
+            qc_reports = {}
+            claims_policy = brand_dna.get("claims_policy", {})
+
+            def extract_primary_copy(channel_data: dict) -> str:
+                if channel_data.get("caption"):
+                    return channel_data["caption"]
+                if channel_data.get("body"):
+                    return channel_data["body"]
+                headlines = channel_data.get("headlines") or []
+                if headlines:
+                    return headlines[0]
+                if channel_data.get("headline"):
+                    return channel_data["headline"]
+                return ""
+
+            for channel in target_channels:
+                channel_data = blueprint.get(channel, {})
+                channel_claims_reports = []
+
+                for field in ["caption", "body", "headline"]:
+                    if isinstance(channel_data.get(field), str):
+                        cleaned, report = verify_claims(channel_data[field], claims_policy)
+                        channel_data[field] = cleaned
+                        channel_claims_reports.append({"field": field, **report})
+
+                if isinstance(channel_data.get("headlines"), list):
+                    cleaned_headlines = []
+                    for idx, headline in enumerate(channel_data["headlines"]):
+                        cleaned, report = verify_claims(headline, claims_policy)
+                        cleaned_headlines.append(cleaned)
+                        channel_claims_reports.append({"field": f"headlines[{idx}]", **report})
+                    channel_data["headlines"] = cleaned_headlines
+
+                blueprint[channel] = channel_data
+                claims_reports[channel] = channel_claims_reports
+
+                spec = CHANNEL_SPECS.get(channel, {})
+                qc_reports[channel] = evaluate_copy(channel, extract_primary_copy(channel_data), brand_dna, spec)
 
             # 3. Channel-Aware Asset Generation Loop
             image_agent = ImageAgent()
@@ -787,11 +869,7 @@ class OrchestratorAgent(BaseAgent):
                     # ------------------------------------------------------------------------
                     # V7.1: STRICT VEO PIPELINE - NO FALLBACK VIDEO
                     # ------------------------------------------------------------------------
-                    use_veo = (
-                        ENABLE_VEO_VIDEO
-                        and premium_media_enabled
-                        and channel in ['tiktok', 'instagram', 'facebook_story']
-                    )
+                    use_veo = ENABLE_VEO_VIDEO and premium_media_allowed and channel in ['tiktok', 'instagram', 'facebook_story']
                     
                     if is_video:
                         asset_url = None
@@ -886,6 +964,9 @@ class OrchestratorAgent(BaseAgent):
                 # This ensures the draft is persisted even if SIGTERM interrupts the generation
                 if meta.get("format_type") != "carousel":  # Carousel handled separately
                     asset_key = f"{channel}_{meta.get('format_label', 'primary')}" if meta.get('format_label') not in [None, 'primary', 'feed'] else channel
+                    meta["intent"] = intent_object
+                    meta["claims_report"] = claims_reports.get(channel)
+                    meta["qc_report"] = qc_reports.get(channel)
                     draft_saved = self._save_draft_immediately(
                         uid, campaign_id, goal, channel,
                         assets.get(asset_key) or assets.get(channel),
@@ -912,7 +993,9 @@ class OrchestratorAgent(BaseAgent):
                         "selected_channels": target_channels,
                         "goal": goal,
                         "campaign_id": campaign_id,
-                        "premium_media_enabled": premium_media_enabled
+                        "intent": intent_object,
+                        "claims_reports": claims_reports,
+                        "qc_reports": qc_reports
                     }
                     self.db.collection('users').document(uid).collection('campaigns').document(campaign_id).set(partial_data, merge=True)
                     logger.info(f"💾 Saved partial campaign progress before shutdown")
@@ -935,7 +1018,9 @@ class OrchestratorAgent(BaseAgent):
                 "selected_channels": target_channels,
                 "goal": goal,
                 "campaign_id": campaign_id,
-                "premium_media_enabled": premium_media_enabled
+                "intent": intent_object,
+                "claims_reports": claims_reports,
+                "qc_reports": qc_reports
             }
             
             # Use set with merge=True to handle new campaign documents correctly
@@ -978,9 +1063,9 @@ class OrchestratorAgent(BaseAgent):
                             "createdAt": firestore.SERVER_TIMESTAMP,
                             "blueprint": channel_blueprint,
                             "textCopy": text_copy,
-                            "creativeIntent": creative_intent or {},
-                            "claimsReport": claims_report or {},
-                            "qcReport": qc_report or {}
+                            "intent": intent_object,
+                            "claimsReport": claims_reports.get(channel),
+                            "qcReport": qc_reports.get(channel)
                         }
                         self.db.collection('creative_drafts').document(draft_id).set(draft_data)
                         logger.info(f"📦 Saved carousel draft {draft_id} for {clean_channel}")
@@ -994,6 +1079,9 @@ class OrchestratorAgent(BaseAgent):
             
             # V6.1: Clear checkpoint on successful completion
             self._clear_checkpoint(campaign_id)
+
+            # V7.2: Save creative memory for reuse
+            self._save_creative_memory(uid, campaign_id, intent_object, blueprint)
 
         except Exception as e:
             self.handle_error(e)
@@ -1019,7 +1107,7 @@ class OrchestratorAgent(BaseAgent):
             "type": "campaign_progress",
             "campaign_id": campaign_id,
             "status": status,
-            "link": "/campaign-center?view=library" if percent == 100 else None,  # Navigate to asset library when complete
+            "link": f"/campaign-center/{campaign_id}" if percent == 100 else None,  # Navigate to campaign results when complete
             "created_at": firestore.SERVER_TIMESTAMP,
             "timestamp": firestore.SERVER_TIMESTAMP
         })

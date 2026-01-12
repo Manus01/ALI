@@ -6,6 +6,7 @@ import { useAuth } from '../hooks/useAuth';
 import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
 import { FaArrowLeft, FaHeadphones, FaCheck, FaTrophy, FaChevronRight, FaChevronLeft, FaTimes, FaSearchPlus, FaExclamationTriangle, FaRedo, FaInfoCircle } from 'react-icons/fa';
+import MermaidBlock from '../components/MermaidBlock';
 
 // Secure Markdown Styling - removed unused 'node' destructuring
 const MarkdownComponents = {
@@ -146,6 +147,15 @@ export default function TutorialDetailsPage() {
         ? tutorial.sections
         : [{ title: "Lesson Content", blocks: tutorial.blocks || [] }];
     const currentSection = sections[activeSectionIndex];
+    const sectionType = currentSection?.type || currentSection?.section_type;
+    const sectionLabelMap = {
+        supportive: { label: "Supportive", classes: "bg-emerald-100 text-emerald-700" },
+        activation: { label: "Supportive", classes: "bg-emerald-100 text-emerald-700" },
+        procedural: { label: "Procedural", classes: "bg-blue-100 text-blue-700" },
+        demonstration: { label: "Procedural", classes: "bg-blue-100 text-blue-700" },
+        practice: { label: "Practice", classes: "bg-amber-100 text-amber-700" }
+    };
+    const sectionTag = sectionType ? sectionLabelMap[sectionType] : null;
 
     const renderBlock = (block, idx) => {
         switch (block.type) {
@@ -160,6 +170,35 @@ export default function TutorialDetailsPage() {
                             <ReactMarkdown components={MarkdownComponents} remarkPlugins={[remarkBreaks]}>
                                 {safeContent}
                             </ReactMarkdown>
+                            {Array.isArray(block.citations) && block.citations.length > 0 && (
+                                <div className="mt-4 rounded-lg border border-slate-200 bg-white px-4 py-3 text-xs text-slate-500 shadow-sm">
+                                    <p className="font-semibold uppercase tracking-wide text-slate-400">Sources</p>
+                                    <ul className="mt-2 space-y-1">
+                                        {block.citations.map((citation, citationIdx) => {
+                                            const label = citation.title || citation.label || citation.url || "Source";
+                                            return (
+                                                <li key={citationIdx} className="flex flex-wrap items-center gap-2">
+                                                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-500">
+                                                        {citationIdx + 1}
+                                                    </span>
+                                                    {citation.url ? (
+                                                        <a
+                                                            href={citation.url}
+                                                            target="_blank"
+                                                            rel="noreferrer"
+                                                            className="text-slate-600 underline decoration-slate-300 underline-offset-2 hover:text-primary"
+                                                        >
+                                                            {label}
+                                                        </a>
+                                                    ) : (
+                                                        <span className="text-slate-600">{label}</span>
+                                                    )}
+                                                </li>
+                                            );
+                                        })}
+                                    </ul>
+                                </div>
+                            )}
                         </div>
                     );
                 }
@@ -186,6 +225,29 @@ export default function TutorialDetailsPage() {
 
             case 'audio':
                 return <AudioBlock block={block} idx={idx} />;
+
+            case 'mermaid':
+                return (
+                    <div key={idx} className="mb-8">
+                        <MermaidBlock code={block.content} />
+                        {block.caption && (
+                            <p className="text-center text-xs text-slate-400 mt-2 italic">{block.caption}</p>
+                        )}
+                    </div>
+                );
+
+            case 'svg':
+                return (
+                    <div key={idx} className="mb-8">
+                        <div
+                            className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm"
+                            dangerouslySetInnerHTML={{ __html: block.content || '' }}
+                        />
+                        {block.caption && (
+                            <p className="text-center text-xs text-slate-400 mt-2 italic">{block.caption}</p>
+                        )}
+                    </div>
+                );
 
             case 'callout_myth':
                 {
@@ -381,7 +443,24 @@ export default function TutorialDetailsPage() {
             <div className="flex-1 overflow-y-auto bg-slate-50/50 scroll-smooth" ref={scrollContainerRef}>
                 <div className="max-w-3xl mx-auto py-12 px-8 pb-32">
                     {activeSectionIndex === 0 && <div className="mb-12 text-center"><h1 className="text-4xl font-black text-slate-900 mb-4">{tutorial.title}</h1><p className="text-lg text-slate-500">{tutorial.description}</p></div>}
-                    <div className="mb-8 flex items-center gap-4"><span className="bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full text-xs font-bold uppercase">Section {activeSectionIndex + 1}</span><h2 className="text-2xl font-bold text-slate-800">{currentSection.title}</h2></div>
+                    <div className="mb-6 flex flex-wrap items-center gap-3">
+                        <span className="bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full text-xs font-bold uppercase">Section {activeSectionIndex + 1}</span>
+                        {sectionTag && (
+                            <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${sectionTag.classes}`}>
+                                {sectionTag.label}
+                            </span>
+                        )}
+                        <h2 className="text-2xl font-bold text-slate-800">{currentSection.title}</h2>
+                    </div>
+                    {Array.isArray(currentSection.objectives) && currentSection.objectives.length > 0 && (
+                        <div className="mb-8 flex flex-wrap gap-2 text-xs text-slate-600">
+                            {currentSection.objectives.map((objective, idx) => (
+                                <span key={idx} className="rounded-full bg-slate-100 px-3 py-1">
+                                    {objective}
+                                </span>
+                            ))}
+                        </div>
+                    )}
                     {currentSection.blocks && currentSection.blocks.map((b, i) => <div key={i} className="animate-fade-in">{renderBlock(b, i)}</div>)}
                     <div className="mt-16 flex justify-between pt-8 border-t border-slate-200">
                         <button onClick={() => setActiveSectionIndex(p => Math.max(0, p - 1))} disabled={activeSectionIndex === 0} className="flex gap-2 px-6 py-3 rounded-xl font-bold text-slate-600 hover:bg-slate-100 disabled:opacity-30"><FaChevronLeft /> Previous</button>

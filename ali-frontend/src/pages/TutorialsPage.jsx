@@ -157,9 +157,28 @@ export default function TutorialsPage() {
         }
     };
 
-    const displayedTutorials = tutorials.filter(t =>
-        activeTab === 'active' ? !t.is_completed : t.is_completed
-    );
+    const displayedTutorials = tutorials.filter((t) => {
+        const status = t.status || 'PUBLISHED';
+        if (status !== 'PUBLISHED') return false;
+        return activeTab === 'active' ? !t.is_completed : t.is_completed;
+    });
+
+    const formatDuration = (tutorial) => {
+        if (tutorial?.estimatedMinutes) {
+            return `${tutorial.estimatedMinutes} min`;
+        }
+        if (tutorial?.estimatedHours) {
+            return `${tutorial.estimatedHours} hr`;
+        }
+        return null;
+    };
+
+    const getProgressPercent = (tutorial) => {
+        if (typeof tutorial?.progress_percent === 'number') return tutorial.progress_percent;
+        if (typeof tutorial?.progressPercent === 'number') return tutorial.progressPercent;
+        if (typeof tutorial?.progress === 'number') return tutorial.progress;
+        return tutorial?.is_completed ? 100 : 0;
+    };
 
     return (
         <div className="p-4 md:p-8 flex flex-col box-border h-full animate-fade-in pb-20">
@@ -224,6 +243,7 @@ export default function TutorialsPage() {
                     <div className="space-y-3">
                         {pendingRequests.map((req, idx) => {
                             const badge = getStatusBadge(req.status);
+                            const isReady = req.status === 'COMPLETED' && req.tutorialId;
                             return (
                                 <div key={req.id || idx} className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-700/50 rounded-xl border border-slate-100 dark:border-slate-600">
                                     <div className="flex-1">
@@ -239,9 +259,19 @@ export default function TutorialsPage() {
                                             </div>
                                         </div>
                                     </div>
-                                    <span className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 ${badge.bg} ${badge.text}`}>
-                                        {badge.icon} {req.status}
-                                    </span>
+                                    <div className="flex items-center gap-3">
+                                        {isReady && (
+                                            <button
+                                                onClick={() => navigate(`/tutorials/${req.tutorialId}`)}
+                                                className="px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-green-600 text-white shadow-sm hover:bg-green-700 transition-colors"
+                                            >
+                                                View Tutorial
+                                            </button>
+                                        )}
+                                        <span className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 ${badge.bg} ${badge.text}`}>
+                                            {badge.icon} {req.status}
+                                        </span>
+                                    </div>
                                 </div>
                             );
                         })}
@@ -340,8 +370,33 @@ export default function TutorialsPage() {
                                 <div className="min-w-0 flex-1 cursor-pointer" onClick={() => navigate(`/tutorials/${tut.id}`)}>
                                     <h4 className="font-bold text-sm text-slate-800 dark:text-white truncate">{tut.title}</h4>
                                     <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">{tut.category || "General"}</span>
+                                    <div className="mt-2 flex flex-wrap items-center gap-2 text-[10px] font-semibold text-slate-500">
+                                        {tut.difficulty && (
+                                            <span className="rounded-full bg-slate-100 px-2 py-0.5 uppercase tracking-wide text-slate-500 dark:bg-slate-700 dark:text-slate-200">
+                                                {tut.difficulty}
+                                            </span>
+                                        )}
+                                        {formatDuration(tut) && (
+                                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-500 dark:bg-slate-700 dark:text-slate-200">
+                                                {formatDuration(tut)}
+                                            </span>
+                                        )}
+                                        <span className="text-slate-400">{Math.round(getProgressPercent(tut))}% complete</span>
+                                    </div>
+                                    <div className="mt-2 h-1.5 w-full rounded-full bg-slate-100 dark:bg-slate-700">
+                                        <div
+                                            className="h-1.5 rounded-full bg-indigo-500 transition-all"
+                                            style={{ width: `${Math.min(100, Math.max(0, getProgressPercent(tut)))}%` }}
+                                        />
+                                    </div>
                                 </div>
                                 <div className="flex items-center gap-3 pl-3">
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); navigate(`/tutorials/${tut.id}`); }}
+                                        className="hidden sm:inline-flex items-center gap-1 rounded-full bg-indigo-50 px-3 py-1 text-[10px] font-bold text-indigo-700 hover:bg-indigo-100"
+                                    >
+                                        {tut.is_completed ? "Review" : "Resume"}
+                                    </button>
                                     <button
                                         onClick={(e) => { e.stopPropagation(); setDeleteModal({ show: true, tutorialId: tut.id, title: tut.title }); }}
                                         className="text-slate-300 dark:text-slate-500 hover:text-red-500 transition-colors p-2"

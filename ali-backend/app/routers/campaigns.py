@@ -390,6 +390,37 @@ async def regenerate_channel_asset(payload: dict, background_tasks: BackgroundTa
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/competitors/analyse")
+async def analyse_competitors(payload: dict, user: dict = Depends(verify_token)):
+    """
+    Store competitor analysis snapshot metadata for auditability.
+    This endpoint expects a list of competitor URLs or names and records the snapshot.
+    """
+    uid = user['uid']
+    competitors = payload.get("competitors", [])
+    themes = payload.get("themes", [])
+    angles = payload.get("creative_angles", [])
+
+    if not db:
+        raise HTTPException(status_code=503, detail="Database Unavailable")
+
+    snapshot_id = f"comp_{int(time.time())}"
+    snapshot_data = {
+        "competitorList": competitors,
+        "themes": themes,
+        "creativeAngles": angles,
+        "createdAt": firestore.SERVER_TIMESTAMP
+    }
+
+    db.collection('competitiveInsights').document(uid).collection('snapshots').document(snapshot_id).set(snapshot_data)
+
+    return {
+        "status": "stored",
+        "snapshot_id": snapshot_id,
+        "competitor_count": len(competitors)
+    }
+
+
 # --- WIZARD DRAFT PERSISTENCE (v4.0) ---
 
 @router.post("/save-draft")
