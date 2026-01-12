@@ -14,15 +14,14 @@ def process_tutorial_job(job_id: str, user_id: str, topic: str, notification_id:
     """
     logger.info(f"⚙️ Worker: Starting Job {job_id} for {topic}...")
     
-    # ⚡ Circular Import Fix: Import Agent INSIDE the worker function ⚡
+    # ⚡ AI Machine boundary: use client for generation ⚡
     try:
-        from app.agents.tutorial_agent import generate_tutorial
+        from app.services.ai_service_client import generate_tutorial
     except ImportError as e:
-        logger.critical(f"❌ Failed to import generate_tutorial: {e}")
-        # Update job to failed state immediately
+        logger.critical(f"❌ Failed to import AI service client: {e}")
         db.collection("jobs").document(job_id).update({
-             "status": "failed", 
-             "error": "Internal Import Error: Agent failed to load"
+             "status": "failed",
+             "error": "Internal Import Error: AI service client failed to load"
         })
         return
 
@@ -129,4 +128,3 @@ def process_tutorial_job(job_id: str, user_id: str, topic: str, notification_id:
                 "read": False,
                 "updated_at": firestore.SERVER_TIMESTAMP
             })
-

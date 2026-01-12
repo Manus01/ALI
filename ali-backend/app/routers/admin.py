@@ -6,6 +6,7 @@ from typing import Dict, Optional, List
 from datetime import datetime
 from google.cloud import firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
+from app.types.tutorial_lifecycle import TutorialStatus
 import logging
 
 logger = logging.getLogger(__name__)
@@ -285,6 +286,156 @@ def get_all_tutorials(admin: dict = Depends(verify_admin)):
         return {"tutorials": results}
     except Exception as e:
         logger.error(f"❌ Admin Tutorials Fetch Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/tutorials/{tutorial_id}/publish")
+def publish_tutorial(tutorial_id: str, admin: dict = Depends(verify_admin)):
+    """
+    Publishes a tutorial draft to make it learner-visible.
+    Updates both global and user copies atomically (best-effort).
+    """
+    try:
+        global_ref = db.collection("tutorials").document(tutorial_id)
+        global_doc = global_ref.get()
+        if not global_doc.exists:
+            raise HTTPException(status_code=404, detail="Tutorial not found")
+
+        tutorial_data = global_doc.to_dict()
+        owner_id = tutorial_data.get("owner_id")
+        if not owner_id:
+            raise HTTPException(status_code=400, detail="Tutorial missing owner_id")
+
+        version_id = tutorial_data.get("currentVersion")
+        publish_payload = {
+            "status": TutorialStatus.PUBLISHED.value,
+            "is_public": True,
+            "published_at": firestore.SERVER_TIMESTAMP,
+            "updated_at": firestore.SERVER_TIMESTAMP
+        }
+
+        global_ref.update(publish_payload)
+
+        user_ref = db.collection("users").document(owner_id).collection("tutorials").document(tutorial_id)
+        user_ref.set(publish_payload, merge=True)
+
+        if version_id:
+            global_ref.collection("versions").document(version_id).set({
+                "publishedBy": admin.get("email"),
+                "publishedAt": firestore.SERVER_TIMESTAMP
+            }, merge=True)
+            user_ref.collection("versions").document(version_id).set({
+                "publishedBy": admin.get("email"),
+                "publishedAt": firestore.SERVER_TIMESTAMP
+            }, merge=True)
+
+        log_audit_action(
+            admin_id=admin.get("uid"),
+            admin_email=admin.get("email"),
+            action="PUBLISH_TUTORIAL",
+            target_id=tutorial_id,
+            target_type="tutorial",
+            details={"owner_id": owner_id}
+        )
+
+        return {"status": "success", "message": "Tutorial published."}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Publish Tutorial Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/tutorials/{tutorial_id}/review")
+def mark_tutorial_in_review(tutorial_id: str, admin: dict = Depends(verify_admin)):
+    """
+    Marks a tutorial as IN_REVIEW to indicate admin review is in progress.
+    """
+    try:
+        global_ref = db.collection("tutorials").document(tutorial_id)
+        global_doc = global_ref.get()
+        if not global_doc.exists:
+            raise HTTPException(status_code=404, detail="Tutorial not found")
+
+        owner_id = global_doc.to_dict().get("owner_id")
+        review_payload = {
+            "status": TutorialStatus.IN_REVIEW.value,
+            "is_public": False,
+            "updated_at": firestore.SERVER_TIMESTAMP
+        }
+        global_ref.update(review_payload)
+        if owner_id:
+            user_ref = db.collection("users").document(owner_id).collection("tutorials").document(tutorial_id)
+            user_ref.set(review_payload, merge=True)
+
+        log_audit_action(
+            admin_id=admin.get("uid"),
+            admin_email=admin.get("email"),
+            action="MARK_TUTORIAL_IN_REVIEW",
+            target_id=tutorial_id,
+            target_type="tutorial",
+            details={"owner_id": owner_id}
+        )
+
+        return {"status": "success", "message": "Tutorial marked as in review."}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Mark Review Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/tutorials/{tutorial_id}/rollback")
+def rollback_tutorial(tutorial_id: str, payload: Dict = Body(...), admin: dict = Depends(verify_admin)):
+    """
+    Roll back a tutorial to a specific version snapshot.
+    """
+    try:
+        version_id = payload.get("versionId")
+        if not version_id:
+            raise HTTPException(status_code=400, detail="versionId is required")
+
+        global_ref = db.collection("tutorials").document(tutorial_id)
+        global_doc = global_ref.get()
+        if not global_doc.exists:
+            raise HTTPException(status_code=404, detail="Tutorial not found")
+
+        owner_id = global_doc.to_dict().get("owner_id")
+        version_doc = global_ref.collection("versions").document(version_id).get()
+        if not version_doc.exists:
+            raise HTTPException(status_code=404, detail="Version not found")
+
+        version_data = version_doc.to_dict().get("data")
+        if not version_data:
+            raise HTTPException(status_code=400, detail="Version snapshot missing data")
+
+        version_data.update({
+            "status": TutorialStatus.PUBLISHED.value,
+            "is_public": True,
+            "currentVersion": version_id,
+            "updated_at": firestore.SERVER_TIMESTAMP
+        })
+
+        global_ref.set(version_data, merge=True)
+
+        if owner_id:
+            user_ref = db.collection("users").document(owner_id).collection("tutorials").document(tutorial_id)
+            user_ref.set(version_data, merge=True)
+
+        log_audit_action(
+            admin_id=admin.get("uid"),
+            admin_email=admin.get("email"),
+            action="ROLLBACK_TUTORIAL",
+            target_id=tutorial_id,
+            target_type="tutorial",
+            details={"owner_id": owner_id, "version_id": version_id}
+        )
+
+        return {"status": "success", "message": "Tutorial rolled back."}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Rollback Tutorial Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.delete("/tutorials/{tutorial_id}")
@@ -1014,4 +1165,3 @@ def acknowledge_research_alert(alert_id: str, admin: dict = Depends(verify_admin
     except Exception as e:
         logger.error(f"❌ Acknowledge Alert Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
