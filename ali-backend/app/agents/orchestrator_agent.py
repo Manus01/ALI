@@ -1016,7 +1016,7 @@ class OrchestratorAgent(BaseAgent):
             "type": "campaign_progress",
             "campaign_id": campaign_id,
             "status": status,
-            "link": "/campaign-center?view=library" if percent == 100 else None,  # Navigate to asset library when complete
+            "link": f"/campaign-center/{campaign_id}" if percent == 100 else None,  # Navigate to campaign results when complete
             "created_at": firestore.SERVER_TIMESTAMP,
             "timestamp": firestore.SERVER_TIMESTAMP
         })
