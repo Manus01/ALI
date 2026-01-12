@@ -67,13 +67,58 @@ def review_tutorial_quality(tutorial_data: Dict[str, Any], original_blueprint: D
     Ensures 4C/ID compliance and Constructivist alignment.
     """
     model = get_model(intent='complex')
-    
+
+    sections = tutorial_data.get('sections', [])
+
+    def _collect_text_blocks():
+        blocks = []
+        for sec in sections:
+            for block in sec.get('blocks', []):
+                if block.get("type") == "text":
+                    blocks.append({
+                        "section_title": sec.get("title"),
+                        "content": block.get("content", "") or ""
+                    })
+        return blocks
+
+    def _word_count(text: str) -> int:
+        return len([w for w in re.split(r"\s+", text.strip()) if w])
+
+    def _contains_any(text: str, phrases: List[str]) -> bool:
+        lowered = text.lower()
+        return any(p in lowered for p in phrases)
+
     # Extract simplified structure for the LLM
     final_structure = []
-    for sec in tutorial_data.get('sections', []):
+    for sec in sections:
         blocks = [b.get('type') for b in sec.get('blocks', [])]
-        final_structure.append(f"{sec['title']}: {blocks}")
-        
+        final_structure.append(f"{sec.get('title', 'Untitled')}: {blocks}")
+
+    # Pre-compute rubric checks for structure and citations
+    text_blocks = _collect_text_blocks()
+    card_word_counts = [_word_count(b["content"]) for b in text_blocks if b["content"]]
+    oversized_cards = [count for count in card_word_counts if count > 220]
+    undersized_cards = [count for count in card_word_counts if count < 120]
+
+    combined_text = "\n".join([b["content"] for b in text_blocks])
+    structure_checks = {
+        "why_this_matters": _contains_any(combined_text, ["why this matters", "why it matters", "importance"]),
+        "example": _contains_any(combined_text, ["example", "for instance", "case study"]),
+        "watch_out_for": _contains_any(combined_text, ["watch out", "common mistake", "pitfall"]),
+        "cheat_sheet": _contains_any(combined_text, ["cheat sheet", "quick recap", "summary"]),
+    }
+    missing_structure = [k for k, v in structure_checks.items() if not v]
+
+    citation_blocks = 0
+    for sec in sections:
+        for block in sec.get('blocks', []):
+            if block.get("type") == "text" and block.get("citations"):
+                citation_blocks += 1
+    citation_coverage = {
+        "text_blocks": len(text_blocks),
+        "blocks_with_citations": citation_blocks,
+    }
+
     prompt = f"""
     Act as a Pedagogical Quality Assurance Auditor.
     Compare the Produced Tutorial against the Approved Blueprint.
@@ -102,7 +147,28 @@ def review_tutorial_quality(tutorial_data: Dict[str, Any], original_blueprint: D
     """
     try:
         response = model.generate_content(prompt)
-        return extract_json_safe(response.text)
+        report = extract_json_safe(response.text)
+        report["rubric"] = {
+            "card_word_counts": {
+                "total_cards": len(card_word_counts),
+                "oversized_cards": len(oversized_cards),
+                "undersized_cards": len(undersized_cards),
+            },
+            "structure_requirements": {
+                "missing": missing_structure,
+                "checks": structure_checks,
+            },
+            "citation_coverage": citation_coverage,
+        }
+        if missing_structure:
+            report.setdefault("flags", []).append(
+                f"Missing structure elements: {', '.join(missing_structure)}"
+            )
+        if oversized_cards or undersized_cards:
+            report.setdefault("flags", []).append(
+                f"Card length out of range (min 120, max 220). Oversized: {len(oversized_cards)}, undersized: {len(undersized_cards)}"
+            )
+        return report
     except Exception as e:
         logger.warning(f"⚠️ QA Audit Failed: {e}")
         return {"score": 0, "status": "FLAGGED", "feedback": "Audit failed due to error.", "flags": [str(e)]}

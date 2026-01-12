@@ -320,6 +320,42 @@ def get_tutorial_suggestions(user: dict = Depends(verify_token)):
         traceback.print_exc()
         return ["Marketing Strategy 101", "Content Creation", "ROI Analysis"]
 
+
+@router.get("/tutorials/requests/mine")
+def list_my_tutorial_requests(user: dict = Depends(verify_token)):
+    """
+    Fetch tutorial requests submitted by the current user.
+    """
+    try:
+        user_id = user["uid"]
+        _require_db("list_my_tutorial_requests")()
+
+        query = (
+            db.collection("tutorial_requests")
+            .where(filter=FieldFilter("userId", "==", user_id))
+            .order_by("createdAt", direction=firestore.Query.DESCENDING)
+            .limit(50)
+        )
+
+        results = []
+        for doc in query.stream():
+            data = doc.to_dict()
+            results.append({
+                "id": doc.id,
+                "requestId": data.get("requestId", doc.id),
+                "topic": data.get("topic"),
+                "status": data.get("status", "PENDING"),
+                "createdAt": data.get("createdAt"),
+                "tutorialId": data.get("tutorialId"),
+            })
+
+        return {"requests": results}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Fetch User Tutorial Requests Error: {e}")
+        return {"requests": [], "error": str(e)}
+
 def _process_tutorial_doc(doc, user_id, db):
     """Helper to process tutorial document and apply fallbacks."""
     t = doc.to_dict()
