@@ -182,7 +182,7 @@ export default function BrandMonitoringPage() {
     };
 
     return (
-        <div className="space-y-10">
+        <div className="p-4 md:p-8 max-w-7xl mx-auto animate-fade-in pb-20 space-y-10">
             <section className="bg-gradient-to-br from-slate-900 via-slate-900 to-indigo-900 rounded-[2rem] p-10 text-white shadow-2xl relative overflow-hidden">
                 <div className="absolute -top-12 -right-12 text-[12rem] opacity-10">🔎</div>
                 <div className="relative z-10 max-w-3xl space-y-4">
@@ -299,11 +299,10 @@ export default function BrandMonitoringPage() {
                                     )}
                                 </div>
                                 <span
-                                    className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide ${
-                                        alert.severity === 'CRITICAL'
+                                    className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide ${alert.severity === 'CRITICAL'
                                             ? 'bg-red-100 text-red-700'
                                             : 'bg-amber-100 text-amber-700'
-                                    }`}
+                                        }`}
                                 >
                                     {alert.severity || 'IMPORTANT'}
                                 </span>

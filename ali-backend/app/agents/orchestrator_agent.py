@@ -190,6 +190,22 @@ CHANNEL_SPECS = {
     "blog": {
         "formats": [{"type": "hero", "size": (1200, 630)}],
         "tone": "informative"
+    },
+    "twitter": {
+        "formats": [
+            {"type": "feed", "size": (1200, 675), "ratio": "16:9"},
+            {"type": "square", "size": (1080, 1080), "ratio": "1:1"},
+            {"type": "video", "size": (1080, 1920), "ratio": "9:16"}
+        ],
+        "tone": "concise_conversational",
+        "motion_support": True
+    },
+    "youtube_shorts": {
+        "formats": [
+            {"type": "video", "size": (1080, 1920), "ratio": "9:16", "safe_zone_bottom": 350}
+        ],
+        "tone": "engaging_hook_driven",
+        "motion_support": True
     }
 }
 
@@ -604,7 +620,13 @@ class OrchestratorAgent(BaseAgent):
                 
                 # V3.0: Generate BOTH Story (9:16) AND Feed (1:1) for social channels
                 formats_to_generate = []
-                if channel in ['instagram', 'facebook', 'tiktok']:
+                
+                # V3.1: Google Display Ads - Generate ALL formats (Leaderboard, Med Rect, Mobile)
+                if channel == 'google_display':
+                    for fmt in spec["formats"]:
+                        formats_to_generate.append((fmt, fmt['type']))
+                        
+                elif channel in ['instagram', 'facebook', 'tiktok']:
                     # Find story format (9:16)
                     story_format = next((f for f in spec["formats"] if f.get("ratio") == "9:16"), None)
                     # Find feed format (1:1 or similar)

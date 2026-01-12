@@ -13,6 +13,7 @@ import {
 import { getFirestore, doc, onSnapshot } from 'firebase/firestore';
 
 import { allCountries } from '../data/countries';
+import CarouselViewer from '../components/CarouselViewer';
 
 export default function CampaignCenter() {
     const { currentUser, userProfile, refreshProfile } = useAuth();
@@ -28,6 +29,8 @@ export default function CampaignCenter() {
     const [finalAssets, setFinalAssets] = useState(null);
     const [resumeInfo, setResumeInfo] = useState(null);
     const [isResuming, setIsResuming] = useState(false);
+    const [resumeCheckpoint, setResumeCheckpoint] = useState(null);
+    const [isResumingCampaign, setIsResumingCampaign] = useState(false);
 
     // Prevent double submission and track finalization state
     const isFinalizing = useRef(false);
@@ -261,14 +264,14 @@ export default function CampaignCenter() {
     };
 
     // Delete a wizard draft
-    const deleteWizardDraft = async (draftId) => {
+    const deleteWizardDraft = useCallback(async (draftId) => {
         try {
             await api.delete(`/campaign/wizard-draft/${draftId}`);
             setWizardDrafts(prev => prev.filter(d => d.draftId !== draftId));
         } catch (err) {
             console.warn("Failed to delete wizard draft", err);
         }
-    };
+    }, []);
 
     // Fetch user's draft creatives and wizard drafts on mount
     useEffect(() => {
@@ -413,7 +416,7 @@ export default function CampaignCenter() {
     };
 
     // Group Assets by Campaign (Goal)
-    const getGroupedAssets = () => {
+    const getGroupedAssets = useCallback(() => {
         const allAssets = [...userDrafts, ...userPublished];
         const groups = {};
 
@@ -429,11 +432,11 @@ export default function CampaignCenter() {
             const bDate = new Date(bAssets[0].createdAt || 0);
             return bDate - aDate;
         });
-    };
+    }, [userDrafts, userPublished]);
 
     // v5.0: Categorize campaigns by approval status for sub-tabs
     // v5.0: Categorize campaigns by approval status for sub-tabs (Split View)
-    const getCampaignsByApprovalStatus = () => {
+    const getCampaignsByApprovalStatus = useCallback(() => {
         const groupedAssets = getGroupedAssets();
 
         const pendingCampaigns = [];
@@ -457,7 +460,7 @@ export default function CampaignCenter() {
         });
 
         return { pendingCampaigns, approvedCampaigns };
-    };
+    }, [getGroupedAssets]);
 
     // V4.0: Read view query parameter from URL (for notification navigation)
     useEffect(() => {
@@ -468,7 +471,7 @@ export default function CampaignCenter() {
             // Also refresh drafts to show latest
             fetchUserDrafts();
         }
-    }, [location.search]);
+    }, [location.search, fetchUserDrafts]);
 
     useEffect(() => {
         if (location.state?.editDna) {
@@ -743,7 +746,7 @@ export default function CampaignCenter() {
     // --- REVIEW FEED HANDLERS (v3.0) ---
 
     // Approve a channel's asset
-    const handleApproveAsset = async (channel, formatLabel) => {
+    const handleApproveAsset = useCallback(async (channel, formatLabel) => {
         if (!campaignId) return;
         try {
             const cleanChannel = channel.toLowerCase().replace(/ /g, "_");
@@ -766,7 +769,7 @@ export default function CampaignCenter() {
             console.error("Approval failed", err);
             alert("Failed to approve asset: " + (err.response?.data?.detail || err.message));
         }
-    };
+    }, [campaignId, fetchUserDrafts, getTotalAssetCount]);
 
     const handleOpenRejection = (channel, formatLabel, draftId, assetKey) => {
         const cleanChannel = channel.toLowerCase().replace(/ /g, "_").replace(/-/g, "_");
@@ -777,7 +780,7 @@ export default function CampaignCenter() {
     };
 
     // Submit rejection with feedback → Trigger regeneration
-    const handleRegenerate = async () => {
+    const handleRegenerate = useCallback(async () => {
         if (!rejectionFeedback.trim() || !rejectionModal.channel) return;
         setIsRegenerating(true);
         try {
@@ -798,10 +801,10 @@ export default function CampaignCenter() {
         } finally {
             setIsRegenerating(false);
         }
-    };
+    }, [campaignId, rejectionFeedback, rejectionModal]);
 
     // Export all approved assets as ZIP
-    const handleExportZip = async (channelId = null) => {
+    const handleExportZip = useCallback(async (channelId = null) => {
         if (!campaignId) return;
         try {
             const response = await api.post(
@@ -824,7 +827,7 @@ export default function CampaignCenter() {
             console.error("Export failed", err);
             alert("Export failed: " + (err.response?.data?.detail || err.message));
         }
-    };
+    }, [campaignId]);
 
     const updateResultActionState = (channelId, updates) => {
         setResultActionState(prev => ({
@@ -1802,25 +1805,25 @@ export default function CampaignCenter() {
                                 <div key={channelId} className="bg-white dark:bg-slate-800 rounded-[2rem] border-2 border-slate-100 dark:border-slate-700 shadow-sm">
                                     {/* Channel Header */}
                                     <div className="flex items-center justify-between p-6 border-b border-slate-100 dark:border-slate-700">
-                                    <div className="flex items-center gap-3">
-                                        <span className="text-2xl">{channel.icon}</span>
-                                        <span className="font-black text-slate-800 dark:text-white text-lg">{channel.name}</span>
-                                        {finalAssets.qc_reports?.[channelId]?.requires_review && (
-                                            <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-300">
-                                                QC Review Needed
-                                            </span>
-                                        )}
-                                        {finalAssets.claims_reports?.[channelId]?.some(report => report.flags?.length) && (
-                                            <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">
-                                                Claims Adjusted
-                                            </span>
-                                        )}
-                                        {finalAssets.assets_metadata?.[channelId]?.compatibility_warning && (
-                                            <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">
-                                                {finalAssets.assets_metadata[channelId].compatibility_warning}
-                                            </span>
-                                        )}
-                                    </div>
+                                        <div className="flex items-center gap-3">
+                                            <span className="text-2xl">{channel.icon}</span>
+                                            <span className="font-black text-slate-800 dark:text-white text-lg">{channel.name}</span>
+                                            {finalAssets.qc_reports?.[channelId]?.requires_review && (
+                                                <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-300">
+                                                    QC Review Needed
+                                                </span>
+                                            )}
+                                            {finalAssets.claims_reports?.[channelId]?.some(report => report.flags?.length) && (
+                                                <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">
+                                                    Claims Adjusted
+                                                </span>
+                                            )}
+                                            {finalAssets.assets_metadata?.[channelId]?.compatibility_warning && (
+                                                <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">
+                                                    {finalAssets.assets_metadata[channelId].compatibility_warning}
+                                                </span>
+                                            )}
+                                        </div>
                                         <div className="flex flex-wrap items-center justify-end gap-2 text-xs text-slate-400 dark:text-slate-500">
                                             <span className="px-3 py-2">{finalAssets.assets_metadata?.[channelId]?.size || 'Standard'}</span>
                                             <button
@@ -2148,47 +2151,3 @@ export default function CampaignCenter() {
         </div>
     );
 }
-
-// Helper Component for Carousel
-const CarouselViewer = ({ slides, channelName }) => {
-    const [index, setIndex] = React.useState(0);
-
-    return (
-        <div className="rounded-2xl overflow-hidden border border-slate-100 dark:border-slate-600 relative group aspect-square max-w-sm mx-auto bg-slate-50 dark:bg-slate-700">
-            <img src={slides[index]} alt={`${channelName} Slide ${index + 1}`} className="w-full h-full object-cover" />
-
-            {/* Controls */}
-            {slides.length > 1 && (
-                <>
-                    <div className="absolute inset-0 flex items-center justify-between p-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button
-                            onClick={(e) => { e.stopPropagation(); setIndex(prev => prev > 0 ? prev - 1 : slides.length - 1); }}
-                            className="w-8 h-8 rounded-full bg-white/80 dark:bg-slate-800/80 backdrop-blur flex items-center justify-center hover:scale-110 transition-transform shadow-sm"
-                        >
-                            <FaArrowLeft className="text-xs text-slate-800 dark:text-white" />
-                        </button>
-                        <button
-                            onClick={(e) => { e.stopPropagation(); setIndex(prev => prev < slides.length - 1 ? prev + 1 : 0); }}
-                            className="w-8 h-8 rounded-full bg-white/80 dark:bg-slate-800/80 backdrop-blur flex items-center justify-center hover:scale-110 transition-transform shadow-sm"
-                        >
-                            <FaArrowRight className="text-xs text-slate-800 dark:text-white" />
-                        </button>
-                    </div>
-                    {/* Indicators */}
-                    <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-1.5 pointer-events-none">
-                        {slides.map((_, i) => (
-                            <div
-                                key={i}
-                                className={`w-1.5 h-1.5 rounded-full transition-all shadow-sm ${i === index ? 'bg-white scale-125' : 'bg-white/50'}`}
-                            />
-                        ))}
-                    </div>
-                    {/* Counter Badge */}
-                    <div className="absolute top-3 right-3 bg-black/50 backdrop-blur text-white text-[10px] font-black px-2 py-1 rounded-full pointer-events-none">
-                        {index + 1} / {slides.length}
-                    </div>
-                </>
-            )}
-        </div>
-    );
-};

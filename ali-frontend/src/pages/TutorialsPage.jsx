@@ -282,7 +282,7 @@ export default function TutorialsPage() {
             <div className="flex flex-col lg:grid lg:grid-cols-3 gap-8 flex-1 min-h-0">
                 {/* SAGA MAP NAVIGATOR */}
                 <div className="lg:col-span-3">
-                    <SagaMapNavigator onModuleSelect={(module) => console.log('Selected module:', module)} />
+                    <SagaMapNavigator onModuleSelect={(module) => module?.id && navigate(`/tutorials/${module.id}`)} />
                 </div>
 
                 {/* REQUEST TUTORIAL MODAL */}
