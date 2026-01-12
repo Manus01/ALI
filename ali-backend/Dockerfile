@@ -45,4 +45,4 @@ ENV PORT=8080
 
 # Run the app using Gunicorn (Production Server)
 # We bind to 0.0.0.0 so Cloud Run can reach it
-CMD exec uvicorn app.main:app --host 0.0.0.0 --port $PORT
+CMD exec uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 2

@@ -15,7 +15,8 @@ router = APIRouter()
 def _extract_domain(url: str) -> str:
     try:
         return urlparse(url).netloc.replace("www.", "")
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Failed to extract domain from {url}: {e}")
         return ""
 
 

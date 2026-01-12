@@ -30,6 +30,8 @@
       - '--cpu'        # <--- NEW: Better processing for startup
       - '2'            # <--- NEW: Increased from 1
       - '--cpu-boost'  # <--- NEW: Extra power during initial boot
+      - '--min-instances'
+      - '1'
 
   # --- 4. Build the Frontend Image ---
   - name: 'gcr.io/cloud-builders/docker'

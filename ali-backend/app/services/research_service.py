@@ -35,7 +35,8 @@ def _is_allowed_by_robots(url: str) -> bool:
         rp.set_url(f"{base}/robots.txt")
         rp.read()
         return rp.can_fetch("ALIResearchBot", url)
-    except Exception:
+    except Exception as e:
+        logger.debug(f"robots.txt check failed for {url}: {e}, allowing by default")
         return True
 
 
