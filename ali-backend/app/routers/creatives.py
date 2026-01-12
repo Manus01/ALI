@@ -326,13 +326,73 @@ def export_campaign_zip(
     Only includes approved (published) assets.
     """
     try:
+        def resolve_timestamp(value) -> float:
+            if hasattr(value, "timestamp"):
+                return value.timestamp()
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return 0.0
+
+        def asset_recency(asset: dict) -> float:
+            return max(
+                resolve_timestamp(asset.get("updatedAt")),
+                resolve_timestamp(asset.get("publishedAt")),
+                resolve_timestamp(asset.get("regeneratedAt")),
+                resolve_timestamp(asset.get("createdAt"))
+            )
+
+        def build_unique_filename(zip_file: zipfile.ZipFile, filename: str) -> str:
+            base_name = filename
+            counter = 1
+            while filename in {info.filename for info in zip_file.infolist()}:
+                if "." in base_name:
+                    name, extension = base_name.rsplit(".", 1)
+                    filename = f"{name}_{counter}.{extension}"
+                else:
+                    filename = f"{base_name}_{counter}"
+                counter += 1
+            return filename
+
+        def fetch_asset_bytes(asset_url: str) -> Tuple[bytes, str, str]:
+            if asset_url.startswith("data:"):
+                header, data_payload = asset_url.split(",", 1)
+                header_meta = header[5:]
+                parts = header_meta.split(";")
+                content_type = parts[0] if parts[0] else "text/plain"
+                if "base64" in parts:
+                    raw_bytes = base64.b64decode(data_payload)
+                else:
+                    raw_bytes = unquote(data_payload).encode("utf-8")
+                ext = "html" if "html" in content_type else "png"
+                return raw_bytes, content_type, ext
+
+            gcs_blob = _extract_gcs_blob(asset_url)
+            if gcs_blob:
+                bucket_name, blob_path = gcs_blob
+                gcs_service = GCSService()
+                refreshed_url = gcs_service.generate_signed_url(bucket_name, blob_path)
+                if refreshed_url:
+                    asset_url = refreshed_url
+
+            response = requests.get(asset_url, timeout=30)
+            response.raise_for_status()
+            content_type = response.headers.get("Content-Type", "image/png")
+            if "html" in content_type or asset_url.endswith(".html"):
+                ext = "html"
+            elif "png" in content_type:
+                ext = "png"
+            else:
+                ext = "jpg"
+            return response.content, content_type, ext
+
         # Fetch all creative drafts for this campaign
         docs = db.collection("creative_drafts").where(filter=FieldFilter("userId", "==", user_id)).stream()
-        all_docs = [doc.to_dict() for doc in docs]
-        
+        all_docs = [{**doc.to_dict(), "id": doc.id} for doc in docs]
+
         # Filter to this campaign and PUBLISHED status
         campaign_assets = [
-            d for d in all_docs 
+            d for d in all_docs
             if d.get("campaignId") == campaign_id and d.get("status") == "PUBLISHED"
         ]
 
@@ -340,63 +400,61 @@ def export_campaign_zip(
             campaign_assets = [
                 d for d in campaign_assets if d.get("channel") == channel
             ]
-        
+
         if not campaign_assets:
             detail = "No approved assets found for this campaign"
             if channel:
                 detail = f"No approved assets found for channel {channel}"
             raise HTTPException(status_code=404, detail=detail)
-        
+
+        latest_assets: dict = {}
+        for asset in campaign_assets:
+            parsed = _parse_draft_id(asset.get("id", "")) or (None, asset.get("channel", "asset"), "primary")
+            _, parsed_channel, format_label = parsed
+            asset_key = f"{parsed_channel}_{format_label}"
+            candidate = {**asset, "formatLabel": format_label, "_recency": asset_recency(asset)}
+            if asset_key not in latest_assets or candidate["_recency"] > latest_assets[asset_key]["_recency"]:
+                latest_assets[asset_key] = candidate
+
         # Create ZIP in memory
         zip_buffer = io.BytesIO()
-        
-        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-            for asset in campaign_assets:
-                asset_url = asset.get("asset_url") or asset.get("url")
+
+        with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+            for asset in latest_assets.values():
+                asset_url = asset.get("asset_url") or asset.get("url") or asset.get("assetPayload")
                 if not asset_url:
                     continue
-                
+
                 try:
-                    # Fetch asset
-                    response = requests.get(asset_url, timeout=30)
-                    response.raise_for_status()
-                    
-                    # Determine filename
-                    channel = asset.get("channel", "asset")
-                    content_type = response.headers.get("Content-Type", "image/png")
-                    
-                    if "html" in content_type or asset_url.endswith(".html"):
-                        ext = "html"
-                    elif "png" in content_type:
-                        ext = "png"
-                    else:
-                        ext = "jpg"
-                    
-                    filename = f"{channel}.{ext}"
-                    
-                    # Handle duplicates
-                    base_name = filename
-                    counter = 1
-                    while filename in [a.filename for a in zip_file.infolist()]:
-                        name, extension = base_name.rsplit('.', 1)
-                        filename = f"{name}_{counter}.{extension}"
-                        counter += 1
-                    
-                    zip_file.writestr(filename, response.content)
+                    payload, content_type, ext = fetch_asset_bytes(asset_url)
+
+                    asset_channel = asset.get("channel", "asset")
+                    format_label = asset.get("formatLabel", "primary")
+                    filename = f"{asset_channel}_{format_label}.{ext}"
+                    filename = build_unique_filename(zip_file, filename)
+
+                    zip_file.writestr(filename, payload)
                     logger.info(f"📦 Added {filename} to ZIP")
-                    
+
+                    text_copy = asset.get("textCopy")
+                    if text_copy:
+                        copy_filename = f"{asset_channel}_{format_label}_copy.txt"
+                        copy_filename = build_unique_filename(zip_file, copy_filename)
+                        zip_file.writestr(copy_filename, text_copy)
+                        logger.info(f"📝 Added {copy_filename} to ZIP")
+
                 except Exception as e:
                     logger.warning(f"⚠️ Could not fetch asset {asset_url}: {e}")
                     continue
-        
+
         zip_buffer.seek(0)
-        
-        logger.info(f"✅ Created ZIP with {len(campaign_assets)} assets for campaign {campaign_id}")
+
+        logger.info(f"✅ Created ZIP with {len(latest_assets)} assets for campaign {campaign_id}")
 
         filename = f"campaign_{campaign_id}_assets.zip"
         if channel:
             filename = f"campaign_{campaign_id}_{channel}_assets.zip"
-        
+
         return StreamingResponse(
             zip_buffer,
             media_type="application/zip",
@@ -404,7 +462,7 @@ def export_campaign_zip(
                 "Content-Disposition": f"attachment; filename={filename}"
             }
         )
-    
+
     except HTTPException:
         raise
     except Exception as e:
