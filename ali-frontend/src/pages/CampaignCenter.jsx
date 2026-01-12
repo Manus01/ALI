@@ -25,6 +25,8 @@ export default function CampaignCenter() {
     const [campaignId, setCampaignId] = useState(null);
     const [progress, setProgress] = useState({ message: 'Initializing...', percent: 0 });
     const [finalAssets, setFinalAssets] = useState(null);
+    const [resumeInfo, setResumeInfo] = useState(null);
+    const [isResuming, setIsResuming] = useState(false);
 
     // Prevent double submission and track finalization state
     const isFinalizing = useRef(false);
@@ -513,6 +515,45 @@ export default function CampaignCenter() {
     useEffect(() => {
         setApprovedChannels([]);
     }, [campaignId]);
+
+    useEffect(() => {
+        const activeCampaignId = campaignIdParam || campaignId;
+        if (!activeCampaignId || stage === 'generating') return;
+        let isMounted = true;
+
+        const checkCheckpoint = async () => {
+            try {
+                const res = await api.get(`/campaign/checkpoint/${activeCampaignId}`);
+                if (!isMounted) return;
+                setResumeInfo(res.data?.has_checkpoint ? res.data : null);
+            } catch (err) {
+                console.warn("Failed to check campaign checkpoint", err);
+            }
+        };
+
+        checkCheckpoint();
+        return () => {
+            isMounted = false;
+        };
+    }, [campaignIdParam, campaignId, stage]);
+
+    const handleResumeGeneration = async () => {
+        if (!resumeInfo?.campaign_id) return;
+        setIsResuming(true);
+        try {
+            await api.post(`/campaign/resume/${resumeInfo.campaign_id}`);
+            setCampaignId(resumeInfo.campaign_id);
+            setFinalAssets(null);
+            setStage('generating');
+            setViewMode('wizard');
+            setResumeInfo(null);
+        } catch (err) {
+            console.error("Resume failed", err);
+            alert("Resume failed: " + (err.response?.data?.detail || err.message));
+        } finally {
+            setIsResuming(false);
+        }
+    };
 
     // --- BRAND DNA HANDLERS ---
     const handleLogoChange = (e) => {
@@ -1059,6 +1100,24 @@ export default function CampaignCenter() {
 
     return (
         <div className="p-8 max-w-5xl mx-auto space-y-8 animate-fade-in pb-20">
+            {resumeInfo && (
+                <div className="bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                    <div>
+                        <p className="text-xs font-black text-amber-600 uppercase tracking-widest">Campaign Interrupted</p>
+                        <p className="text-sm text-amber-700 dark:text-amber-300 font-medium">
+                            Resume generation for campaign <span className="font-bold">{resumeInfo.campaign_id}</span>.
+                        </p>
+                    </div>
+                    <button
+                        onClick={handleResumeGeneration}
+                        disabled={isResuming}
+                        className="px-4 py-2 rounded-xl bg-amber-500 text-white text-xs font-bold hover:bg-amber-600 transition-all disabled:opacity-60"
+                    >
+                        {isResuming ? <FaSpinner className="animate-spin inline mr-2" /> : <FaRocket className="inline mr-2" />}
+                        Resume Generation
+                    </button>
+                </div>
+            )}
             <header className="flex justify-between items-end">
                 <div>
                     <h1 className="text-3xl font-black text-slate-800 dark:text-white tracking-tight uppercase">Orchestrator</h1>
@@ -1603,6 +1662,14 @@ export default function CampaignCenter() {
                             <p className="text-slate-500 dark:text-slate-400 text-sm mt-1">
                                 {selectedChannels.length} channels • {approvedChannels.length}/{getTotalAssetCount()} approved
                             </p>
+                            {finalAssets.intent && (
+                                <div className="mt-3 text-xs text-slate-500 dark:text-slate-400 space-y-1">
+                                    <p><span className="font-bold text-slate-600 dark:text-slate-300">Objective:</span> {finalAssets.intent.objective}</p>
+                                    <p><span className="font-bold text-slate-600 dark:text-slate-300">Angle:</span> {finalAssets.intent.angle}</p>
+                                    <p><span className="font-bold text-slate-600 dark:text-slate-300">Hook:</span> {finalAssets.intent.hook_type}</p>
+                                    <p><span className="font-bold text-slate-600 dark:text-slate-300">Hypothesis:</span> {finalAssets.intent.hypothesis}</p>
+                                </div>
+                            )}
                         </div>
                         <div className="flex items-center gap-3">
                             <button
@@ -1648,10 +1715,25 @@ export default function CampaignCenter() {
                                 <div key={channelId} className="bg-white dark:bg-slate-800 rounded-[2rem] border-2 border-slate-100 dark:border-slate-700 shadow-sm">
                                     {/* Channel Header */}
                                     <div className="flex items-center justify-between p-6 border-b border-slate-100 dark:border-slate-700">
-                                        <div className="flex items-center gap-3">
-                                            <span className="text-2xl">{channel.icon}</span>
-                                            <span className="font-black text-slate-800 dark:text-white text-lg">{channel.name}</span>
-                                        </div>
+                                    <div className="flex items-center gap-3">
+                                        <span className="text-2xl">{channel.icon}</span>
+                                        <span className="font-black text-slate-800 dark:text-white text-lg">{channel.name}</span>
+                                        {finalAssets.qc_reports?.[channelId]?.requires_review && (
+                                            <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-300">
+                                                QC Review Needed
+                                            </span>
+                                        )}
+                                        {finalAssets.claims_reports?.[channelId]?.some(report => report.flags?.length) && (
+                                            <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">
+                                                Claims Adjusted
+                                            </span>
+                                        )}
+                                        {finalAssets.assets_metadata?.[channelId]?.compatibility_warning && (
+                                            <span className="px-2 py-1 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/50 dark:text-amber-300">
+                                                {finalAssets.assets_metadata[channelId].compatibility_warning}
+                                            </span>
+                                        )}
+                                    </div>
                                         <div className="flex flex-wrap items-center justify-end gap-2 text-xs text-slate-400 dark:text-slate-500">
                                             <span className="px-3 py-2">{finalAssets.assets_metadata?.[channelId]?.size || 'Standard'}</span>
                                             <button
@@ -1806,6 +1888,40 @@ export default function CampaignCenter() {
                                                         {textCopy || 'No copy generated for this channel.'}
                                                     </p>
                                                 </div>
+                                                {(finalAssets.qc_reports?.[channelId] || finalAssets.claims_reports?.[channelId]) && (
+                                                    <div className="bg-white dark:bg-slate-800 rounded-2xl border border-slate-100 dark:border-slate-700 p-4 space-y-3">
+                                                        <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest">Governance Summary</p>
+                                                        {finalAssets.qc_reports?.[channelId] && (
+                                                            <div className="text-xs text-slate-600 dark:text-slate-300 space-y-1">
+                                                                <p className="font-bold text-slate-700 dark:text-slate-200">QC Checks</p>
+                                                                <div className="flex flex-wrap gap-2">
+                                                                    {Object.entries(finalAssets.qc_reports[channelId].checks || {}).map(([check, detail]) => (
+                                                                        <span
+                                                                            key={check}
+                                                                            className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase ${detail.passes ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' : 'bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-300'}`}
+                                                                        >
+                                                                            {check.replace('_', ' ')}
+                                                                        </span>
+                                                                    ))}
+                                                                </div>
+                                                            </div>
+                                                        )}
+                                                        {finalAssets.claims_reports?.[channelId]?.length > 0 && (
+                                                            <div className="text-xs text-slate-600 dark:text-slate-300 space-y-1">
+                                                                <p className="font-bold text-slate-700 dark:text-slate-200">Claims Adjustments</p>
+                                                                <ul className="list-disc list-inside space-y-1">
+                                                                    {finalAssets.claims_reports[channelId]
+                                                                        .filter(report => report.flags?.length)
+                                                                        .map((report, idx) => (
+                                                                            <li key={idx}>
+                                                                                {report.field}: {report.flags.join(', ')}
+                                                                            </li>
+                                                                        ))}
+                                                                </ul>
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
                                     )}
