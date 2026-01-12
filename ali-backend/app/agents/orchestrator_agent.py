@@ -3,6 +3,7 @@ import logging
 import base64
 import json
 import random
+from typing import Any, Dict, List, Optional
 from app.agents.base_agent import BaseAgent
 from app.agents.campaign_agent import CampaignAgent
 from app.services.image_agent import ImageAgent
@@ -10,6 +11,7 @@ from app.services.claims_verifier import verify_claims
 from app.services.qc_rubric import evaluate_copy
 from app.core.security import db
 from app.core.templates import get_motion_template, get_template_for_tone, get_random_template, get_optimized_template, MOTION_TEMPLATES, FONT_MAP, TEMPLATE_COMPLEXITY
+from app.services.governance import run_qc_rubric, verify_claims_for_blueprint
 from firebase_admin import firestore
 
 logger = logging.getLogger("ali_platform.agents.orchestrator_agent")
@@ -196,6 +198,75 @@ class OrchestratorAgent(BaseAgent):
         super().__init__("Orchestrator")
         self.db = db
 
+    def _get_latest_competitor_snapshot(self, uid: str) -> Optional[Dict[str, Any]]:
+        try:
+            snapshot_ref = (
+                self.db.collection("competitiveInsights")
+                .document(uid)
+                .collection("snapshots")
+                .order_by("createdAt", direction=firestore.Query.DESCENDING)
+                .limit(1)
+            )
+            docs = list(snapshot_ref.stream())
+            if not docs:
+                return None
+            snapshot = docs[0].to_dict()
+            snapshot["snapshot_id"] = docs[0].id
+            return snapshot
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to load competitor snapshot: {e}")
+            return None
+
+    def _get_recent_creative_memory(self, uid: str, limit: int = 5) -> List[Dict[str, Any]]:
+        try:
+            memory_ref = (
+                self.db.collection("users")
+                .document(uid)
+                .collection("creative_memory")
+                .order_by("createdAt", direction=firestore.Query.DESCENDING)
+                .limit(limit)
+            )
+            return [doc.to_dict() for doc in memory_ref.stream()]
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to load creative memory: {e}")
+            return []
+
+    def _save_creative_memory(
+        self,
+        uid: str,
+        campaign_id: str,
+        goal: str,
+        blueprint: Dict[str, Any],
+        creative_intent: Optional[Dict[str, Any]],
+    ) -> None:
+        try:
+            hooks = []
+            for channel, payload in blueprint.items():
+                if channel == "theme" or not isinstance(payload, dict):
+                    continue
+                hook = (
+                    payload.get("headline")
+                    or (payload.get("headlines") or [None])[0]
+                    or payload.get("caption")
+                    or payload.get("body")
+                )
+                if hook:
+                    hooks.append({"channel": channel, "hook": hook[:160]})
+
+            memory_payload = {
+                "campaignId": campaign_id,
+                "goal": goal,
+                "theme": blueprint.get("theme"),
+                "hooks": hooks,
+                "intent": creative_intent or {},
+                "createdAt": firestore.SERVER_TIMESTAMP,
+            }
+
+            self.db.collection("users").document(uid).collection("creative_memory").add(memory_payload)
+            logger.info(f"🧠 Saved creative memory for campaign {campaign_id}")
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to save creative memory: {e}")
+
     # =========================================================================
     # V6.1: Generation Checkpointing - Resumable Campaign Generation
     # Saves state after each asset, allows resuming from interruption points
@@ -315,7 +386,19 @@ class OrchestratorAgent(BaseAgent):
             pass  # Non-critical
 
 
-    def _save_draft_immediately(self, uid, campaign_id, goal, channel, asset_payload, meta, blueprint):
+    def _save_draft_immediately(
+        self,
+        uid,
+        campaign_id,
+        goal,
+        channel,
+        asset_payload,
+        meta,
+        blueprint,
+        creative_intent: Optional[Dict[str, Any]] = None,
+        claims_report: Optional[Dict[str, Any]] = None,
+        qc_report: Optional[Dict[str, Any]] = None,
+    ):
         """
         V5.1: Progressive draft saving - saves draft immediately after asset is processed.
         This ensures drafts are persisted even if the instance is terminated mid-generation.
@@ -887,7 +970,7 @@ class OrchestratorAgent(BaseAgent):
                     draft_saved = self._save_draft_immediately(
                         uid, campaign_id, goal, channel,
                         assets.get(asset_key) or assets.get(channel),
-                        meta, blueprint
+                        meta, blueprint, creative_intent, claims_report, qc_report
                     )
                     # V6.1: Mark channel as complete for resume capability
                     if draft_saved:
@@ -902,6 +985,9 @@ class OrchestratorAgent(BaseAgent):
                     partial_data = {
                         "status": "interrupted",
                         "blueprint": blueprint,
+                        "creative_intent": creative_intent,
+                        "claims_report": claims_report,
+                        "qc_report": qc_report,
                         "assets": assets,
                         "assets_metadata": assets_metadata,
                         "selected_channels": target_channels,
@@ -924,6 +1010,9 @@ class OrchestratorAgent(BaseAgent):
             final_data = {
                 "status": "completed",
                 "blueprint": blueprint,
+                "creative_intent": creative_intent,
+                "claims_report": claims_report,
+                "qc_report": qc_report,
                 "assets": assets,
                 "assets_metadata": assets_metadata,
                 "selected_channels": target_channels,
@@ -936,6 +1025,8 @@ class OrchestratorAgent(BaseAgent):
             
             # Use set with merge=True to handle new campaign documents correctly
             self.db.collection('users').document(uid).collection('campaigns').document(campaign_id).set(final_data, merge=True)
+
+            self._save_creative_memory(uid, campaign_id, goal, blueprint, creative_intent)
             
             # 5. V5.1: Handle carousel draft finalization (progressive saving handles most drafts already)
             # Save carousel drafts that weren't handled in the loop

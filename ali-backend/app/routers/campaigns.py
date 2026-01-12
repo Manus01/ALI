@@ -125,6 +125,32 @@ async def get_results(campaign_id: str, user: dict = Depends(verify_token)):
     return doc.to_dict()
 
 
+@router.post("/competitor-snapshot")
+async def store_competitor_snapshot(payload: dict, user: dict = Depends(verify_token)):
+    uid = user["uid"]
+    if not db:
+        raise HTTPException(status_code=503, detail="Database Unavailable")
+
+    snapshot = {
+        "competitor_list": payload.get("competitor_list", []),
+        "themes": payload.get("themes", []),
+        "creative_angles": payload.get("creative_angles", []),
+        "sources": payload.get("sources", []),
+        "notes": payload.get("notes", ""),
+        "createdAt": firestore.SERVER_TIMESTAMP,
+    }
+
+    snapshot_ref = (
+        db.collection("competitiveInsights")
+        .document(uid)
+        .collection("snapshots")
+        .document()
+    )
+    snapshot_ref.set(snapshot)
+
+    return {"snapshot_id": snapshot_ref.id}
+
+
 @router.post("/resume/{campaign_id}")
 async def resume_campaign(campaign_id: str, background_tasks: BackgroundTasks, user: dict = Depends(verify_token)):
     """

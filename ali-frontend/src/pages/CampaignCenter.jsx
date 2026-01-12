@@ -7,6 +7,7 @@ import {
     FaPaperPlane, FaMagic, FaCheckCircle, FaSpinner,
     FaSyncAlt, FaDownload, FaRocket, FaExclamationTriangle, FaTimes, FaArrowRight, FaArrowLeft,
     FaPalette, FaGlobe, FaWindowMaximize, FaEdit, FaCloudUploadAlt, FaInfoCircle, FaTrash, FaRedo,
+    FaShieldAlt,
     FaChevronDown, FaChevronUp
 } from 'react-icons/fa';
 import { getFirestore, doc, onSnapshot } from 'firebase/firestore';
@@ -174,6 +175,45 @@ export default function CampaignCenter() {
             console.warn("Could not fetch wizard drafts", err);
         }
     }, []);
+
+    const checkCheckpoint = useCallback(async (campaignToCheck) => {
+        if (!campaignToCheck) return;
+        try {
+            const res = await api.get(`/campaign/checkpoint/${campaignToCheck}`);
+            if (res.data?.has_checkpoint) {
+                setResumeCheckpoint(res.data);
+            } else {
+                setResumeCheckpoint(null);
+            }
+        } catch (err) {
+            console.warn("Could not check campaign checkpoint", err);
+        }
+    }, []);
+
+    const handleResumeCampaign = async () => {
+        if (!resumeCheckpoint?.campaign_id) return;
+        setIsResumingCampaign(true);
+        try {
+            await api.post(`/campaign/resume/${resumeCheckpoint.campaign_id}`);
+            setCampaignId(resumeCheckpoint.campaign_id);
+            setStage('generating');
+            setProgress({ message: 'Resuming campaign generation...', percent: 25 });
+            setResumeCheckpoint(null);
+        } catch (err) {
+            console.error("Failed to resume campaign", err);
+        } finally {
+            setIsResumingCampaign(false);
+        }
+    };
+
+    useEffect(() => {
+        if (!currentUser) return;
+        const params = new URLSearchParams(location.search);
+        if (params.get('view') === 'library') return;
+        const campaignToCheck = campaignIdParam || campaignId;
+        if (!campaignToCheck) return;
+        checkCheckpoint(campaignToCheck);
+    }, [campaignId, campaignIdParam, checkCheckpoint, currentUser, location.search]);
 
     // Auto-save wizard state (debounced)
     const autoSaveWizardState = useCallback(async () => {
@@ -899,6 +939,10 @@ export default function CampaignCenter() {
         return selectedChannels.reduce((count, channelId) => count + getChannelAssets(channelId).length, 0);
     }, [finalAssets, selectedChannels, getChannelAssets]);
 
+    const creativeIntent = finalAssets?.creative_intent || finalAssets?.creativeIntent || null;
+    const claimsSummary = finalAssets?.claims_report?.summary || {};
+    const qcSummary = finalAssets?.qc_report?.summary || {};
+
     const resetCampaignWizard = useCallback(() => {
         setGoal('');
         setStage('input');
@@ -1134,6 +1178,26 @@ export default function CampaignCenter() {
                     </div>
                 )}
             </header>
+
+            {resumeCheckpoint?.has_checkpoint && viewMode === 'wizard' && (
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-2xl p-4">
+                    <div>
+                        <p className="text-amber-700 dark:text-amber-300 font-bold text-sm">
+                            Resume interrupted campaign generation
+                        </p>
+                        <p className="text-amber-600 dark:text-amber-400 text-xs">
+                            Campaign {resumeCheckpoint.campaign_id} has pending assets. Resume to finish generation.
+                        </p>
+                    </div>
+                    <button
+                        onClick={handleResumeCampaign}
+                        disabled={isResumingCampaign}
+                        className="px-4 py-2 rounded-xl bg-amber-600 text-white font-bold text-sm hover:bg-amber-700 transition-all disabled:opacity-50"
+                    >
+                        {isResumingCampaign ? 'Resuming...' : 'Resume Campaign'}
+                    </button>
+                </div>
+            )}
 
             {/* VIEW MODE TOGGLE */}
             <div className="flex justify-center mb-8">
@@ -1677,12 +1741,46 @@ export default function CampaignCenter() {
                         </div>
                     </div>
 
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                        <div className="bg-slate-50 dark:bg-slate-800/80 rounded-2xl border border-slate-100 dark:border-slate-700 p-5">
+                            <div className="flex items-center gap-2 mb-3">
+                                <FaMagic className="text-purple-500" />
+                                <p className="text-xs font-black uppercase tracking-widest text-slate-400">Creative Intent</p>
+                            </div>
+                            {creativeIntent ? (
+                                <div className="space-y-2 text-sm text-slate-600 dark:text-slate-300">
+                                    <p><span className="font-bold text-slate-700 dark:text-slate-200">Objective:</span> {creativeIntent.objective || '—'}</p>
+                                    <p><span className="font-bold text-slate-700 dark:text-slate-200">Primary Angle:</span> {creativeIntent.primary_angle || '—'}</p>
+                                    <p><span className="font-bold text-slate-700 dark:text-slate-200">Hook Type:</span> {creativeIntent.hook_type || '—'}</p>
+                                    <p><span className="font-bold text-slate-700 dark:text-slate-200">CTA:</span> {creativeIntent.cta || '—'}</p>
+                                </div>
+                            ) : (
+                                <p className="text-sm text-slate-400">No creative intent object available.</p>
+                            )}
+                        </div>
+                        <div className="bg-slate-50 dark:bg-slate-800/80 rounded-2xl border border-slate-100 dark:border-slate-700 p-5">
+                            <div className="flex items-center gap-2 mb-3">
+                                <FaShieldAlt className="text-emerald-500" />
+                                <p className="text-xs font-black uppercase tracking-widest text-slate-400">Governance Summary</p>
+                            </div>
+                            <div className="space-y-2 text-sm text-slate-600 dark:text-slate-300">
+                                <p><span className="font-bold text-slate-700 dark:text-slate-200">QC Issues:</span> {qcSummary.issues_total ?? 0}</p>
+                                <p><span className="font-bold text-slate-700 dark:text-slate-200">Channels with QC Issues:</span> {qcSummary.channels_with_issues ?? 0}</p>
+                                <p><span className="font-bold text-slate-700 dark:text-slate-200">Claims Adjusted:</span> {claimsSummary.adjusted_fields_total ?? 0}</p>
+                                <p><span className="font-bold text-slate-700 dark:text-slate-200">Channels Adjusted:</span> {claimsSummary.channels_with_adjustments ?? 0}</p>
+                            </div>
+                        </div>
+                    </div>
+
                     {/* Vertical Review Feed - Grouped by Channel */}
                     <div className="space-y-6 pr-2">
                         {selectedChannels.map(channelId => {
                             const channel = AVAILABLE_CHANNELS.find(c => c.id === channelId) || { name: channelId, icon: '📊' };
                             const channelAssets = getChannelAssets(channelId);
                             const channelBlueprint = finalAssets.blueprint?.[channelId] || {};
+                            const channelClaims = finalAssets.claims_report?.channels?.[channelId];
+                            const channelQc = finalAssets.qc_report?.channels?.[channelId];
+                            const compatibilityWarning = finalAssets.assets_metadata?.[channelId]?.compatibility_warning;
                             const textCopy = channelBlueprint.caption || channelBlueprint.body ||
                                 (channelBlueprint.headlines ? channelBlueprint.headlines.join(' | ') : '') ||
                                 channelBlueprint.video_script || '';
@@ -1760,6 +1858,14 @@ export default function CampaignCenter() {
                                     </div>
 
                                     {/* Split View: Asset + Copy */}
+                                    {isExpanded && compatibilityWarning && (
+                                        <div className="px-6 pt-4">
+                                            <div className="flex items-center gap-2 text-xs font-bold text-red-600 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-xl px-4 py-2">
+                                                <FaExclamationTriangle />
+                                                {compatibilityWarning}
+                                            </div>
+                                        </div>
+                                    )}
                                     {isExpanded && (
                                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6">
                                             <div className="space-y-4">

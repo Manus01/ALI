@@ -1,5 +1,6 @@
 import json
 import logging
+from typing import Optional
 from .base_agent import BaseAgent
 from app.services.llm_factory import get_model
 from app.services.knowledge_service import KnowledgeService
@@ -135,6 +136,9 @@ class CampaignAgent(BaseAgent):
         Brand DNA: {json.dumps(brand_dna)}
         Goal: {goal}
         User Clarifications: {json.dumps(answers)}
+        Creative Intent: {json.dumps(creative_intent or {})}
+        Creative Memory (do not copy verbatim): {json.dumps(creative_memory or [])}
+        Competitor Snapshot (insights only): {json.dumps(competitor_snapshot or {})}
         {knowledge_block}
         Target Channels: {', '.join(channels)}
         Reusable Hooks (same brand only): {json.dumps(memory_hooks or [])}
