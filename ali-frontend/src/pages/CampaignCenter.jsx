@@ -80,7 +80,6 @@ export default function CampaignCenter() {
     const [viewMode, setViewMode] = useState('wizard'); // 'wizard' or 'library'
     const [libraryTab, setLibraryTab] = useState('pending'); // 'pending' or 'approved' - v5.0: Sub-tabs for library
     const [expandedGroups, setExpandedGroups] = useState({}); // v4.0: Track expanded/collapsed groups
-    const [expandedLibraryAssets, setExpandedLibraryAssets] = useState({});
     const [expandedResultGroups, setExpandedResultGroups] = useState({}); // v4.1: Track expanded/collapsed result groups
     const [resultActionState, setResultActionState] = useState({}); // v4.2: Track per-channel bulk actions
 
@@ -721,6 +720,7 @@ export default function CampaignCenter() {
                 }
                 return newApproved;
             });
+            await fetchUserDrafts();
         } catch (err) {
             console.error("Approval failed", err);
             alert("Failed to approve asset: " + (err.response?.data?.detail || err.message));
@@ -1248,112 +1248,100 @@ export default function CampaignCenter() {
                                     {isExpanded && (
                                         <div className="p-6 space-y-4 animate-fade-in">
                                             {assets.map(asset => {
-                                                const isAssetExpanded = expandedLibraryAssets[asset.id] === true;
-                                                const toggleAsset = () => {
-                                                    setExpandedLibraryAssets(prev => ({ ...prev, [asset.id]: !isAssetExpanded }));
-                                                };
                                                 const createdAt = asset.createdAt?.seconds
                                                     ? new Date(asset.createdAt.seconds * 1000)
                                                     : new Date(asset.createdAt || Date.now());
 
                                                 return (
-                                                    <div key={asset.id} className="border border-slate-100 dark:border-slate-700 rounded-2xl overflow-hidden bg-white dark:bg-slate-800/60">
-                                                        <button
-                                                            onClick={toggleAsset}
-                                                            className="w-full flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-5 bg-slate-50 dark:bg-slate-900/40 hover:bg-slate-100 dark:hover:bg-slate-800/60 transition-colors"
-                                                        >
-                                                            <div className="flex items-center gap-4">
-                                                                <div className="h-14 w-14 rounded-xl bg-white dark:bg-slate-700 border border-slate-100 dark:border-slate-600 overflow-hidden flex items-center justify-center">
+                                                    <div key={asset.id} className="border border-slate-100 dark:border-slate-700 rounded-2xl bg-white dark:bg-slate-800/60 p-6">
+                                                        <div className="flex flex-col lg:flex-row gap-6">
+                                                            <div className="lg:w-1/2 space-y-4">
+                                                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                                                                    <div className="flex items-center gap-4">
+                                                                        <div className="h-14 w-14 rounded-xl bg-white dark:bg-slate-700 border border-slate-100 dark:border-slate-600 overflow-hidden flex items-center justify-center">
+                                                                            {asset.thumbnailUrl ? (
+                                                                                <img src={asset.thumbnailUrl} alt={asset.title} className="h-full w-full object-cover" />
+                                                                            ) : (
+                                                                                <FaPalette className="text-xl text-slate-300" />
+                                                                            )}
+                                                                        </div>
+                                                                        <div className="text-left">
+                                                                            <h4 className="font-bold text-slate-800 dark:text-white text-sm truncate max-w-[220px]">{asset.title || 'Untitled'}</h4>
+                                                                            <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">
+                                                                                {asset.channel || 'Asset'} • {asset.format || 'Format'} • {asset.size || 'Standard'}
+                                                                            </p>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="flex items-center gap-3">
+                                                                        <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${asset.status === 'PUBLISHED'
+                                                                            ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
+                                                                            : asset.status === 'FAILED'
+                                                                                ? 'bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-300'
+                                                                                : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
+                                                                            }`}>
+                                                                            {asset.status === 'PUBLISHED' ? 'Approved' : asset.status === 'FAILED' ? 'Failed' : 'Draft'}
+                                                                        </span>
+                                                                        <span className="text-[11px] text-slate-400 font-semibold">
+                                                                            {createdAt.toLocaleDateString()}
+                                                                        </span>
+                                                                    </div>
+                                                                </div>
+
+                                                                <div className="aspect-video bg-slate-50 dark:bg-slate-700/40 rounded-2xl border border-slate-100 dark:border-slate-600 overflow-hidden">
                                                                     {asset.thumbnailUrl ? (
-                                                                        <img src={asset.thumbnailUrl} alt={asset.title} className="h-full w-full object-cover" />
+                                                                        <img src={asset.thumbnailUrl} alt={asset.title} className="w-full h-full object-cover" />
                                                                     ) : (
-                                                                        <FaPalette className="text-xl text-slate-300" />
+                                                                        <div className="w-full h-full flex items-center justify-center text-slate-300">
+                                                                            <FaPalette className="text-4xl" />
+                                                                        </div>
                                                                     )}
                                                                 </div>
-                                                                <div className="text-left">
-                                                                    <h4 className="font-bold text-slate-800 dark:text-white text-sm truncate max-w-[220px]">{asset.title || 'Untitled'}</h4>
-                                                                    <p className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">
-                                                                        {asset.channel || 'Asset'} • {asset.format || 'Format'} • {asset.size || 'Standard'}
+                                                                <div className="flex flex-wrap items-center gap-2">
+                                                                    {asset.status === 'PUBLISHED' ? (
+                                                                        <>
+                                                                            <a
+                                                                                href={asset.thumbnailUrl}
+                                                                                download
+                                                                                target="_blank"
+                                                                                rel="noopener noreferrer"
+                                                                                className="px-4 py-2 rounded-full bg-white text-slate-900 text-xs font-bold border border-slate-200 hover:border-slate-300 transition-colors"
+                                                                            >
+                                                                                <FaDownload className="inline mr-2" /> Download
+                                                                            </a>
+                                                                            <button
+                                                                                onClick={() => handleRemix(asset)}
+                                                                                disabled={remixingId === asset.id}
+                                                                                className="px-4 py-2 rounded-full bg-primary text-white text-xs font-bold hover:bg-blue-700 transition-colors disabled:opacity-60"
+                                                                            >
+                                                                                {remixingId === asset.id ? <FaSpinner className="animate-spin inline mr-2" /> : <FaMagic className="inline mr-2" />}
+                                                                                Remix Variant
+                                                                            </button>
+                                                                        </>
+                                                                    ) : (
+                                                                        <button
+                                                                            onClick={() => handleReview(asset)}
+                                                                            className="px-4 py-2 rounded-full bg-amber-500 text-white text-xs font-bold hover:bg-amber-600 transition-colors"
+                                                                        >
+                                                                            Review Pending
+                                                                        </button>
+                                                                    )}
+                                                                    <button
+                                                                        onClick={() => handleDeleteAsset(asset.id)}
+                                                                        className="px-4 py-2 rounded-full bg-red-50 text-red-600 text-xs font-bold hover:bg-red-100 transition-colors"
+                                                                    >
+                                                                        <FaTrash className="inline mr-2" /> Delete
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                            <div className="lg:w-1/2 space-y-3">
+                                                                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Text Copy</p>
+                                                                <div className="bg-slate-50 dark:bg-slate-700/60 rounded-2xl border border-slate-100 dark:border-slate-600 p-4 min-h-[160px]">
+                                                                    <p className="text-sm text-slate-600 dark:text-slate-300 whitespace-pre-wrap">
+                                                                        {asset.textCopy || 'No copy stored for this asset yet.'}
                                                                     </p>
                                                                 </div>
                                                             </div>
-                                                            <div className="flex items-center gap-3">
-                                                                <span className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${asset.status === 'PUBLISHED'
-                                                                    ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300'
-                                                                    : asset.status === 'FAILED'
-                                                                        ? 'bg-red-100 text-red-600 dark:bg-red-900/40 dark:text-red-300'
-                                                                        : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'
-                                                                    }`}>
-                                                                    {asset.status === 'PUBLISHED' ? 'Approved' : asset.status === 'FAILED' ? 'Failed' : 'Draft'}
-                                                                </span>
-                                                                <span className="text-[11px] text-slate-400 font-semibold">
-                                                                    {createdAt.toLocaleDateString()}
-                                                                </span>
-                                                                <div className={`p-2 rounded-lg transition-all ${isAssetExpanded ? 'bg-primary/10 text-primary' : 'bg-slate-200 dark:bg-slate-700 text-slate-400'}`}>
-                                                                    {isAssetExpanded ? <FaChevronUp /> : <FaChevronDown />}
-                                                                </div>
-                                                            </div>
-                                                        </button>
-
-                                                        {isAssetExpanded && (
-                                                            <div className="p-6 grid grid-cols-1 lg:grid-cols-3 gap-6">
-                                                                <div className="lg:col-span-2 space-y-4">
-                                                                    <div className="aspect-video bg-slate-50 dark:bg-slate-700/40 rounded-2xl border border-slate-100 dark:border-slate-600 overflow-hidden">
-                                                                        {asset.thumbnailUrl ? (
-                                                                            <img src={asset.thumbnailUrl} alt={asset.title} className="w-full h-full object-cover" />
-                                                                        ) : (
-                                                                            <div className="w-full h-full flex items-center justify-center text-slate-300">
-                                                                                <FaPalette className="text-4xl" />
-                                                                            </div>
-                                                                        )}
-                                                                    </div>
-                                                                    <div className="flex flex-wrap items-center gap-2">
-                                                                        {asset.status === 'PUBLISHED' ? (
-                                                                            <>
-                                                                                <a
-                                                                                    href={asset.thumbnailUrl}
-                                                                                    download
-                                                                                    target="_blank"
-                                                                                    rel="noopener noreferrer"
-                                                                                    className="px-4 py-2 rounded-full bg-white text-slate-900 text-xs font-bold border border-slate-200 hover:border-slate-300 transition-colors"
-                                                                                >
-                                                                                    <FaDownload className="inline mr-2" /> Download
-                                                                                </a>
-                                                                                <button
-                                                                                    onClick={() => handleRemix(asset)}
-                                                                                    disabled={remixingId === asset.id}
-                                                                                    className="px-4 py-2 rounded-full bg-primary text-white text-xs font-bold hover:bg-blue-700 transition-colors disabled:opacity-60"
-                                                                                >
-                                                                                    {remixingId === asset.id ? <FaSpinner className="animate-spin inline mr-2" /> : <FaMagic className="inline mr-2" />}
-                                                                                    Remix Variant
-                                                                                </button>
-                                                                            </>
-                                                                        ) : (
-                                                                            <button
-                                                                                onClick={() => handleReview(asset)}
-                                                                                className="px-4 py-2 rounded-full bg-amber-500 text-white text-xs font-bold hover:bg-amber-600 transition-colors"
-                                                                            >
-                                                                                Review Pending
-                                                                            </button>
-                                                                        )}
-                                                                        <button
-                                                                            onClick={() => handleDeleteAsset(asset.id)}
-                                                                            className="px-4 py-2 rounded-full bg-red-50 text-red-600 text-xs font-bold hover:bg-red-100 transition-colors"
-                                                                        >
-                                                                            <FaTrash className="inline mr-2" /> Delete
-                                                                        </button>
-                                                                    </div>
-                                                                </div>
-                                                                <div className="space-y-3">
-                                                                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Text Copy</p>
-                                                                    <div className="bg-slate-50 dark:bg-slate-700/60 rounded-2xl border border-slate-100 dark:border-slate-600 p-4 min-h-[160px]">
-                                                                        <p className="text-sm text-slate-600 dark:text-slate-300 whitespace-pre-wrap">
-                                                                            {asset.textCopy || 'No copy stored for this asset yet.'}
-                                                                        </p>
-                                                                    </div>
-                                                                </div>
-                                                            </div>
-                                                        )}
+                                                        </div>
                                                     </div>
                                                 );
                                             })}
