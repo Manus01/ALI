@@ -224,6 +224,7 @@ export default function TutorialsPage() {
                     <div className="space-y-3">
                         {pendingRequests.map((req, idx) => {
                             const badge = getStatusBadge(req.status);
+                            const isReady = req.status === 'COMPLETED' && req.tutorialId;
                             return (
                                 <div key={req.id || idx} className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-700/50 rounded-xl border border-slate-100 dark:border-slate-600">
                                     <div className="flex-1">
@@ -239,9 +240,19 @@ export default function TutorialsPage() {
                                             </div>
                                         </div>
                                     </div>
-                                    <span className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 ${badge.bg} ${badge.text}`}>
-                                        {badge.icon} {req.status}
-                                    </span>
+                                    <div className="flex items-center gap-3">
+                                        {isReady && (
+                                            <button
+                                                onClick={() => navigate(`/tutorials/${req.tutorialId}`)}
+                                                className="px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-green-600 text-white shadow-sm hover:bg-green-700 transition-colors"
+                                            >
+                                                View Tutorial
+                                            </button>
+                                        )}
+                                        <span className={`px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 ${badge.bg} ${badge.text}`}>
+                                            {badge.icon} {req.status}
+                                        </span>
+                                    </div>
                                 </div>
                             );
                         })}

@@ -59,23 +59,27 @@ async def list_courses(
                 # Calculate progress
                 progress = service.calculate_module_progress(user_id, module_id)
                 
+                completed_ids = progress.get("completedTutorialIds", [])
                 enriched_modules.append({
                     **module,
                     "is_unlocked": unlock_status.get("isUnlocked", True),
                     "unlock_reason": unlock_status.get("reason"),
-                    "progress_percent": progress.get("percentage", 0),
-                    "completed_tutorials": progress.get("completedCount", 0),
-                    "total_tutorials": progress.get("totalCount", 0)
+                    "progress_percent": progress.get("percentComplete", 0),
+                    "completed_tutorials": len(completed_ids),
+                    "total_tutorials": progress.get("totalTutorials", 0)
                 })
             
             # Calculate course-level progress
             course_progress = service.calculate_course_progress(user_id, course_id)
+            completed_modules = sum(
+                1 for module in enriched_modules if module.get("progress_percent", 0) >= 100
+            )
             
             result.append({
                 **course,
                 "modules": enriched_modules,
-                "progress_percent": course_progress.get("percentage", 0),
-                "completed_modules": course_progress.get("completedModules", 0),
+                "progress_percent": course_progress.get("percentComplete", 0),
+                "completed_modules": completed_modules,
                 "total_modules": len(enriched_modules)
             })
         
@@ -116,7 +120,7 @@ async def get_course(
                 **module,
                 "is_unlocked": unlock_status.get("isUnlocked", True),
                 "unlock_reason": unlock_status.get("reason"),
-                "progress_percent": progress.get("percentage", 0)
+                "progress_percent": progress.get("percentComplete", 0)
             })
         
         course_progress = service.calculate_course_progress(user_id, course_id)
@@ -124,7 +128,7 @@ async def get_course(
         return {
             **course,
             "modules": enriched_modules,
-            "progress_percent": course_progress.get("percentage", 0)
+            "progress_percent": course_progress.get("percentComplete", 0)
         }
         
     except HTTPException:
@@ -154,14 +158,15 @@ async def get_module_status(
         unlock_status = service.check_unlock_conditions(user_id, module_id)
         progress = service.calculate_module_progress(user_id, module_id)
         
+        completed_ids = progress.get("completedTutorialIds", [])
         return {
             "module_id": module_id,
             "title": module.get("title"),
             "is_unlocked": unlock_status.get("isUnlocked", True),
             "unlock_reason": unlock_status.get("reason"),
-            "progress_percent": progress.get("percentage", 0),
-            "completed_tutorials": progress.get("completedCount", 0),
-            "total_tutorials": progress.get("totalCount", 0)
+            "progress_percent": progress.get("percentComplete", 0),
+            "completed_tutorials": len(completed_ids),
+            "total_tutorials": progress.get("totalTutorials", 0)
         }
         
     except HTTPException:
