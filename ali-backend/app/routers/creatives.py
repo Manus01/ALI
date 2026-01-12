@@ -153,12 +153,14 @@ def get_my_drafts(user_id: str = Depends(get_current_user_id)) -> List[dict]:
         
         # Remove internal reference from response
         drafts = [{k: v for k, v in d.items() if not k.startswith('_')} for d in all_docs]
+
+        # Filter in Python: keep only non-published items
+        drafts = [d for d in drafts if d.get("status") != "PUBLISHED"]
         
         # Sort in Python by createdAt descending (use 0 for missing values for proper sorting)
         drafts.sort(key=lambda x: x.get("createdAt") or 0, reverse=True)
         
-        # Return limited results
-        return drafts[:50]
+        return drafts
     except Exception as e:
         logger.error(f"Error fetching drafts: {e}")
         return []
@@ -185,8 +187,7 @@ def get_my_published(user_id: str = Depends(get_current_user_id)) -> List[dict]:
         # Sort in Python by publishedAt descending (handle missing values safely)
         published.sort(key=lambda x: x.get("publishedAt", ""), reverse=True)
         
-        # Return limited results
-        return published[:50]
+        return published
     except Exception as e:
         logger.error(f"Error fetching published: {e}")
         return []

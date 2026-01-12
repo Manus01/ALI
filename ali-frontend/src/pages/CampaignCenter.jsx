@@ -407,9 +407,10 @@ export default function CampaignCenter() {
             // If campaign has approved assets, add to approved list (with ONLY approved assets)
             if (approvedAssets.length > 0) {
                 approvedCampaigns.push([groupName, approvedAssets]);
+                return;
             }
 
-            // If campaign has pending assets, add to pending list (with ONLY pending assets)
+            // Only show pending campaigns when nothing is approved yet
             if (pendingAssets.length > 0) {
                 pendingCampaigns.push([groupName, pendingAssets]);
             }
