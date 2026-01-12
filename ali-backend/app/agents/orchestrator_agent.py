@@ -3,11 +3,13 @@ import logging
 import base64
 import json
 import random
+from typing import Any, Dict, List, Optional
 from app.agents.base_agent import BaseAgent
 from app.agents.campaign_agent import CampaignAgent
 from app.services.image_agent import ImageAgent
 from app.core.security import db
 from app.core.templates import get_motion_template, get_template_for_tone, get_random_template, get_optimized_template, MOTION_TEMPLATES, FONT_MAP, TEMPLATE_COMPLEXITY
+from app.services.governance import run_qc_rubric, verify_claims_for_blueprint
 from firebase_admin import firestore
 
 logger = logging.getLogger("ali_platform.agents.orchestrator_agent")
@@ -194,6 +196,75 @@ class OrchestratorAgent(BaseAgent):
         super().__init__("Orchestrator")
         self.db = db
 
+    def _get_latest_competitor_snapshot(self, uid: str) -> Optional[Dict[str, Any]]:
+        try:
+            snapshot_ref = (
+                self.db.collection("competitiveInsights")
+                .document(uid)
+                .collection("snapshots")
+                .order_by("createdAt", direction=firestore.Query.DESCENDING)
+                .limit(1)
+            )
+            docs = list(snapshot_ref.stream())
+            if not docs:
+                return None
+            snapshot = docs[0].to_dict()
+            snapshot["snapshot_id"] = docs[0].id
+            return snapshot
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to load competitor snapshot: {e}")
+            return None
+
+    def _get_recent_creative_memory(self, uid: str, limit: int = 5) -> List[Dict[str, Any]]:
+        try:
+            memory_ref = (
+                self.db.collection("users")
+                .document(uid)
+                .collection("creative_memory")
+                .order_by("createdAt", direction=firestore.Query.DESCENDING)
+                .limit(limit)
+            )
+            return [doc.to_dict() for doc in memory_ref.stream()]
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to load creative memory: {e}")
+            return []
+
+    def _save_creative_memory(
+        self,
+        uid: str,
+        campaign_id: str,
+        goal: str,
+        blueprint: Dict[str, Any],
+        creative_intent: Optional[Dict[str, Any]],
+    ) -> None:
+        try:
+            hooks = []
+            for channel, payload in blueprint.items():
+                if channel == "theme" or not isinstance(payload, dict):
+                    continue
+                hook = (
+                    payload.get("headline")
+                    or (payload.get("headlines") or [None])[0]
+                    or payload.get("caption")
+                    or payload.get("body")
+                )
+                if hook:
+                    hooks.append({"channel": channel, "hook": hook[:160]})
+
+            memory_payload = {
+                "campaignId": campaign_id,
+                "goal": goal,
+                "theme": blueprint.get("theme"),
+                "hooks": hooks,
+                "intent": creative_intent or {},
+                "createdAt": firestore.SERVER_TIMESTAMP,
+            }
+
+            self.db.collection("users").document(uid).collection("creative_memory").add(memory_payload)
+            logger.info(f"🧠 Saved creative memory for campaign {campaign_id}")
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to save creative memory: {e}")
+
     # =========================================================================
     # V6.1: Generation Checkpointing - Resumable Campaign Generation
     # Saves state after each asset, allows resuming from interruption points
@@ -313,7 +384,19 @@ class OrchestratorAgent(BaseAgent):
             pass  # Non-critical
 
 
-    def _save_draft_immediately(self, uid, campaign_id, goal, channel, asset_payload, meta, blueprint):
+    def _save_draft_immediately(
+        self,
+        uid,
+        campaign_id,
+        goal,
+        channel,
+        asset_payload,
+        meta,
+        blueprint,
+        creative_intent: Optional[Dict[str, Any]] = None,
+        claims_report: Optional[Dict[str, Any]] = None,
+        qc_report: Optional[Dict[str, Any]] = None,
+    ):
         """
         V5.1: Progressive draft saving - saves draft immediately after asset is processed.
         This ensures drafts are persisted even if the instance is terminated mid-generation.
@@ -364,7 +447,10 @@ class OrchestratorAgent(BaseAgent):
                 "approvalStatus": "pending",
                 "createdAt": firestore.SERVER_TIMESTAMP,
                 "blueprint": channel_blueprint,
-                "textCopy": text_copy
+                "textCopy": text_copy,
+                "creativeIntent": creative_intent or {},
+                "claimsReport": claims_report or {},
+                "qcReport": qc_report or {}
             }
             
             self.db.collection('creative_drafts').document(draft_id).set(draft_data)
@@ -390,9 +476,36 @@ class OrchestratorAgent(BaseAgent):
             target_channels = [c.strip().lower().replace(" ", "_").replace("-", "_") for c in target_channels]
             logger.info(f"🎯 Channel-Aware Orchestration for: {target_channels}")
 
-            # 2. Generate Blueprint with channel context
+            premium_media_enabled = bool(
+                brand_dna.get("premium_media_enabled")
+                or brand_dna.get("veo_enabled")
+                or brand_dna.get("subscription_tier") in ["premium", "enterprise", "pro"]
+            )
+
+            creative_memory = self._get_recent_creative_memory(uid)
+            competitor_snapshot = self._get_latest_competitor_snapshot(uid)
+
+            # 2. Generate Creative Intent + Blueprint with channel context
             planner = CampaignAgent()
-            blueprint = await planner.create_campaign_blueprint(goal, brand_dna, answers, selected_channels=target_channels)
+            creative_intent = await planner.create_creative_intent(
+                goal,
+                brand_dna,
+                answers,
+                selected_channels=target_channels,
+                creative_memory=creative_memory,
+                competitor_snapshot=competitor_snapshot,
+            )
+            blueprint = await planner.create_campaign_blueprint(
+                goal,
+                brand_dna,
+                answers,
+                selected_channels=target_channels,
+                creative_intent=creative_intent,
+                creative_memory=creative_memory,
+                competitor_snapshot=competitor_snapshot,
+            )
+            blueprint, claims_report = verify_claims_for_blueprint(blueprint)
+            qc_report = run_qc_rubric(blueprint, CHANNEL_SPECS)
             self._update_progress(uid, campaign_id, "Creative Blueprint Ready.", 30)
 
             # 3. Channel-Aware Asset Generation Loop
@@ -674,7 +787,11 @@ class OrchestratorAgent(BaseAgent):
                     # ------------------------------------------------------------------------
                     # V7.1: STRICT VEO PIPELINE - NO FALLBACK VIDEO
                     # ------------------------------------------------------------------------
-                    use_veo = ENABLE_VEO_VIDEO and channel in ['tiktok', 'instagram', 'facebook_story']
+                    use_veo = (
+                        ENABLE_VEO_VIDEO
+                        and premium_media_enabled
+                        and channel in ['tiktok', 'instagram', 'facebook_story']
+                    )
                     
                     if is_video:
                         asset_url = None
@@ -772,7 +889,7 @@ class OrchestratorAgent(BaseAgent):
                     draft_saved = self._save_draft_immediately(
                         uid, campaign_id, goal, channel,
                         assets.get(asset_key) or assets.get(channel),
-                        meta, blueprint
+                        meta, blueprint, creative_intent, claims_report, qc_report
                     )
                     # V6.1: Mark channel as complete for resume capability
                     if draft_saved:
@@ -787,11 +904,15 @@ class OrchestratorAgent(BaseAgent):
                     partial_data = {
                         "status": "interrupted",
                         "blueprint": blueprint,
+                        "creative_intent": creative_intent,
+                        "claims_report": claims_report,
+                        "qc_report": qc_report,
                         "assets": assets,
                         "assets_metadata": assets_metadata,
                         "selected_channels": target_channels,
                         "goal": goal,
-                        "campaign_id": campaign_id
+                        "campaign_id": campaign_id,
+                        "premium_media_enabled": premium_media_enabled
                     }
                     self.db.collection('users').document(uid).collection('campaigns').document(campaign_id).set(partial_data, merge=True)
                     logger.info(f"💾 Saved partial campaign progress before shutdown")
@@ -806,15 +927,21 @@ class OrchestratorAgent(BaseAgent):
             final_data = {
                 "status": "completed",
                 "blueprint": blueprint,
+                "creative_intent": creative_intent,
+                "claims_report": claims_report,
+                "qc_report": qc_report,
                 "assets": assets,
                 "assets_metadata": assets_metadata,
                 "selected_channels": target_channels,
                 "goal": goal,
-                "campaign_id": campaign_id
+                "campaign_id": campaign_id,
+                "premium_media_enabled": premium_media_enabled
             }
             
             # Use set with merge=True to handle new campaign documents correctly
             self.db.collection('users').document(uid).collection('campaigns').document(campaign_id).set(final_data, merge=True)
+
+            self._save_creative_memory(uid, campaign_id, goal, blueprint, creative_intent)
             
             # 5. V5.1: Handle carousel draft finalization (progressive saving handles most drafts already)
             # Save carousel drafts that weren't handled in the loop
@@ -850,7 +977,10 @@ class OrchestratorAgent(BaseAgent):
                             "approvalStatus": "pending",
                             "createdAt": firestore.SERVER_TIMESTAMP,
                             "blueprint": channel_blueprint,
-                            "textCopy": text_copy
+                            "textCopy": text_copy,
+                            "creativeIntent": creative_intent or {},
+                            "claimsReport": claims_report or {},
+                            "qcReport": qc_report or {}
                         }
                         self.db.collection('creative_drafts').document(draft_id).set(draft_data)
                         logger.info(f"📦 Saved carousel draft {draft_id} for {clean_channel}")
@@ -889,7 +1019,7 @@ class OrchestratorAgent(BaseAgent):
             "type": "campaign_progress",
             "campaign_id": campaign_id,
             "status": status,
-            "link": "/creative-studio?view=library" if percent == 100 else None,  # Navigate to asset library when complete
+            "link": "/campaign-center?view=library" if percent == 100 else None,  # Navigate to asset library when complete
             "created_at": firestore.SERVER_TIMESTAMP,
             "timestamp": firestore.SERVER_TIMESTAMP
         })

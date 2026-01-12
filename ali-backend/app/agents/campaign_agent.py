@@ -1,5 +1,6 @@
 import json
 import logging
+from typing import Optional
 from .base_agent import BaseAgent
 from app.services.llm_factory import get_model
 from app.services.knowledge_service import KnowledgeService
@@ -59,7 +60,69 @@ class CampaignAgent(BaseAgent):
         except Exception as e:
             self.handle_error(e)
 
-    async def create_campaign_blueprint(self, goal: str, brand_dna: dict, answers: dict, selected_channels: list = None):
+    async def create_creative_intent(
+        self,
+        goal: str,
+        brand_dna: dict,
+        answers: dict,
+        selected_channels: list = None,
+        creative_memory: Optional[list] = None,
+        competitor_snapshot: Optional[dict] = None,
+    ):
+        """Generate a Creative Intent Object to guide campaign execution."""
+        self.log_task("Generating Creative Intent Object...")
+
+        channels = selected_channels if selected_channels else ["instagram", "linkedin"]
+        memory_block = json.dumps(creative_memory or [])
+        competitor_block = json.dumps(competitor_snapshot or {})
+
+        prompt = f"""
+        You are a Senior Creative Director generating a Creative Intent Object.
+        Brand DNA: {json.dumps(brand_dna)}
+        Goal: {goal}
+        User Clarifications: {json.dumps(answers)}
+        Target Channels: {', '.join(channels)}
+        Creative Memory (reuse only for inspiration): {memory_block}
+        Competitor Snapshot (insights only, no copying): {competitor_block}
+
+        Return ONLY valid JSON with:
+        - objective
+        - audience
+        - primary_angle
+        - hook_type
+        - value_prop
+        - cta
+        - tone
+        - channels
+        """
+
+        try:
+            response = await self.model.generate_content_async(prompt)
+            raw_text = response.text.strip().replace('```json', '').replace('```', '')
+            return json.loads(raw_text)
+        except Exception as e:
+            self.handle_error(e)
+            return {
+                "objective": goal,
+                "audience": brand_dna.get("target_audience", "General"),
+                "primary_angle": "Brand credibility",
+                "hook_type": "Insight-led",
+                "value_prop": brand_dna.get("value_props", "Brand value"),
+                "cta": "Learn more",
+                "tone": brand_dna.get("tone", "professional"),
+                "channels": channels,
+            }
+
+    async def create_campaign_blueprint(
+        self,
+        goal: str,
+        brand_dna: dict,
+        answers: dict,
+        selected_channels: list = None,
+        creative_intent: Optional[dict] = None,
+        creative_memory: Optional[list] = None,
+        competitor_snapshot: Optional[dict] = None,
+    ):
         """Create the full multi-channel plan once questions are answered."""
         self.log_task("Formulating final campaign blueprint...")
 
@@ -127,6 +190,9 @@ class CampaignAgent(BaseAgent):
         Brand DNA: {json.dumps(brand_dna)}
         Goal: {goal}
         User Clarifications: {json.dumps(answers)}
+        Creative Intent: {json.dumps(creative_intent or {})}
+        Creative Memory (do not copy verbatim): {json.dumps(creative_memory or [])}
+        Competitor Snapshot (insights only): {json.dumps(competitor_snapshot or {})}
         {knowledge_block}
         Target Channels: {', '.join(channels)}
 
