@@ -7,7 +7,6 @@ import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
 import { FaArrowLeft, FaHeadphones, FaCheck, FaTrophy, FaChevronRight, FaChevronLeft, FaTimes, FaSearchPlus, FaExclamationTriangle, FaRedo, FaInfoCircle } from 'react-icons/fa';
 import MermaidBlock from '../components/MermaidBlock';
-import GameBlock from '../components/GameBlock';
 
 // Secure Markdown Styling - removed unused 'node' destructuring
 const MarkdownComponents = {
@@ -247,13 +246,6 @@ export default function TutorialDetailsPage() {
                         {block.caption && (
                             <p className="text-center text-xs text-slate-400 mt-2 italic">{block.caption}</p>
                         )}
-                    </div>
-                );
-
-            case 'game':
-                return (
-                    <div key={idx}>
-                        <GameBlock block={block} />
                     </div>
                 );
 

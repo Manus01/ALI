@@ -34,7 +34,7 @@ async def initiate_campaign(payload: dict, user: dict = Depends(verify_token)):
         try:
             metricool_ref = db.collection('users').document(uid).collection('user_integrations').document('metricool').get()
             if metricool_ref.exists and metricool_ref.to_dict().get('status') == 'active':
-                blog_id = metricool_ref.to_dict().get('blog_id')
+                blog_id = metricool_ref.to_dict().get('metricool_blog_id') or metricool_ref.to_dict().get('blog_id')
                 client = MetricoolClient(blog_id=blog_id)
                 # Fetch live providers to know exactly what is connected
                 account_info = client.get_account_info()
@@ -81,7 +81,7 @@ async def finalize_campaign(payload: dict, background_tasks: BackgroundTasks, us
             try:
                 metricool_ref = db.collection('users').document(uid).collection('user_integrations').document('metricool').get()
                 if metricool_ref.exists and metricool_ref.to_dict().get('status') == 'active':
-                    blog_id = metricool_ref.to_dict().get('blog_id')
+                    blog_id = metricool_ref.to_dict().get('metricool_blog_id') or metricool_ref.to_dict().get('blog_id')
                     client = MetricoolClient(blog_id=blog_id)
                     account_info = client.get_account_info()
                     selected_channels = account_info.get('connected', ["instagram", "linkedin"])
@@ -362,6 +362,37 @@ async def regenerate_channel_asset(payload: dict, background_tasks: BackgroundTa
     except Exception as e:
         logger.error(f"Channel Regeneration Failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/competitors/analyse")
+async def analyse_competitors(payload: dict, user: dict = Depends(verify_token)):
+    """
+    Store competitor analysis snapshot metadata for auditability.
+    This endpoint expects a list of competitor URLs or names and records the snapshot.
+    """
+    uid = user['uid']
+    competitors = payload.get("competitors", [])
+    themes = payload.get("themes", [])
+    angles = payload.get("creative_angles", [])
+
+    if not db:
+        raise HTTPException(status_code=503, detail="Database Unavailable")
+
+    snapshot_id = f"comp_{int(time.time())}"
+    snapshot_data = {
+        "competitorList": competitors,
+        "themes": themes,
+        "creativeAngles": angles,
+        "createdAt": firestore.SERVER_TIMESTAMP
+    }
+
+    db.collection('competitiveInsights').document(uid).collection('snapshots').document(snapshot_id).set(snapshot_data)
+
+    return {
+        "status": "stored",
+        "snapshot_id": snapshot_id,
+        "competitor_count": len(competitors)
+    }
 
 
 # --- WIZARD DRAFT PERSISTENCE (v4.0) ---

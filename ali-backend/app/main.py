@@ -69,7 +69,6 @@ jobs = safe_import_router("jobs")
 assessments = safe_import_router("assessments")
 notifications = safe_import_router("notifications")
 publisher = safe_import_router("publisher")
-webhook = safe_import_router("webhook")
 integration = safe_import_router("integration")
 admin = safe_import_router("admin")
 tutorials = safe_import_router("tutorials")
@@ -84,6 +83,7 @@ scheduler = safe_import_router("scheduler")
 assets = safe_import_router("assets")
 saga_map = safe_import_router("saga_map")
 creatives = safe_import_router("creatives")
+ai_web = safe_import_router("ai_web")
 
 logger.info("✅ Router imports processed.")
 
@@ -201,7 +201,6 @@ routers_map = [
     ("/api/auth", (auth, ["Auth"])),
     ("/api/dashboard", (dashboard, ["Dashboard"])),
     ("/api/notifications", (notifications, ["Notifications"])),
-    ("/api", (webhook, ["Webhooks"])), # Webhook shares prefix
     ("/api", (integration, ["Integrations"])), # Integration shares prefix
     ("/api/admin", (admin, ["Admin"])),
     ("/api", (publisher, ["Publisher"])), # Publisher shares prefix
@@ -215,7 +214,8 @@ routers_map = [
     ("/internal", (scheduler, ["Scheduler"])),
     ("/api/assets", (assets, ["Assets"])),
     ("/api/saga-map", (saga_map, ["Saga Map"])),
-    ("/api/creatives", (creatives, ["Creatives"]))
+    ("/api/creatives", (creatives, ["Creatives"])),
+    ("/api/ai/web", (ai_web, ["AI Web"]))
 ]
 
 for prefix, (module, tags) in routers_map:

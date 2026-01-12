@@ -1,14 +1,17 @@
-import os
 import json
 import logging
 from .base_agent import BaseAgent
 from app.services.llm_factory import get_model
+from app.services.knowledge_service import KnowledgeService
+
+logger = logging.getLogger(__name__)
 
 class CampaignAgent(BaseAgent):
     def __init__(self):
         super().__init__("CampaignAgent")
         # Using Pro for complex strategic reasoning
         self.model = get_model(intent='complex')
+        self.knowledge_service = KnowledgeService()
 
     async def generate_clarifying_questions(self, goal: str, brand_dna: dict, connected_platforms: list = None, selected_channels: list = None):
         """Analyze goal vs Brand DNA and ask 3-4 strategic questions."""
@@ -56,10 +59,73 @@ class CampaignAgent(BaseAgent):
         except Exception as e:
             self.handle_error(e)
 
-    async def create_campaign_blueprint(self, goal: str, brand_dna: dict, answers: dict, selected_channels: list = None):
+    async def create_campaign_blueprint(
+        self,
+        goal: str,
+        brand_dna: dict,
+        answers: dict,
+        selected_channels: list = None,
+        memory_hooks: list = None,
+        competitor_insights: dict = None
+    ):
         """Create the full multi-channel plan once questions are answered."""
         self.log_task("Formulating final campaign blueprint...")
-        
+
+        user_id = (
+            brand_dna.get("user_id")
+            or brand_dna.get("userId")
+            or brand_dna.get("uid")
+            or brand_dna.get("brand_id")
+            or brand_dna.get("brandId")
+            or brand_dna.get("id")
+        )
+        try:
+            rag_facts = self.knowledge_service.query_knowledge_base(user_id, query=goal)
+            if not rag_facts:
+                logger.warning("⚠️ No brand knowledge found for user %s", user_id)
+                rag_facts = []
+        except Exception as exc:
+            logger.warning("⚠️ Knowledge query failed for user %s: %s", user_id, exc)
+            rag_facts = []
+
+        knowledge_lines = ["[REAL-TIME BRAND KNOWLEDGE]"]
+        if rag_facts:
+            for fact in rag_facts:
+                if isinstance(fact, dict):
+                    alert = fact.get("alert") or fact.get("monitoring_alert")
+                    fact_text = (
+                        fact.get("text")
+                        or fact.get("fact")
+                        or fact.get("summary")
+                        or fact.get("title")
+                    )
+                    citation = fact.get("citation")
+                    if alert:
+                        knowledge_lines.append(f"- Alert: {alert}")
+                        continue
+                    if fact_text:
+                        citation_text = ""
+                        if citation:
+                            if isinstance(citation, dict):
+                                citation_value = (
+                                    citation.get("url")
+                                    or citation.get("source")
+                                    or citation.get("title")
+                                    or citation.get("text")
+                                )
+                            else:
+                                citation_value = str(citation)
+                            if citation_value:
+                                citation_text = f" (Source: {citation_value})"
+                        knowledge_lines.append(f"- Fact: {fact_text}{citation_text}")
+                        continue
+                if isinstance(fact, str):
+                    knowledge_lines.append(f"- Fact: {fact}")
+        else:
+            knowledge_lines.append("- Fact: No relevant brand knowledge available.")
+
+        knowledge_block = "\n".join(knowledge_lines)
+
         # Build channel-specific instructions
         channels = selected_channels if selected_channels else ["instagram", "linkedin"]
         channel_instructions = self._build_channel_instructions(channels)
@@ -69,9 +135,14 @@ class CampaignAgent(BaseAgent):
         Brand DNA: {json.dumps(brand_dna)}
         Goal: {goal}
         User Clarifications: {json.dumps(answers)}
+        {knowledge_block}
         Target Channels: {', '.join(channels)}
+        Reusable Hooks (same brand only): {json.dumps(memory_hooks or [])}
+        Competitor Insights (themes only, do not copy): {json.dumps(competitor_insights or {})}
 
         Create a Campaign Blueprint. 
+
+        Use the provided [REAL-TIME BRAND KNOWLEDGE] to ensure the campaign copy and visual direction align with the latest brand facts and monitoring alerts.
         
         CRITICAL: You MUST create content for EACH of these channels: {', '.join(channels)}
         
@@ -97,6 +168,50 @@ class CampaignAgent(BaseAgent):
             return json.loads(raw_text)
         except Exception as e:
             self.handle_error(e)
+
+    async def generate_creative_intent(
+        self,
+        goal: str,
+        brand_dna: dict,
+        answers: dict,
+        selected_channels: list = None,
+        memory_hooks: list = None,
+        competitor_insights: dict = None
+    ):
+        """Generate a structured Creative Intent Object for governance and auditability."""
+        self.log_task("Generating creative intent object...")
+
+        channels = selected_channels if selected_channels else ["instagram", "linkedin"]
+        prompt = f"""
+        You are a senior creative strategist.
+        Brand DNA: {json.dumps(brand_dna)}
+        Goal: {goal}
+        User Clarifications: {json.dumps(answers)}
+        Target Channels: {', '.join(channels)}
+        Reusable Hooks (same brand only): {json.dumps(memory_hooks or [])}
+        Competitor Insights (themes only, do not copy): {json.dumps(competitor_insights or {})}
+
+        Return a JSON object with:
+        - objective: short user-facing objective statement
+        - angle: the primary positioning angle
+        - hook_type: e.g., "social proof", "curiosity", "authority", "benefit-led"
+        - hypothesis: a measurable hypothesis for testing
+
+        Return ONLY JSON.
+        """
+
+        try:
+            response = await self.model.generate_content_async(prompt)
+            raw_text = response.text.strip().replace('```json', '').replace('```', '')
+            return json.loads(raw_text)
+        except Exception as e:
+            self.handle_error(e)
+            return {
+                "objective": goal,
+                "angle": "brand-led",
+                "hook_type": "benefit-led",
+                "hypothesis": "On-brand creative will improve engagement."
+            }
     
     def _build_channel_instructions(self, channels: list) -> str:
         """Build channel-specific prompting instructions based on platform tones."""

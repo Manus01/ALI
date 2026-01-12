@@ -59,6 +59,8 @@ def admin_link_metricool(payload: Dict[str, str] = Body(...), admin: dict = Depe
     try:
         # 1. Update the integration record in the private user folder
         doc_ref = db.collection("users").document(target_uid).collection("user_integrations").document("metricool")
+        existing_doc = doc_ref.get()
+        previous_blog_id = existing_doc.to_dict().get("metricool_blog_id") if existing_doc.exists else None
         doc_ref.set({
             "user_id": target_uid,
             "platform": "metricool",
@@ -76,6 +78,20 @@ def admin_link_metricool(payload: Dict[str, str] = Body(...), admin: dict = Depe
             "read": False,
             "created_at": datetime.utcnow()
         })
+
+        if previous_blog_id and previous_blog_id != blog_id:
+            doc_ref.update({
+                "previous_metricool_blog_ids": firestore.ArrayUnion([previous_blog_id]),
+                "connection_mismatch_detected_at": datetime.utcnow().isoformat()
+            })
+            mismatch_ref = db.collection("users").document(target_uid).collection("notifications").document("integration_mismatch")
+            mismatch_ref.set({
+                "title": "Connection Updated",
+                "message": "We detected a different social account than before. If this wasn't intended, please reconnect or contact support.",
+                "type": "warning",
+                "read": False,
+                "created_at": datetime.utcnow()
+            })
 
         # 3. Mark the admin task as completed (use set with merge to avoid error if doc doesn't exist)
         db.collection("admin_tasks").document(f"connect_{target_uid}").set({

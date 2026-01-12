@@ -3,7 +3,6 @@ import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
 import { FaPlay, FaHeadphones, FaChartBar, FaCheck, FaRedo, FaTrophy, FaChevronRight, FaChevronLeft } from 'react-icons/fa';
 import MermaidBlock from './MermaidBlock';
-import GameBlock from './GameBlock';
 
 const MarkdownComponents = {
     h2: (props) => <h2 className="text-lg font-bold text-slate-800 mt-4 mb-2 border-b pb-1" {...props} />,
@@ -88,13 +87,6 @@ export default function TutorialPlayer({ tutorial }) {
                         {block.caption && (
                             <p className="text-center text-xs text-slate-400 mt-2 italic">{block.caption}</p>
                         )}
-                    </div>
-                );
-
-            case 'game':
-                return (
-                    <div key={idx} className="mb-6">
-                        <GameBlock block={block} />
                     </div>
                 );
 
