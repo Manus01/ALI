@@ -147,6 +147,15 @@ export default function TutorialDetailsPage() {
         ? tutorial.sections
         : [{ title: "Lesson Content", blocks: tutorial.blocks || [] }];
     const currentSection = sections[activeSectionIndex];
+    const sectionType = currentSection?.type || currentSection?.section_type;
+    const sectionLabelMap = {
+        supportive: { label: "Supportive", classes: "bg-emerald-100 text-emerald-700" },
+        activation: { label: "Supportive", classes: "bg-emerald-100 text-emerald-700" },
+        procedural: { label: "Procedural", classes: "bg-blue-100 text-blue-700" },
+        demonstration: { label: "Procedural", classes: "bg-blue-100 text-blue-700" },
+        practice: { label: "Practice", classes: "bg-amber-100 text-amber-700" }
+    };
+    const sectionTag = sectionType ? sectionLabelMap[sectionType] : null;
 
     const renderBlock = (block, idx) => {
         switch (block.type) {
@@ -434,7 +443,24 @@ export default function TutorialDetailsPage() {
             <div className="flex-1 overflow-y-auto bg-slate-50/50 scroll-smooth" ref={scrollContainerRef}>
                 <div className="max-w-3xl mx-auto py-12 px-8 pb-32">
                     {activeSectionIndex === 0 && <div className="mb-12 text-center"><h1 className="text-4xl font-black text-slate-900 mb-4">{tutorial.title}</h1><p className="text-lg text-slate-500">{tutorial.description}</p></div>}
-                    <div className="mb-8 flex items-center gap-4"><span className="bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full text-xs font-bold uppercase">Section {activeSectionIndex + 1}</span><h2 className="text-2xl font-bold text-slate-800">{currentSection.title}</h2></div>
+                    <div className="mb-6 flex flex-wrap items-center gap-3">
+                        <span className="bg-indigo-100 text-indigo-700 px-3 py-1 rounded-full text-xs font-bold uppercase">Section {activeSectionIndex + 1}</span>
+                        {sectionTag && (
+                            <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase ${sectionTag.classes}`}>
+                                {sectionTag.label}
+                            </span>
+                        )}
+                        <h2 className="text-2xl font-bold text-slate-800">{currentSection.title}</h2>
+                    </div>
+                    {Array.isArray(currentSection.objectives) && currentSection.objectives.length > 0 && (
+                        <div className="mb-8 flex flex-wrap gap-2 text-xs text-slate-600">
+                            {currentSection.objectives.map((objective, idx) => (
+                                <span key={idx} className="rounded-full bg-slate-100 px-3 py-1">
+                                    {objective}
+                                </span>
+                            ))}
+                        </div>
+                    )}
                     {currentSection.blocks && currentSection.blocks.map((b, i) => <div key={i} className="animate-fade-in">{renderBlock(b, i)}</div>)}
                     <div className="mt-16 flex justify-between pt-8 border-t border-slate-200">
                         <button onClick={() => setActiveSectionIndex(p => Math.max(0, p - 1))} disabled={activeSectionIndex === 0} className="flex gap-2 px-6 py-3 rounded-xl font-bold text-slate-600 hover:bg-slate-100 disabled:opacity-30"><FaChevronLeft /> Previous</button>

@@ -378,6 +378,9 @@ def _process_tutorial_doc(doc, user_id, db):
     if not t['sections'] and t.get('blocks'):
         logger.warning(f"⚠️ Tutorial {doc.id} has blocks but no sections. Applying fallback.")
         t['sections'] = [{ "title": "Lesson Content", "blocks": t['blocks'] }]
+
+    if not t.get("status"):
+        t["status"] = "PUBLISHED"
     
     return t
  
@@ -411,6 +414,7 @@ def get_tutorial_details(tutorial_id: str, user: dict = Depends(verify_token)):
     """
     try:
         user_id = user['uid']
+        is_admin = user.get("is_admin", False)
 
         _require_db("get_tutorial_details")()
 
@@ -424,6 +428,8 @@ def get_tutorial_details(tutorial_id: str, user: dict = Depends(verify_token)):
             # HIDDEN CHECK: If soft-deleted by user, return 404
             if t.get('is_hidden') is True:
                  raise HTTPException(status_code=404, detail="Tutorial deleted by user.")
+            if not is_admin and t.get("status") != "PUBLISHED":
+                raise HTTPException(status_code=404, detail="Tutorial not found.")
 
             # Debug Log
             sec_count = len(t.get('sections', []))
@@ -462,6 +468,8 @@ def get_tutorial_details(tutorial_id: str, user: dict = Depends(verify_token)):
         import copy
         t = copy.deepcopy(t_global)
         t['id'] = tutorial_id # Ensure ID is set
+        if not t.get("status"):
+            t["status"] = "PUBLISHED"
 
         # Process standard fields
         # Note: _process_tutorial_doc expects a DOC snapshot usually, but we adapted logic.
@@ -478,6 +486,8 @@ def get_tutorial_details(tutorial_id: str, user: dict = Depends(verify_token)):
         # Debug Log
         sec_count = len(t.get('sections', []))
         logger.debug(f"🔍 Fetch Global Tutorial {tutorial_id} (Cached): Found {sec_count} sections.")
+        if not is_admin and t.get("status") != "PUBLISHED":
+            raise HTTPException(status_code=404, detail="Tutorial not found.")
         return t
         
     except HTTPException as he:

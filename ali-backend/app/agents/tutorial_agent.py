@@ -4,6 +4,8 @@ import datetime
 import time
 import logging
 import re
+import uuid
+import hashlib
 from typing import Dict, List, Any, Optional
 from app.services.ai_studio import CreativeService
 from app.services.llm_factory import get_model
@@ -11,6 +13,8 @@ from app.core.security import db
 from firebase_admin import firestore
 from app.services.metricool_client import MetricoolClient
 from concurrent.futures import ThreadPoolExecutor
+from app.types.tutorial_lifecycle import TutorialStatus
+from app.services import research_service
 
 # Configure Logger
 logger = logging.getLogger("ali_platform.agents.tutorial_agent")
@@ -59,6 +63,73 @@ def validate_quiz_data(assets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                     q['correct_answer'] = 0 # Safety Fallback
                     
     return assets
+
+
+def _build_evidence_bundle(topic: str) -> Dict[str, Any]:
+    if os.getenv("ENABLE_TUTORIAL_RESEARCH", "true").lower() != "true":
+        return {"sources": [], "citations": [], "truthSourceJson": None, "createdAt": datetime.datetime.now(datetime.timezone.utc).isoformat()}
+
+    scout_sources = research_service.scout_sources(topic, limit=8)
+    urls = [source["url"] for source in scout_sources]
+    deep_sources = research_service.deep_dive(urls)
+    bundle = {
+        "id": str(uuid.uuid4()),
+        "topic": topic,
+        "sources": deep_sources,
+        "citations": [],
+        "createdAt": datetime.datetime.now(datetime.timezone.utc).isoformat()
+    }
+    bundle["truthSourceJson"] = research_service.store_evidence_bundle(bundle)
+    bundle["citations"] = [
+        {"title": src.get("title"), "url": src.get("url"), "retrievedAt": src.get("retrievedAt")}
+        for src in deep_sources
+    ]
+    return bundle
+
+
+def _build_citations(evidence_bundle: Dict[str, Any], max_items: int = 2) -> List[Dict[str, Any]]:
+    citations = evidence_bundle.get("citations", [])
+    return citations[:max_items] if citations else []
+
+
+def _build_game_block(section_meta: Dict[str, Any], topic: str) -> Dict[str, Any]:
+    game_type = section_meta.get("game_type") or "sorter"
+    objective = section_meta.get("goal") or f"Apply {topic} fundamentals."
+    base = {
+        "type": "game",
+        "game_type": game_type,
+        "title": section_meta.get("title", "Practice"),
+        "instructions": f"Apply the concepts from {topic} in this quick challenge.",
+        "objective": objective
+    }
+    if game_type == "fixer":
+        base["config"] = {
+            "prompt": "Fix the flawed strategy by choosing the best correction.",
+            "options": ["Clarify target audience", "Align KPI with objective", "Refine CTA language"],
+            "correctIndex": 1
+        }
+    elif game_type == "scenario":
+        base["config"] = {
+            "prompt": "Choose the best next step for the campaign.",
+            "choices": [
+                {"label": "Analyze results and iterate", "value": "iterate"},
+                {"label": "Increase budget immediately", "value": "scale"},
+                {"label": "Pause and gather feedback", "value": "pause"}
+            ],
+            "correctValue": "iterate"
+        }
+    else:
+        base["config"] = {
+            "leftLabel": "Best Practices",
+            "rightLabel": "Anti-Patterns",
+            "items": [
+                {"label": "Segment audience by intent", "category": "left"},
+                {"label": "Ignore negative feedback", "category": "right"},
+                {"label": "Test creative variations", "category": "left"},
+                {"label": "Set vague success metrics", "category": "right"}
+            ]
+        }
+    return base
 
 # --- NEW: THE INSPECTOR (QA) ---
 def review_tutorial_quality(tutorial_data: Dict[str, Any], original_blueprint: Dict[str, Any]) -> Dict[str, Any]:
@@ -350,6 +421,10 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
         except Exception as e:
             logger.warning(f"   ⚠️ Metricool Context Failed: {e}")
 
+        if progress_callback:
+            progress_callback("Step 0/5: Gathering research sources...")
+        evidence_bundle = _build_evidence_bundle(topic)
+
         # 1. NEW: Fetch Past Quiz Results (Private Collection) to find "Struggles"
         struggles = []
         struggle_topics: List[Dict[str, Any]] = []
@@ -464,16 +539,28 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
                         for pv in processed_visuals:
                             if pv: combined_blocks.append(pv)
 
-                        combined_blocks.append({ "type": "text", "content": narrative_text })
+                        combined_blocks.append({
+                            "type": "text",
+                            "content": narrative_text,
+                            "citations": _build_citations(evidence_bundle)
+                        })
 
                         for pa in processed_audios:
                             if pa: combined_blocks.append(pa)
 
+                        if sec_meta.get("type") == "practice":
+                            combined_blocks.append(_build_game_block(sec_meta, topic))
+
                         for block in quizzes:
                             combined_blocks.append(block)
 
+                        objectives = []
+                        if sec_meta.get("goal"):
+                            objectives.append(sec_meta["goal"])
                         section_result = {
                             "title": sec_meta['title'],
+                            "type": sec_meta.get("type", "general"),
+                            "objectives": objectives,
                             "blocks": combined_blocks
                         }
                         break # Success
@@ -576,17 +663,29 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
         logger.info(f"   🧐 QA Score: {audit_report.get('score')}/100 - {audit_report.get('status')}")
 
         # Save
+        version_id = str(uuid.uuid4())
+        content_hash = hashlib.sha256(json.dumps(final_sections, sort_keys=True, default=str).encode("utf-8")).hexdigest()
         tutorial_data = {
             "title": blueprint.get("title", topic),
             "category": "Adaptive Course",
             "difficulty": profile.get("marketing_knowledge", "NOVICE"),
             "sections": final_sections,
             "owner_id": user_id,
-            "is_public": True, 
+            "status": TutorialStatus.DRAFT.value,
+            "is_public": False,
             "tags": [profile.get("learning_style", "VISUAL"), metaphor],
             "timestamp": firestore.SERVER_TIMESTAMP,
             "is_completed": False,
             "audit_report": audit_report,
+            "evidence_bundle": evidence_bundle,
+            "versions": [{
+                "versionId": version_id,
+                "hash": content_hash,
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "modelVersion": os.getenv("MODEL_VERSION", "unknown"),
+                "publishedBy": None
+            }],
+            "currentVersion": version_id,
             "generation_alerts": [] # Populated by blocks if needed
         }
         
@@ -632,14 +731,26 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
         try:
             global_ref = db.collection("tutorials").document(tutorial_data["id"])
             global_ref.set(tutorial_data)
-            logger.info(f"   🌍 Published to Global Library: {tutorial_data['id']}")
+            logger.info(f"   🧾 Draft saved to Global Library: {tutorial_data['id']}")
+
+            try:
+                global_ref.collection("versions").document(version_id).set({
+                    "versionId": version_id,
+                    "hash": content_hash,
+                    "timestamp": firestore.SERVER_TIMESTAMP,
+                    "modelVersion": os.getenv("MODEL_VERSION", "unknown"),
+                    "status": TutorialStatus.DRAFT.value,
+                    "data": tutorial_data
+                })
+            except Exception as version_err:
+                logger.warning(f"Failed to store tutorial version snapshot: {version_err}")
             
             # NOTIFICATION: SUCCESS
             try:
                 db.collection('users').document(user_id).collection('notifications').add({
-                    "title": "Tutorial Ready",
-                    "message": f"'{topic}' has been generated successfully.",
-                    "type": "success",
+                    "title": "Tutorial Draft Ready",
+                    "message": f"'{topic}' has been generated and is awaiting review.",
+                    "type": "info",
                     "link": f"/tutorials/{tutorial_data['id']}",
                     "is_read": False,
                     "created_at": firestore.SERVER_TIMESTAMP
