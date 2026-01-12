@@ -4,6 +4,8 @@ import datetime
 import time
 import logging
 import re
+import uuid
+import hashlib
 from typing import Dict, List, Any, Optional
 from app.services.ai_studio import CreativeService
 from app.services.llm_factory import get_model
@@ -11,6 +13,8 @@ from app.core.security import db
 from firebase_admin import firestore
 from app.services.metricool_client import MetricoolClient
 from concurrent.futures import ThreadPoolExecutor
+from app.types.tutorial_lifecycle import TutorialStatus
+from app.services import research_service
 
 # Configure Logger
 logger = logging.getLogger("ali_platform.agents.tutorial_agent")
@@ -60,6 +64,71 @@ def validate_quiz_data(assets: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
                     
     return assets
 
+
+def _build_evidence_bundle(topic: str) -> Dict[str, Any]:
+    if os.getenv("ENABLE_TUTORIAL_RESEARCH", "true").lower() != "true":
+        return {"sources": [], "citations": [], "truthSourceJson": None, "createdAt": datetime.datetime.now(datetime.timezone.utc).isoformat()}
+
+    scout_sources = research_service.scout_sources(topic, limit=8)
+    urls = [source["url"] for source in scout_sources]
+    deep_sources = research_service.deep_dive(urls)
+    bundle = {
+        "id": str(uuid.uuid4()),
+        "topic": topic,
+        "sources": deep_sources,
+        "citations": [],
+        "createdAt": datetime.datetime.now(datetime.timezone.utc).isoformat()
+    }
+    bundle["truthSourceJson"] = research_service.store_evidence_bundle(bundle)
+    bundle["citations"] = [
+        {"title": src.get("title"), "url": src.get("url"), "retrievedAt": src.get("retrievedAt")}
+        for src in deep_sources
+    ]
+    return bundle
+
+
+def _build_citations(evidence_bundle: Dict[str, Any], max_items: int = 2) -> List[Dict[str, Any]]:
+    citations = evidence_bundle.get("citations", [])
+    return citations[:max_items] if citations else []
+
+
+def _build_game_block(section_meta: Dict[str, Any], topic: str) -> Dict[str, Any]:
+    game_type = section_meta.get("game_type") or "sorter"
+    base = {
+        "type": "game",
+        "game_type": game_type,
+        "title": section_meta.get("title", "Practice"),
+        "instructions": f"Apply the concepts from {topic} in this quick challenge."
+    }
+    if game_type == "fixer":
+        base["config"] = {
+            "prompt": "Fix the flawed strategy by choosing the best correction.",
+            "options": ["Clarify target audience", "Align KPI with objective", "Refine CTA language"],
+            "correctIndex": 1
+        }
+    elif game_type == "scenario":
+        base["config"] = {
+            "prompt": "Choose the best next step for the campaign.",
+            "choices": [
+                {"label": "Analyze results and iterate", "value": "iterate"},
+                {"label": "Increase budget immediately", "value": "scale"},
+                {"label": "Pause and gather feedback", "value": "pause"}
+            ],
+            "correctValue": "iterate"
+        }
+    else:
+        base["config"] = {
+            "leftLabel": "Best Practices",
+            "rightLabel": "Anti-Patterns",
+            "items": [
+                {"label": "Segment audience by intent", "category": "left"},
+                {"label": "Ignore negative feedback", "category": "right"},
+                {"label": "Test creative variations", "category": "left"},
+                {"label": "Set vague success metrics", "category": "right"}
+            ]
+        }
+    return base
+
 # --- NEW: THE INSPECTOR (QA) ---
 def review_tutorial_quality(tutorial_data: Dict[str, Any], original_blueprint: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -67,13 +136,58 @@ def review_tutorial_quality(tutorial_data: Dict[str, Any], original_blueprint: D
     Ensures 4C/ID compliance and Constructivist alignment.
     """
     model = get_model(intent='complex')
-    
+
+    sections = tutorial_data.get('sections', [])
+
+    def _collect_text_blocks():
+        blocks = []
+        for sec in sections:
+            for block in sec.get('blocks', []):
+                if block.get("type") == "text":
+                    blocks.append({
+                        "section_title": sec.get("title"),
+                        "content": block.get("content", "") or ""
+                    })
+        return blocks
+
+    def _word_count(text: str) -> int:
+        return len([w for w in re.split(r"\s+", text.strip()) if w])
+
+    def _contains_any(text: str, phrases: List[str]) -> bool:
+        lowered = text.lower()
+        return any(p in lowered for p in phrases)
+
     # Extract simplified structure for the LLM
     final_structure = []
-    for sec in tutorial_data.get('sections', []):
+    for sec in sections:
         blocks = [b.get('type') for b in sec.get('blocks', [])]
-        final_structure.append(f"{sec['title']}: {blocks}")
-        
+        final_structure.append(f"{sec.get('title', 'Untitled')}: {blocks}")
+
+    # Pre-compute rubric checks for structure and citations
+    text_blocks = _collect_text_blocks()
+    card_word_counts = [_word_count(b["content"]) for b in text_blocks if b["content"]]
+    oversized_cards = [count for count in card_word_counts if count > 220]
+    undersized_cards = [count for count in card_word_counts if count < 120]
+
+    combined_text = "\n".join([b["content"] for b in text_blocks])
+    structure_checks = {
+        "why_this_matters": _contains_any(combined_text, ["why this matters", "why it matters", "importance"]),
+        "example": _contains_any(combined_text, ["example", "for instance", "case study"]),
+        "watch_out_for": _contains_any(combined_text, ["watch out", "common mistake", "pitfall"]),
+        "cheat_sheet": _contains_any(combined_text, ["cheat sheet", "quick recap", "summary"]),
+    }
+    missing_structure = [k for k, v in structure_checks.items() if not v]
+
+    citation_blocks = 0
+    for sec in sections:
+        for block in sec.get('blocks', []):
+            if block.get("type") == "text" and block.get("citations"):
+                citation_blocks += 1
+    citation_coverage = {
+        "text_blocks": len(text_blocks),
+        "blocks_with_citations": citation_blocks,
+    }
+
     prompt = f"""
     Act as a Pedagogical Quality Assurance Auditor.
     Compare the Produced Tutorial against the Approved Blueprint.
@@ -102,7 +216,28 @@ def review_tutorial_quality(tutorial_data: Dict[str, Any], original_blueprint: D
     """
     try:
         response = model.generate_content(prompt)
-        return extract_json_safe(response.text)
+        report = extract_json_safe(response.text)
+        report["rubric"] = {
+            "card_word_counts": {
+                "total_cards": len(card_word_counts),
+                "oversized_cards": len(oversized_cards),
+                "undersized_cards": len(undersized_cards),
+            },
+            "structure_requirements": {
+                "missing": missing_structure,
+                "checks": structure_checks,
+            },
+            "citation_coverage": citation_coverage,
+        }
+        if missing_structure:
+            report.setdefault("flags", []).append(
+                f"Missing structure elements: {', '.join(missing_structure)}"
+            )
+        if oversized_cards or undersized_cards:
+            report.setdefault("flags", []).append(
+                f"Card length out of range (min 120, max 220). Oversized: {len(oversized_cards)}, undersized: {len(undersized_cards)}"
+            )
+        return report
     except Exception as e:
         logger.warning(f"⚠️ QA Audit Failed: {e}")
         return {"score": 0, "status": "FLAGGED", "feedback": "Audit failed due to error.", "flags": [str(e)]}
@@ -284,6 +419,10 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
         except Exception as e:
             logger.warning(f"   ⚠️ Metricool Context Failed: {e}")
 
+        if progress_callback:
+            progress_callback("Step 0/5: Gathering research sources...")
+        evidence_bundle = _build_evidence_bundle(topic)
+
         # 1. NEW: Fetch Past Quiz Results (Private Collection) to find "Struggles"
         struggles = []
         struggle_topics: List[Dict[str, Any]] = []
@@ -398,16 +537,24 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
                         for pv in processed_visuals:
                             if pv: combined_blocks.append(pv)
 
-                        combined_blocks.append({ "type": "text", "content": narrative_text })
+                        combined_blocks.append({
+                            "type": "text",
+                            "content": narrative_text,
+                            "citations": _build_citations(evidence_bundle)
+                        })
 
                         for pa in processed_audios:
                             if pa: combined_blocks.append(pa)
+
+                        if sec_meta.get("type") == "practice":
+                            combined_blocks.append(_build_game_block(sec_meta, topic))
 
                         for block in quizzes:
                             combined_blocks.append(block)
 
                         section_result = {
                             "title": sec_meta['title'],
+                            "type": sec_meta.get("type", "general"),
                             "blocks": combined_blocks
                         }
                         break # Success
@@ -510,17 +657,29 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
         logger.info(f"   🧐 QA Score: {audit_report.get('score')}/100 - {audit_report.get('status')}")
 
         # Save
+        version_id = str(uuid.uuid4())
+        content_hash = hashlib.sha256(json.dumps(final_sections, sort_keys=True, default=str).encode("utf-8")).hexdigest()
         tutorial_data = {
             "title": blueprint.get("title", topic),
             "category": "Adaptive Course",
             "difficulty": profile.get("marketing_knowledge", "NOVICE"),
             "sections": final_sections,
             "owner_id": user_id,
-            "is_public": True, 
+            "status": TutorialStatus.DRAFT.value,
+            "is_public": False,
             "tags": [profile.get("learning_style", "VISUAL"), metaphor],
             "timestamp": firestore.SERVER_TIMESTAMP,
             "is_completed": False,
             "audit_report": audit_report,
+            "evidence_bundle": evidence_bundle,
+            "versions": [{
+                "versionId": version_id,
+                "hash": content_hash,
+                "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "modelVersion": os.getenv("MODEL_VERSION", "unknown"),
+                "publishedBy": None
+            }],
+            "currentVersion": version_id,
             "generation_alerts": [] # Populated by blocks if needed
         }
         
@@ -566,14 +725,26 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
         try:
             global_ref = db.collection("tutorials").document(tutorial_data["id"])
             global_ref.set(tutorial_data)
-            logger.info(f"   🌍 Published to Global Library: {tutorial_data['id']}")
+            logger.info(f"   🧾 Draft saved to Global Library: {tutorial_data['id']}")
+
+            try:
+                global_ref.collection("versions").document(version_id).set({
+                    "versionId": version_id,
+                    "hash": content_hash,
+                    "timestamp": firestore.SERVER_TIMESTAMP,
+                    "modelVersion": os.getenv("MODEL_VERSION", "unknown"),
+                    "status": TutorialStatus.DRAFT.value,
+                    "data": tutorial_data
+                })
+            except Exception as version_err:
+                logger.warning(f"Failed to store tutorial version snapshot: {version_err}")
             
             # NOTIFICATION: SUCCESS
             try:
                 db.collection('users').document(user_id).collection('notifications').add({
-                    "title": "Tutorial Ready",
-                    "message": f"'{topic}' has been generated successfully.",
-                    "type": "success",
+                    "title": "Tutorial Draft Ready",
+                    "message": f"'{topic}' has been generated and is awaiting review.",
+                    "type": "info",
                     "link": f"/tutorials/{tutorial_data['id']}",
                     "is_read": False,
                     "created_at": firestore.SERVER_TIMESTAMP
