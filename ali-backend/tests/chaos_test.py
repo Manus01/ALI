@@ -72,8 +72,13 @@ class ChaosTest(unittest.IsolatedAsyncioTestCase):
         
         # Mock Blueprint Success
         with patch.object(orchestrator_module, 'CampaignAgent') as MockCampaignClass:
-            # FIX: Use AsyncMock because create_campaign_blueprint is awaited
-            MockCampaignClass.return_value.create_campaign_blueprint = AsyncMock(return_value={
+            mock_campaign = MockCampaignClass.return_value
+            # FIX: Mock both async methods: generate_creative_intent and create_campaign_blueprint
+            mock_campaign.generate_creative_intent = AsyncMock(return_value={
+                "overall_goal": "Test",
+                "creative_style": "modern"
+            })
+            mock_campaign.create_campaign_blueprint = AsyncMock(return_value={
                 "theme": "Chaos", "instagram": {"visual_prompt": "test", "format_type": "image"}
             })
             
@@ -102,8 +107,13 @@ class ChaosTest(unittest.IsolatedAsyncioTestCase):
         
         # Mock Blueprint Success
         with patch.object(orchestrator_module, 'CampaignAgent') as MockCampaignClass:
-            # FIX: Use AsyncMock
-            MockCampaignClass.return_value.create_campaign_blueprint = AsyncMock(return_value={
+            mock_campaign = MockCampaignClass.return_value
+            # FIX: Mock both async methods: generate_creative_intent and create_campaign_blueprint
+            mock_campaign.generate_creative_intent = AsyncMock(return_value={
+                "overall_goal": "Test",
+                "creative_style": "modern"
+            })
+            mock_campaign.create_campaign_blueprint = AsyncMock(return_value={
                 "theme": "Chaos", 
                 "instagram": {"visual_prompt": "test", "format_type": "image"},
                 "linkedin": {"visual_prompt": "test", "format_type": "image"}

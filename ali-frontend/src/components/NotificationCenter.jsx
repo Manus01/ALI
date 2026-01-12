@@ -2,9 +2,10 @@ import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { getFirestore, collection, onSnapshot, updateDoc, doc } from 'firebase/firestore';
 import api from '../api/axiosInterceptor';
 import { useAuth } from '../hooks/useAuth';
+// Note: useAuth used for context
 import { FaBell, FaCheck, FaRobot, FaSpinner, FaTimes } from 'react-icons/fa';
 import { useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useNotification } from '../context/NotificationContext';
 
 export default function NotificationCenter() {

@@ -2,7 +2,6 @@
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { FaGripVertical, FaBolt, FaCheckCircle, FaUserEdit } from 'react-icons/fa';
 import api from '../api/axiosInterceptor';
-import { useAuth } from '../hooks/useAuth';
 
 // Columns Configuration
 const COLUMNS = {
@@ -12,7 +11,6 @@ const COLUMNS = {
 };
 
 export default function StrategyKanban({ initialActions }) {
-    const { currentUser } = useAuth();
 
     // Initialize columns logic handles both old format (strings) and new format (objects)
     const [columns, setColumns] = useState({

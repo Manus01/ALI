@@ -38,13 +38,13 @@ export default function CampaignCenter() {
 
     // Recycling States
     const [showRecycleModal, setShowRecycleModal] = useState(false);
-    const [recyclingAsset, setRecyclingAsset] = useState(null);
+    const [recyclingAsset, setRecyclingAsset] = useState(null); // Used in handleRecycleSubmit
     const [recyclePrompt, setRecyclePrompt] = useState('');
     const [isRecycling, setIsRecycling] = useState(false);
 
     // --- CHANNEL SELECTOR STATES (v3.0) ---
     const [selectedChannels, setSelectedChannels] = useState([]);
-    const [channelConfirmed, setChannelConfirmed] = useState(false);
+    const [, setChannelConfirmed] = useState(false);
 
     // --- REVIEW FEED STATES (v3.0) ---
     const [rejectionModal, setRejectionModal] = useState({ open: false, channel: null, formatLabel: null, draftId: null, assetKey: null });
@@ -299,7 +299,7 @@ export default function CampaignCenter() {
     const handleRemix = async (asset) => {
         setRemixingId(asset.id);
         try {
-            const res = await api.post(`/api/creatives/${asset.id}/remix`);
+            await api.post(`/api/creatives/${asset.id}/remix`);
 
             // On success, switch to Review Feed / Results for this campaign (or newly created one)
             // Ideally we want to see the new draft.
@@ -1781,8 +1781,8 @@ export default function CampaignCenter() {
                             const channel = AVAILABLE_CHANNELS.find(c => c.id === channelId) || { name: channelId, icon: '📊' };
                             const channelAssets = getChannelAssets(channelId);
                             const channelBlueprint = finalAssets.blueprint?.[channelId] || {};
-                            const channelClaims = finalAssets.claims_report?.channels?.[channelId];
-                            const channelQc = finalAssets.qc_report?.channels?.[channelId];
+                            const _channelClaims = finalAssets.claims_report?.channels?.[channelId];
+                            const _channelQc = finalAssets.qc_report?.channels?.[channelId];
                             const compatibilityWarning = finalAssets.assets_metadata?.[channelId]?.compatibility_warning;
                             const textCopy = channelBlueprint.caption || channelBlueprint.body ||
                                 (channelBlueprint.headlines ? channelBlueprint.headlines.join(' | ') : '') ||

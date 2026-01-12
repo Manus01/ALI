@@ -24,7 +24,7 @@ const CHANNEL_CONFIG = {
 };
 
 export default function DashboardPage() {
-    const { currentUser, userProfile, refreshProfile } = useAuth();
+    const { currentUser, userProfile } = useAuth();
     const navigate = useNavigate();
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);

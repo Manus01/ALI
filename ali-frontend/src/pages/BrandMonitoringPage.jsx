@@ -110,7 +110,7 @@ export default function BrandMonitoringPage() {
                 if (isMounted) {
                     setKnowledgePacks(data.packs || []);
                 }
-            } catch (err) {
+            } catch {
                 if (isMounted) {
                     setPacksError('Unable to load Knowledge Packs.');
                 }
@@ -143,7 +143,7 @@ export default function BrandMonitoringPage() {
                 if (isMounted) {
                     setAlerts(data.alerts || []);
                 }
-            } catch (err) {
+            } catch {
                 if (isMounted) {
                     setAlertsError('Unable to load monitoring alerts.');
                 }
@@ -174,7 +174,7 @@ export default function BrandMonitoringPage() {
                 topicFilter: topicTags
             });
             setQueryResults(data.results || []);
-        } catch (err) {
+        } catch {
             setQueryError('Unable to retrieve knowledge results.');
         } finally {
             setQueryLoading(false);
@@ -300,8 +300,8 @@ export default function BrandMonitoringPage() {
                                 </div>
                                 <span
                                     className={`px-2 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide ${alert.severity === 'CRITICAL'
-                                            ? 'bg-red-100 text-red-700'
-                                            : 'bg-amber-100 text-amber-700'
+                                        ? 'bg-red-100 text-red-700'
+                                        : 'bg-amber-100 text-amber-700'
                                         }`}
                                 >
                                     {alert.severity || 'IMPORTANT'}

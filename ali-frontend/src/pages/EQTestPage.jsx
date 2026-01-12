@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import api from "../api/axiosInterceptor";
-import { useAuth } from "../hooks/useAuth";
 
 const QUESTIONS = [
     {
@@ -58,7 +57,6 @@ const QUESTIONS = [
 
 export default function EQTestPage() {
     const navigate = useNavigate();
-    const { currentUser } = useAuth();
     const [currentQ, setCurrentQ] = useState(0);
     const [answers, setAnswers] = useState({});
     const [isSubmitting, setIsSubmitting] = useState(false);
