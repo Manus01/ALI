@@ -743,6 +743,41 @@ export default function CampaignCenter() {
         }
     }, [goal, answers, selectedChannels, currentDraftId, deleteWizardDraft]);
 
+    const getDraftIdForFormat = useCallback((channelId, formatLabel) => {
+        const cleanChannel = channelId.toLowerCase().replace(/ /g, "_");
+        return formatLabel && !['primary', 'feed'].includes(formatLabel)
+            ? `draft_${campaignId}_${cleanChannel}_${formatLabel}`
+            : `draft_${campaignId}_${cleanChannel}`;
+    }, [campaignId]);
+
+    const getChannelAssets = useCallback((channelId) => {
+        if (!finalAssets?.assets) return [];
+        const channelPrefix = `${channelId}_`;
+        const assets = Object.entries(finalAssets.assets)
+            .filter(([key]) => key === channelId || key.startsWith(channelPrefix))
+            .map(([key, url]) => {
+                const formatLabel = key === channelId ? "primary" : key.replace(channelPrefix, "");
+                const draftId = getDraftIdForFormat(channelId, formatLabel);
+                return { assetKey: key, formatLabel, url, draftId };
+            });
+        const formatOrder = ["primary", "feed", "story"];
+        return assets.sort((a, b) => {
+            const aIndex = formatOrder.indexOf(a.formatLabel);
+            const bIndex = formatOrder.indexOf(b.formatLabel);
+            if (aIndex === -1 && bIndex === -1) {
+                return a.formatLabel.localeCompare(b.formatLabel);
+            }
+            if (aIndex === -1) return 1;
+            if (bIndex === -1) return -1;
+            return aIndex - bIndex;
+        });
+    }, [finalAssets, getDraftIdForFormat]);
+
+    const getTotalAssetCount = useCallback(() => {
+        if (!finalAssets?.assets || !selectedChannels.length) return 0;
+        return selectedChannels.reduce((count, channelId) => count + getChannelAssets(channelId).length, 0);
+    }, [finalAssets, selectedChannels, getChannelAssets]);
+
     // --- REVIEW FEED HANDLERS (v3.0) ---
 
     // Approve a channel's asset
@@ -906,41 +941,6 @@ export default function CampaignCenter() {
             setIsRecycling(false);
         }
     };
-
-    const getDraftIdForFormat = useCallback((channelId, formatLabel) => {
-        const cleanChannel = channelId.toLowerCase().replace(/ /g, "_");
-        return formatLabel && !['primary', 'feed'].includes(formatLabel)
-            ? `draft_${campaignId}_${cleanChannel}_${formatLabel}`
-            : `draft_${campaignId}_${cleanChannel}`;
-    }, [campaignId]);
-
-    const getChannelAssets = useCallback((channelId) => {
-        if (!finalAssets?.assets) return [];
-        const channelPrefix = `${channelId}_`;
-        const assets = Object.entries(finalAssets.assets)
-            .filter(([key]) => key === channelId || key.startsWith(channelPrefix))
-            .map(([key, url]) => {
-                const formatLabel = key === channelId ? "primary" : key.replace(channelPrefix, "");
-                const draftId = getDraftIdForFormat(channelId, formatLabel);
-                return { assetKey: key, formatLabel, url, draftId };
-            });
-        const formatOrder = ["primary", "feed", "story"];
-        return assets.sort((a, b) => {
-            const aIndex = formatOrder.indexOf(a.formatLabel);
-            const bIndex = formatOrder.indexOf(b.formatLabel);
-            if (aIndex === -1 && bIndex === -1) {
-                return a.formatLabel.localeCompare(b.formatLabel);
-            }
-            if (aIndex === -1) return 1;
-            if (bIndex === -1) return -1;
-            return aIndex - bIndex;
-        });
-    }, [finalAssets, getDraftIdForFormat]);
-
-    const getTotalAssetCount = useCallback(() => {
-        if (!finalAssets?.assets || !selectedChannels.length) return 0;
-        return selectedChannels.reduce((count, channelId) => count + getChannelAssets(channelId).length, 0);
-    }, [finalAssets, selectedChannels, getChannelAssets]);
 
     const creativeIntent = finalAssets?.creative_intent || finalAssets?.creativeIntent || null;
     const claimsSummary = finalAssets?.claims_report?.summary || {};
