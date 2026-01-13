@@ -1,6 +1,5 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import axios from 'axios';
 import api from '../api/axiosInterceptor';
 import { useAuth } from '../hooks/useAuth';
 import ReactMarkdown from 'react-markdown';
@@ -57,6 +56,7 @@ export default function TutorialDetailsPage() {
 
     const [tutorial, setTutorial] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [error, setError] = useState('');
     const [activeSectionIndex, setActiveSectionIndex] = useState(0);
     const [selectedImage, setSelectedImage] = useState(null);
 
@@ -82,10 +82,16 @@ export default function TutorialDetailsPage() {
         const fetchTutorial = async () => {
             try {
                 // FIXED: Use configured 'api' instance to handle Base URL and Headers automatically
+                setError('');
                 const res = await api.get(`/tutorials/${id}`);
                 setTutorial(res.data);
-            } catch (err) { console.error(err); }
-            finally { setLoading(false); }
+                setActiveSectionIndex(0);
+            } catch (err) {
+                console.error(err);
+                setError('Unable to load this tutorial right now. Please try again.');
+            } finally {
+                setLoading(false);
+            }
         };
         fetchTutorial();
     }, [currentUser, id]);
@@ -103,12 +109,7 @@ export default function TutorialDetailsPage() {
     const handleComplete = async (finalScore) => {
         if (finalScore >= 75) {
             try {
-                const token = await currentUser.getIdToken();
-                // WAITING for backend response
-                await axios.post(`/api/tutorials/${id}/complete`, { score: finalScore }, {
-                    headers: { Authorization: `Bearer ${token}` },
-                    params: { id_token: token }
-                });
+                await api.post(`/tutorials/${id}/complete`, { score: finalScore });
 
                 setTutorial(prev => ({ ...prev, is_completed: true }));
                 setToast({ message: "Assessment submitted successfully!", type: "success" });
@@ -123,6 +124,14 @@ export default function TutorialDetailsPage() {
     };
 
     if (loading) return <div className="fixed inset-0 z-50 flex items-center justify-center bg-white"><div className="text-slate-400 animate-pulse font-bold">Loading...</div></div>;
+    if (error) {
+        return (
+            <div className="fixed inset-0 z-50 flex flex-col items-center justify-center bg-white">
+                <div className="text-red-500 font-bold mb-3">{error}</div>
+                <button onClick={() => window.location.reload()} className="px-4 py-2 bg-slate-100 rounded">Reload</button>
+            </div>
+        );
+    }
     if (!tutorial) return <div className="fixed inset-0 z-50 flex items-center justify-center bg-white"><div className="text-red-500 font-bold">Not Found</div></div>;
 
     if ((!tutorial.sections || tutorial.sections.length === 0) && (!tutorial.blocks || tutorial.blocks.length === 0)) {

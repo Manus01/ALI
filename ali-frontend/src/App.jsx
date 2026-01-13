@@ -10,6 +10,7 @@ import { NotificationProvider } from './context/NotificationContext';
 // Page Imports
 import RegisterPage from './pages/RegisterPage';
 import LoginPage from './pages/LoginPage';
+import ForgotPasswordPage from './pages/ForgotPasswordPage';
 import DashboardPage from './pages/DashboardPage';
 import IntegrationsPage from './pages/IntegrationsPage';
 import AdminPage from './pages/AdminPage';
@@ -84,6 +85,7 @@ function App() {
                         {/* --- Public Routes (No Sidebar) --- */}
                         <Route path="/register" element={<RegisterPage />} />
                         <Route path="/login" element={<LoginPage />} />
+                        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
 
                         {/* --- Protected App Layout (Has Sidebar) --- */}
                         <Route element={
