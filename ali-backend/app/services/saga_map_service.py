@@ -115,7 +115,12 @@ class SagaMapService:
         if status:
             query = query.where("status", "==", status)
         
-        return [doc.to_dict() for doc in query.stream()]
+        courses = []
+        for doc in query.stream():
+            data = doc.to_dict() or {}
+            data.setdefault("id", doc.id)
+            courses.append(data)
+        return courses
     
     def update_course(self, course_id: str, updates: Dict[str, Any]) -> bool:
         """Update a course with the given fields."""
@@ -202,7 +207,12 @@ class SagaMapService:
     def list_modules_for_course(self, course_id: str) -> List[Dict[str, Any]]:
         """List all modules in a course, ordered by sequence."""
         query = self.db.collection("modules").where("courseId", "==", course_id).order_by("sequence")
-        return [doc.to_dict() for doc in query.stream()]
+        modules = []
+        for doc in query.stream():
+            data = doc.to_dict() or {}
+            data.setdefault("id", doc.id)
+            modules.append(data)
+        return modules
     
     def add_tutorial_to_module(self, module_id: str, tutorial_id: str) -> bool:
         """Add a tutorial to a module's tutorialIds array."""
