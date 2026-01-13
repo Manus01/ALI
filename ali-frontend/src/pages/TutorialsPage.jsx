@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FaPlus, FaRobot, FaCheckCircle, FaLightbulb, FaSearch, FaArrowRight, FaGraduationCap, FaTrash, FaTimes, FaClock, FaSpinner, FaCheck } from 'react-icons/fa';
 import { getFirestore, collection, query, onSnapshot, orderBy } from 'firebase/firestore';
@@ -157,11 +157,13 @@ export default function TutorialsPage() {
         }
     };
 
-    const displayedTutorials = tutorials.filter((t) => {
-        const status = t.status || 'PUBLISHED';
-        if (status !== 'PUBLISHED') return false;
-        return activeTab === 'active' ? !t.is_completed : t.is_completed;
-    });
+    const displayedTutorials = useMemo(() => (
+        tutorials.filter((t) => {
+            const status = t.status || 'PUBLISHED';
+            if (status !== 'PUBLISHED') return false;
+            return activeTab === 'active' ? !t.is_completed : t.is_completed;
+        })
+    ), [tutorials, activeTab]);
 
     const formatDuration = (tutorial) => {
         if (tutorial?.estimatedMinutes) {
@@ -365,8 +367,11 @@ export default function TutorialsPage() {
                     <div className="space-y-3 pt-1 overflow-y-auto flex-1 custom-scrollbar">
                         {displayedTutorials.length === 0 ? (
                             <div className="flex flex-col items-center justify-center p-10 text-slate-400 h-full"><p className="text-xs">No active lessons.</p></div>
-                        ) : displayedTutorials.map((tut, idx) => (
-                            <div key={idx} className="w-full p-4 rounded-2xl border border-slate-50 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-primary/20 hover:shadow-sm transition-all flex justify-between items-center group relative">
+                        ) : displayedTutorials.map((tut, idx) => {
+                            const progressPercent = Math.min(100, Math.max(0, getProgressPercent(tut)));
+
+                            return (
+                                <div key={idx} className="w-full p-4 rounded-2xl border border-slate-50 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-primary/20 hover:shadow-sm transition-all flex justify-between items-center group relative">
                                 <div className="min-w-0 flex-1 cursor-pointer" onClick={() => navigate(`/tutorials/${tut.id}`)}>
                                     <h4 className="font-bold text-sm text-slate-800 dark:text-white truncate">{tut.title}</h4>
                                     <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">{tut.category || "General"}</span>
@@ -381,12 +386,12 @@ export default function TutorialsPage() {
                                                 {formatDuration(tut)}
                                             </span>
                                         )}
-                                        <span className="text-slate-400">{Math.round(getProgressPercent(tut))}% complete</span>
+                                        <span className="text-slate-400">{Math.round(progressPercent)}% complete</span>
                                     </div>
                                     <div className="mt-2 h-1.5 w-full rounded-full bg-slate-100 dark:bg-slate-700">
                                         <div
                                             className="h-1.5 rounded-full bg-indigo-500 transition-all"
-                                            style={{ width: `${Math.min(100, Math.max(0, getProgressPercent(tut)))}%` }}
+                                            style={{ width: `${progressPercent}%` }}
                                         />
                                     </div>
                                 </div>
@@ -407,7 +412,8 @@ export default function TutorialsPage() {
                                     <FaArrowRight className="text-slate-200 dark:text-slate-600 group-hover:text-primary transition-colors" />
                                 </div>
                             </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </div>
                 <div className="hidden lg:flex lg:col-span-2 bg-slate-50/50 dark:bg-slate-900/30 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-[2rem] items-center justify-center text-slate-300 dark:text-slate-600 p-10 text-center">
