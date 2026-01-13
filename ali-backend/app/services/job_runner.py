@@ -61,6 +61,8 @@ def process_tutorial_job(job_id: str, user_id: str, topic: str, notification_id:
                 "created_at": firestore.SERVER_TIMESTAMP
             })
 
+        notification_id_to_use = notification_ref.id if notification_ref else notification_id
+
         # Define progress callback to update the notification in real-time
         def update_progress(msg):
             if notification_ref:
@@ -87,7 +89,12 @@ def process_tutorial_job(job_id: str, user_id: str, topic: str, notification_id:
         
         try:
             # 3. Run the Heavy AI Generation (Takes 60s+)
-            tutorial_data = generate_tutorial(user_id, topic, progress_callback=update_progress)
+            tutorial_data = generate_tutorial(
+                user_id,
+                topic,
+                progress_callback=update_progress,
+                notification_id=notification_id_to_use
+            )
         finally:
             # Stop heartbeat regardless of success/failure
             heartbeat_active[0] = False

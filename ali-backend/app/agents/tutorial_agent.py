@@ -391,7 +391,14 @@ from app.services.audio_agent import AudioAgent
 # ... (imports remain)
 
     # --- MAIN CONTROLLER ---
-def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context: str = None, progress_callback=None):
+def generate_tutorial(
+    user_id: str,
+    topic: str,
+    is_delta: bool = False,
+    context: str = None,
+    progress_callback=None,
+    notification_id: str | None = None
+):
     try:
         # Initialize all Creative Agents
         # creative = CreativeService() # DEPRECATED
@@ -746,17 +753,18 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
                 logger.warning(f"Failed to store tutorial version snapshot: {version_err}")
             
             # NOTIFICATION: SUCCESS
-            try:
-                db.collection('users').document(user_id).collection('notifications').add({
-                    "title": "Tutorial Draft Ready",
-                    "message": f"'{topic}' has been generated and is awaiting review.",
-                    "type": "info",
-                    "link": f"/tutorials/{tutorial_data['id']}",
-                    "is_read": False,
-                    "created_at": firestore.SERVER_TIMESTAMP
-                })
-            except Exception as ne:
-                logger.warning(f"Failed to send success notification: {ne}")
+            if not notification_id:
+                try:
+                    db.collection('users').document(user_id).collection('notifications').add({
+                        "title": "Tutorial Draft Ready",
+                        "message": f"'{topic}' has been generated and is awaiting review.",
+                        "type": "info",
+                        "link": f"/tutorials/{tutorial_data['id']}",
+                        "is_read": False,
+                        "created_at": firestore.SERVER_TIMESTAMP
+                    })
+                except Exception as ne:
+                    logger.warning(f"Failed to send success notification: {ne}")
 
         except Exception as e:
             logger.error(f"   ⚠️ Failed to publish globally: {e}")
@@ -767,16 +775,17 @@ def generate_tutorial(user_id: str, topic: str, is_delta: bool = False, context:
         logger.error(f"❌ Critical Tutorial System Failure: {e}")
         
         # NOTIFICATION: FAILURE
-        try:
-            db.collection('users').document(user_id).collection('notifications').add({
-                "title": "Generation Failed",
-                "message": f"We couldn't generate '{topic}'. Our engineers have been alerted.",
-                "type": "error",
-                "is_read": False,
-                "created_at": firestore.SERVER_TIMESTAMP
-            })
-        except:
-            pass
+        if not notification_id:
+            try:
+                db.collection('users').document(user_id).collection('notifications').add({
+                    "title": "Generation Failed",
+                    "message": f"We couldn't generate '{topic}'. Our engineers have been alerted.",
+                    "type": "error",
+                    "is_read": False,
+                    "created_at": firestore.SERVER_TIMESTAMP
+                })
+            except:
+                pass
 
         # Create CRITICAL ALERT (admin_tasks for workflow)
         try:
