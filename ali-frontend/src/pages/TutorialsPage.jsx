@@ -427,8 +427,7 @@ export default function TutorialsPage() {
                                     <FaArrowRight className="text-slate-200 dark:text-slate-600 group-hover:text-primary transition-colors" />
                                 </div>
                             </div>
-                            );
-                        })}
+                        ))}
                     </div>
                 </div>
                 <div className="hidden lg:flex lg:col-span-2 bg-slate-50/50 dark:bg-slate-900/30 border-2 border-dashed border-slate-200 dark:border-slate-700 rounded-[2rem] items-center justify-center text-slate-300 dark:text-slate-600 p-10 text-center">
