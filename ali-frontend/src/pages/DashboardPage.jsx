@@ -46,6 +46,8 @@ export default function DashboardPage() {
     const fetchDashboardData = useCallback(async () => {
         try {
             if (!currentUser) return;
+            setLoading(true);
+            setError(null);
             const response = await api.get('/dashboard/overview');
             setData(response.data);
 
