@@ -15,6 +15,7 @@ export default function TutorialsPage() {
     const [customTopic, setCustomTopic] = useState('');
     const [generationState, setGenerationState] = useState('idle');
     const [errorMessage, setErrorMessage] = useState('');
+    const [successMessage, setSuccessMessage] = useState('');
     const [deleteModal, setDeleteModal] = useState({ show: false, tutorialId: null, title: '' });
 
     // Request Modal State
@@ -77,11 +78,12 @@ export default function TutorialsPage() {
     }, [currentUser]);
 
     const handleGenerate = async (topicToUse) => {
-        const finalTopic = topicToUse || customTopic;
+        const finalTopic = (topicToUse ?? customTopic).trim();
         if (!finalTopic) return;
 
         setGenerationState('loading');
         setErrorMessage('');
+        setSuccessMessage('');
         try {
             // Submit REQUEST (not generation) - Admin will review and approve
             // This complies with spec v1.2 §4.1: Admin-Gated Tutorial Generation
@@ -90,8 +92,8 @@ export default function TutorialsPage() {
             setCustomTopic('');
             setGenerationState('success');
             // Show success message explaining the new flow
-            setErrorMessage(`✅ ${response.data.message || "Request submitted! You'll be notified when approved."}`);
-            setTimeout(() => { setGenerationState('idle'); setErrorMessage(''); }, 5000);
+            setSuccessMessage(response.data.message || "Request submitted! You'll be notified when approved.");
+            setTimeout(() => { setGenerationState('idle'); setSuccessMessage(''); }, 5000);
         } catch (err) {
             console.error(err);
             // Handle 403 differently - explain the new flow
@@ -100,6 +102,7 @@ export default function TutorialsPage() {
             } else {
                 setErrorMessage(err.response?.data?.detail || 'Failed to submit request. Try again.');
             }
+            setSuccessMessage('');
             setGenerationState('idle');
         }
     };
@@ -124,6 +127,8 @@ export default function TutorialsPage() {
     const handleModalSubmit = async () => {
         if (!requestTopic.trim()) return;
         setGenerationState('loading');
+        setErrorMessage('');
+        setSuccessMessage('');
         try {
             const response = await api.post('/tutorials/request', { topic: requestTopic });
             setRequestTopic('');
@@ -132,11 +137,12 @@ export default function TutorialsPage() {
             // Refresh pending requests
             const res = await api.get('/tutorials/requests/mine');
             setPendingRequests(res.data.requests || []);
-            setErrorMessage(`✅ ${response.data.message || "Request submitted! You'll be notified when approved."}`);
-            setTimeout(() => { setGenerationState('idle'); setErrorMessage(''); }, 5000);
+            setSuccessMessage(response.data.message || "Request submitted! You'll be notified when approved.");
+            setTimeout(() => { setGenerationState('idle'); setSuccessMessage(''); }, 5000);
         } catch (err) {
             console.error(err);
             setErrorMessage(err.response?.data?.detail || 'Failed to submit request. Try again.');
+            setSuccessMessage('');
             setGenerationState('idle');
         }
     };
@@ -193,6 +199,11 @@ export default function TutorialsPage() {
                         {errorMessage}
                     </div>
                 )}
+                {successMessage && (
+                    <div className="p-3 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 text-sm rounded-lg border border-green-100 dark:border-green-900/30">
+                        {successMessage}
+                    </div>
+                )}
 
                 <div className="flex gap-2 w-full md:max-w-2xl">
                     <div className="relative flex-1">
@@ -211,12 +222,19 @@ export default function TutorialsPage() {
                     </div>
                     <button
                         onClick={() => handleGenerate(null)}
-                        disabled={generationState !== 'idle' || !customTopic}
+                        disabled={generationState !== 'idle' || !customTopic.trim()}
                         className={`px-6 py-3 rounded-xl font-bold shadow-md flex items-center gap-2 transition-all 
                             ${generationState === 'idle' ? 'bg-primary text-white hover:bg-blue-700' : 'bg-slate-100 dark:bg-slate-700 text-slate-400 dark:text-slate-500'}
                         `}
                     >
                         {generationState === 'loading' ? <FaRobot className="animate-spin" /> : <><FaPlus /> Generate</>}
+                    </button>
+                    <button
+                        onClick={() => setShowRequestModal(true)}
+                        disabled={generationState !== 'idle'}
+                        className="px-4 py-3 rounded-xl font-bold border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-200 hover:border-primary hover:text-primary transition-all"
+                    >
+                        Request Details
                     </button>
                 </div>
 
@@ -224,8 +242,8 @@ export default function TutorialsPage() {
                     <div className="w-full">
                         <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Suggested for you:</p>
                         <div className="flex flex-wrap gap-2">
-                            {suggestions.map((sug, i) => (
-                                <button key={i} onClick={() => handleGenerate(sug)} className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full text-xs font-bold text-slate-600 dark:text-slate-300 hover:border-primary transition-all active:scale-95">
+                            {suggestions.map((sug) => (
+                                <button key={sug} onClick={() => handleGenerate(sug)} className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-full text-xs font-bold text-slate-600 dark:text-slate-300 hover:border-primary transition-all active:scale-95">
                                     <FaLightbulb className="text-amber-400" /> {sug}
                                 </button>
                             ))}
@@ -241,11 +259,11 @@ export default function TutorialsPage() {
                         <FaClock /> Your Tutorial Requests
                     </h3>
                     <div className="space-y-3">
-                        {pendingRequests.map((req, idx) => {
+                        {pendingRequests.map((req) => {
                             const badge = getStatusBadge(req.status);
                             const isReady = req.status === 'COMPLETED' && req.tutorialId;
                             return (
-                                <div key={req.id || idx} className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-700/50 rounded-xl border border-slate-100 dark:border-slate-600">
+                                <div key={req.id || req.tutorialId || req.topic} className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-700/50 rounded-xl border border-slate-100 dark:border-slate-600">
                                     <div className="flex-1">
                                         <p className="font-bold text-sm text-slate-800 dark:text-white">{req.topic}</p>
                                         <div className="flex items-center gap-4 mt-2">
@@ -365,8 +383,8 @@ export default function TutorialsPage() {
                     <div className="space-y-3 pt-1 overflow-y-auto flex-1 custom-scrollbar">
                         {displayedTutorials.length === 0 ? (
                             <div className="flex flex-col items-center justify-center p-10 text-slate-400 h-full"><p className="text-xs">No active lessons.</p></div>
-                        ) : displayedTutorials.map((tut, idx) => (
-                            <div key={idx} className="w-full p-4 rounded-2xl border border-slate-50 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-primary/20 hover:shadow-sm transition-all flex justify-between items-center group relative">
+                        ) : displayedTutorials.map((tut) => (
+                            <div key={tut.id} className="w-full p-4 rounded-2xl border border-slate-50 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-primary/20 hover:shadow-sm transition-all flex justify-between items-center group relative">
                                 <div className="min-w-0 flex-1 cursor-pointer" onClick={() => navigate(`/tutorials/${tut.id}`)}>
                                     <h4 className="font-bold text-sm text-slate-800 dark:text-white truncate">{tut.title}</h4>
                                     <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">{tut.category || "General"}</span>
