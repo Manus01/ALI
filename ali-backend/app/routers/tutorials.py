@@ -673,6 +673,47 @@ def delete_user_tutorial(tutorial_id: str, user: dict = Depends(verify_token)):
         logger.error(f"❌ Delete Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@router.post("/tutorials/{tutorial_id}/request-delete")
+def request_delete_tutorial(tutorial_id: str, user: dict = Depends(verify_token)):
+    """
+    User Permanent Delete Request:
+    - Hides tutorial from user.
+    - Creates Admin Request for permanent deletion.
+    """
+    try:
+        user_id = user['uid']
+        _require_db("request_delete_tutorial")()
+
+        user_doc_ref = db.collection('users').document(user_id).collection('tutorials').document(tutorial_id)
+        user_doc_ref.set({
+            "is_hidden": True,
+            "deletion_requested": True,
+            "deleted_at": firestore.SERVER_TIMESTAMP
+        }, merge=True)
+
+        existing = (
+            db.collection("admin_tasks")
+            .where(filter=FieldFilter("tutorial_id", "==", tutorial_id))
+            .where(filter=FieldFilter("status", "==", "pending"))
+            .limit(1)
+            .stream()
+        )
+        if not any(existing):
+            db.collection("admin_tasks").add({
+                "type": "delete_tutorial_request",
+                "tutorial_id": tutorial_id,
+                "requester_id": user_id,
+                "reason": "User requested permanent deletion",
+                "status": "pending",
+                "created_at": firestore.SERVER_TIMESTAMP
+            })
+
+        return {"status": "success", "message": "Deletion request submitted for admin review."}
+    except Exception as e:
+        logger.error(f"❌ Request Delete Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 # --- ADMIN DELETION LOGIC ---
 
 def _delete_storage_assets(tutorial_data: dict) -> dict:
