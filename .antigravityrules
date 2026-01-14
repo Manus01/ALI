@@ -1,0 +1,42 @@
+# 🛡️ GLOBAL AGENT BEHAVIOR & SAFETY RULES
+
+## 1. PRESERVATION OVER REWRITE
+- **Verify before creating:** Before writing new code, scan `@utils.py` and helper files. **Do not duplicate code.**
+- **Atomic Changes:** Modify *only* the specific lines requested. Do not refactor entire files unless explicitly asked.
+- **Legacy Protection:** Never remove manual polling loops (Veo), raw byte handling, or error logging.
+
+## 2. DATA INTEGRITY (STRICT)
+- **Real Data Only:** Do not generate, mock, or display fake user data. If data is `null`, handle the empty state gracefully.
+- **No Fallbacks:** For media generation (Video/Image), do not return a generic fallback asset. It must be the generated content or an error.
+
+## 3. SOURCE OF TRUTH (DOCUMENTATION)
+**CRITICAL:** You must read the relevant architecture file before modifying code.
+
+### 🌍 GLOBAL ARCHITECTURE (READ FIRST)
+- **File:** `Comprehensive Application Description.md`
+- **Use for:** Understanding the 16-agent system, backend service layers, and global data flow (Firestore -> GCS -> BigQuery).
+
+### 📍 MODULE SPECIFIC (DEEP DIVES)
+**A. Campaign Center (Creative Engine)**
+- **File:** `campaign_center_documentation.md`
+- **Critical Rules:**
+  - **Veo Video:** Returns **raw bytes**, not a URI. Use existing manual upload logic.
+  - **Orchestrator:** Respect the `J --> K --> M` flow for video.
+  - **State Machine:** Do not alter the 7-stage Wizard logic without checking Section 2.
+
+**B. Tutorials Page (Learning Hub)**
+- **File:** `tutorials.md`
+- **Critical Rules:**
+  - **4C/ID Framework:** Do not flatten the Research → Blueprint → Sections pipeline.
+  - **Permissions:** `POST /generate/tutorial` is **ADMIN ONLY**.
+  - **Storage:** User copies live in `users/{uid}/tutorials`.
+
+**C. Brand Monitoring (Reputation Engine)**
+- **File:** `Brand Monitoring Page.md`
+- **Critical Rules:**
+  - **Relevance Filter:** Never bypass `RelevanceFilterAgent` (Entity Disambiguation).
+  - **Crisis JSON:** Maintain the exact JSON schema for the Crisis Modal.
+
+## 4. PLANNING
+- For any task > 5 lines of code, create a brief **Implementation Plan** first.
+- Explicitly list which existing functions you will reuse.

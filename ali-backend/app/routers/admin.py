@@ -711,11 +711,15 @@ def approve_tutorial_request(request_id: str, admin: dict = Depends(verify_admin
 
 
 @router.post("/tutorial-requests/{request_id}/deny")
-def deny_tutorial_request(request_id: str, reason: Optional[str] = None, admin: dict = Depends(verify_admin)):
+def deny_tutorial_request(request_id: str, payload: Dict = Body(default={}), admin: dict = Depends(verify_admin)):
     """
-    Deny a tutorial request.
+    Deny a tutorial request with an optional rejection reason.
+    The reason is stored both in adminDecision and as a top-level rejection_reason field.
     """
     try:
+        # Extract reason from request body
+        reason = payload.get("reason", "Request not approved")
+        
         doc_ref = db.collection("tutorial_requests").document(request_id)
         doc = doc_ref.get()
         
@@ -726,11 +730,12 @@ def deny_tutorial_request(request_id: str, reason: Optional[str] = None, admin: 
         
         doc_ref.update({
             "status": "DENIED",
+            "rejection_reason": reason,  # Top-level field for easy frontend access
             "adminDecision": {
                 "action": "denied",
                 "deniedBy": admin.get("email"),
                 "deniedAt": firestore.SERVER_TIMESTAMP,
-                "reason": reason or "Request not approved"
+                "reason": reason
             }
         })
         

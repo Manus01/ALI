@@ -206,6 +206,18 @@ CHANNEL_SPECS = {
         ],
         "tone": "engaging_hook_driven",
         "motion_support": True
+    },
+    "google_ads_skyscraper": {
+        "formats": [{"type": "skyscraper", "size": (120, 600)}],
+        "tone": "direct_response"
+    },
+    "google_ads_large_rect": {
+        "formats": [{"type": "large_rectangle", "size": (336, 280)}],
+        "tone": "direct_response"
+    },
+    "google_ads_billboard": {
+        "formats": [{"type": "billboard", "size": (970, 250)}],
+        "tone": "direct_response"
     }
 }
 
@@ -525,6 +537,85 @@ class OrchestratorAgent(BaseAgent):
             logger.warning(f"⚠️ Failed to load competitor insights: {e}")
             return {}
 
+    # =========================================================================
+    # PHASE 1: EDITOR LOOP - Proofread and Polish Copy
+    # =========================================================================
+    
+    async def _run_editor_loop(
+        self,
+        blueprint: Dict[str, Any],
+        brand_voice: Dict[str, Any],
+        target_channels: List[str]
+    ) -> Dict[str, Any]:
+        """
+        Phase 1: Run the Editor Loop to proofread and polish all copy in the blueprint.
+        
+        If score < 90, auto-rewrite without user intervention.
+        This ensures all generated copy is grammatically correct and on-brand.
+        """
+        from app.agents.critic_agent import get_critic_agent
+        critic = get_critic_agent()
+        
+        polished_blueprint = blueprint.copy()
+        total_polished = 0
+        
+        for channel in target_channels:
+            channel_data = polished_blueprint.get(channel, {})
+            if not isinstance(channel_data, dict):
+                continue
+            
+            # Polish headline (singular)
+            if channel_data.get('headline') and isinstance(channel_data['headline'], str):
+                corrected, score = await critic.proofread_and_polish(
+                    channel_data['headline'], brand_voice
+                )
+                if score < 90:
+                    logger.info(f"📝 Editor polished {channel} headline (score: {score})")
+                    channel_data['headline'] = corrected
+                    total_polished += 1
+            
+            # Polish headlines (list)
+            if channel_data.get('headlines') and isinstance(channel_data['headlines'], list):
+                polished_headlines = []
+                for headline in channel_data['headlines']:
+                    if isinstance(headline, str):
+                        corrected, score = await critic.proofread_and_polish(
+                            headline, brand_voice
+                        )
+                        if score < 90:
+                            polished_headlines.append(corrected)
+                            total_polished += 1
+                        else:
+                            polished_headlines.append(headline)
+                    else:
+                        polished_headlines.append(headline)
+                channel_data['headlines'] = polished_headlines
+            
+            # Polish caption
+            if channel_data.get('caption') and isinstance(channel_data['caption'], str):
+                corrected, score = await critic.proofread_and_polish(
+                    channel_data['caption'], brand_voice
+                )
+                if score < 90:
+                    logger.info(f"📝 Editor polished {channel} caption (score: {score})")
+                    channel_data['caption'] = corrected
+                    total_polished += 1
+            
+            # Polish body
+            if channel_data.get('body') and isinstance(channel_data['body'], str):
+                corrected, score = await critic.proofread_and_polish(
+                    channel_data['body'], brand_voice
+                )
+                if score < 90:
+                    logger.info(f"📝 Editor polished {channel} body (score: {score})")
+                    channel_data['body'] = corrected
+                    total_polished += 1
+            
+            polished_blueprint[channel] = channel_data
+        
+        logger.info(f"✅ Editor Loop complete: {total_polished} items polished")
+        return polished_blueprint
+
     async def run_full_campaign_flow(self, uid, campaign_id, goal, brand_dna, answers, selected_channels: list = None):
         """
         Channel-Aware Campaign Orchestrator v3.0
@@ -564,6 +655,14 @@ class OrchestratorAgent(BaseAgent):
                 competitor_insights=competitor_insights
             )
             self._update_progress(uid, campaign_id, "Creative Blueprint Ready.", 30)
+
+            # =========================================================================
+            # PHASE 1: EDITOR LOOP - Proofread and Polish All Copy
+            # =========================================================================
+            brand_voice = brand_dna.get('voice', {})
+            if brand_voice:
+                blueprint = await self._run_editor_loop(blueprint, brand_voice, target_channels)
+                logger.info("📝 Phase 1 Editor Loop completed - all copy polished")
 
             # 2.5 Claims Verification + QC Rubric (copy governance)
             claims_reports = {}
@@ -866,10 +965,14 @@ class OrchestratorAgent(BaseAgent):
                     asset_key = f"{channel}_{format_label}" if format_label != 'primary' else channel
                     
                     # ============================================================
-                    # V5.0 SMART FORMAT SELECTION
-                    # Read format_type from AI blueprint, with TikTok override
+                    # V8.0 PHASE 1: RESPECT STRATEGIST'S RECOMMENDED FORMAT
+                    # Read recommended_format from CampaignAgent, with TikTok override
                     # ============================================================
-                    ai_format_type = channel_blueprint.get("format_type", "image")
+                    # Phase 1: Prefer recommended_format from Strategist, fallback to legacy format_type
+                    ai_format_type = (
+                        channel_blueprint.get("recommended_format") or 
+                        channel_blueprint.get("format_type", "image")
+                    )
                     
                     # OVERRIDE: TikTok MUST always be video regardless of AI output
                     if channel == "tiktok":
@@ -883,7 +986,7 @@ class OrchestratorAgent(BaseAgent):
                         channel in ['youtube_shorts', 'facebook_story']
                     )
                     
-                    logger.info(f"📊 Smart Format for {channel}: format_type={ai_format_type}, is_video={is_video}")
+                    logger.info(f"📊 Phase 1 Format Selection for {channel}: recommended_format={ai_format_type}, is_video={is_video}")
                     
                     # Get dimensions
                     w, h = meta.get("size", (1080, 1920))

@@ -86,6 +86,11 @@ export default function CampaignCenter() {
     const [expandedGroups, setExpandedGroups] = useState({}); // v4.0: Track expanded/collapsed groups
     const [expandedResultGroups, setExpandedResultGroups] = useState({}); // v4.1: Track expanded/collapsed result groups
     const [resultActionState, setResultActionState] = useState({}); // v4.2: Track per-channel bulk actions
+    const [crisisMode, setCrisisMode] = useState(false); // v5.1: Crisis Response Mode from Brand Monitoring
+
+    // --- STRATEGIST UI STATES (v6.0) ---
+    const [formatRecommendation, setFormatRecommendation] = useState(null); // { format: 'Video', reason: '...' }
+    const [isAnalyzingGoal, setIsAnalyzingGoal] = useState(false);
 
     // --- WIZARD DRAFT PERSISTENCE (v4.0) ---
     const [currentDraftId, setCurrentDraftId] = useState(null);
@@ -98,6 +103,7 @@ export default function CampaignCenter() {
         { id: 'instagram', name: 'Instagram', icon: '📸', color: '#E4405F' },
         { id: 'facebook', name: 'Facebook', icon: '📘', color: '#1877F2' },
         { id: 'tiktok', name: 'TikTok', icon: '🎵', color: '#000000' },
+        { id: 'youtube_shorts', name: 'YouTube Shorts', icon: '📺', color: '#FF0000' },
         { id: 'google_display', name: 'Google Display', icon: '🎯', color: '#4285F4' },
         { id: 'pinterest', name: 'Pinterest', icon: '📌', color: '#E60023' },
         { id: 'threads', name: 'Threads', icon: '🧵', color: '#000000' },
@@ -493,6 +499,32 @@ export default function CampaignCenter() {
         }
     }, [location.state, userProfile]);
 
+    // --- CRISIS MODE DETECTION (v5.1) ---
+    // Detect crisis_data from Brand Monitoring → Campaign bridge
+    useEffect(() => {
+        if (location.state?.crisis_data) {
+            const { crisis_summary, recommended_tone, key_points } = location.state.crisis_data;
+
+            // Build the crisis response goal
+            const keyPointsSummary = key_points?.slice(0, 3).join('; ') || '';
+            const crisisGoal = `Manage reputation crisis: ${crisis_summary || 'urgent situation'}. Tone: ${recommended_tone || 'Professional'}. ${keyPointsSummary ? `Key Points: ${keyPointsSummary}` : ''}`;
+
+            setGoal(crisisGoal);
+
+            // Pre-select LinkedIn + Threads (primary corporate channels per plan)
+            setSelectedChannels(['linkedin', 'threads']);
+
+            // Activate crisis mode for UI banner
+            setCrisisMode(true);
+
+            // Ensure we're in wizard mode at input stage
+            setViewMode('wizard');
+            setStage('input');
+
+            console.log('🚨 Crisis Response Mode Activated:', location.state.crisis_data);
+        }
+    }, [location.state]);
+
     // Define fetchFinalResults before the progress listener useEffect that uses it
     const fetchFinalResults = useCallback(async () => {
         if (!campaignId) return;
@@ -672,9 +704,86 @@ export default function CampaignCenter() {
 
     // --- 2. HANDLERS (v3.0 Channel-Aware) ---
 
+    // --- STRATEGIST LOGIC (v6.0) - Goal Analysis for Format Recommendation ---
+    const analyzeGoalForFormat = (goalText) => {
+        const lowerGoal = goalText.toLowerCase();
+
+        // Video keywords (emotional, story, complex)
+        const videoKeywords = ['story', 'emotional', 'brand story', 'launch', 'announce', 'journey', 'experience', 'demo', 'demonstration', 'showcase', 'introduce', 'reveal', 'unveil'];
+
+        // Carousel keywords (info-heavy, tutorials)
+        const carouselKeywords = ['tutorial', 'how-to', 'steps', 'guide', 'comparison', 'vs', 'features', 'benefits', 'tips', 'list', 'reasons', 'ways'];
+
+        // Static/Promo keywords (urgency, sales)
+        const staticKeywords = ['sale', 'promo', 'discount', 'urgent', 'limited', 'offer', 'quick', 'simple', 'quote', 'flash', 'deal', 'save'];
+
+        if (videoKeywords.some(kw => lowerGoal.includes(kw))) {
+            return { format: 'Video', reason: 'Best for Storytelling & Engagement', icon: '🎬' };
+        }
+        if (carouselKeywords.some(kw => lowerGoal.includes(kw))) {
+            return { format: 'Carousel', reason: 'Best for Information & Tutorials', icon: '📚' };
+        }
+        if (staticKeywords.some(kw => lowerGoal.includes(kw))) {
+            return { format: 'Static', reason: 'Best for Quick Impact & Promotions', icon: '🖼️' };
+        }
+
+        return { format: 'Static', reason: 'Versatile for general campaigns', icon: '🖼️' };
+    };
+
+    // --- ASSET CONTAINER STYLE HELPER (v7.0 - Backend Alignment) ---
+    // Returns dynamic CSS style for asset containers based on channel size from metadata
+    // Handles extreme aspect ratios like skyscraper (120x600 = 1:5) and billboard (970x250 = ~4:1)
+    const getAssetContainerStyle = (channelId) => {
+        const sizeStr = finalAssets?.assets_metadata?.[channelId]?.size;
+        if (!sizeStr || typeof sizeStr !== 'string') {
+            return { aspectRatio: '16/9' }; // Default 16:9 for video-like content
+        }
+
+        // Parse "WIDTHxHEIGHT" format (e.g., "120x600", "970x250")
+        const match = sizeStr.match(/^(\d+)x(\d+)$/);
+        if (!match) {
+            return { aspectRatio: '16/9' };
+        }
+
+        const width = parseInt(match[1], 10);
+        const height = parseInt(match[2], 10);
+
+        // For extreme ratios like skyscraper (1:5), limit max height to avoid overflow
+        const aspectRatio = `${width}/${height}`;
+        const isExtremeVertical = height / width > 3; // Skyscraper-like
+        const isExtremeHorizontal = width / height > 3; // Billboard-like
+
+        if (isExtremeVertical) {
+            // Limit height for skyscraper-like ads (120x600)
+            return {
+                aspectRatio,
+                maxHeight: '400px',
+                width: 'auto'
+            };
+        }
+
+        if (isExtremeHorizontal) {
+            // Full width for billboard-like ads (970x250)
+            return {
+                aspectRatio,
+                width: '100%',
+                height: 'auto'
+            };
+        }
+
+        return { aspectRatio };
+    };
+
     // Step 1: User enters goal → Go to Channel Selector
     const handleGoToChannels = () => {
         if (!goal.trim()) return;
+
+        // v6.0: Analyze goal for format recommendation (Strategist UI)
+        setIsAnalyzingGoal(true);
+        const recommendation = analyzeGoalForFormat(goal);
+        setFormatRecommendation(recommendation);
+        setIsAnalyzingGoal(false);
+
         // Smart defaults: pre-select detected platforms
         if (detectedPlatforms.length > 0) {
             const normalizedPlatforms = detectedPlatforms.map(p => p.toLowerCase().replace(' ', '_'));
@@ -743,6 +852,9 @@ export default function CampaignCenter() {
         }
     }, [goal, answers, selectedChannels, currentDraftId, deleteWizardDraft]);
 
+    // --- REVIEW FEED HANDLERS (v3.0) ---
+
+    // Asset Helper Functions (must be defined before handleApproveAsset)
     const getDraftIdForFormat = useCallback((channelId, formatLabel) => {
         const cleanChannel = channelId.toLowerCase().replace(/ /g, "_");
         return formatLabel && !['primary', 'feed'].includes(formatLabel)
@@ -777,8 +889,6 @@ export default function CampaignCenter() {
         if (!finalAssets?.assets || !selectedChannels.length) return 0;
         return selectedChannels.reduce((count, channelId) => count + getChannelAssets(channelId).length, 0);
     }, [finalAssets, selectedChannels, getChannelAssets]);
-
-    // --- REVIEW FEED HANDLERS (v3.0) ---
 
     // Approve a channel's asset
     const handleApproveAsset = useCallback(async (channel, formatLabel) => {
@@ -941,6 +1051,8 @@ export default function CampaignCenter() {
             setIsRecycling(false);
         }
     };
+
+
 
     const creativeIntent = finalAssets?.creative_intent || finalAssets?.creativeIntent || null;
     const claimsSummary = finalAssets?.claims_report?.summary || {};
@@ -1198,6 +1310,29 @@ export default function CampaignCenter() {
                         className="px-4 py-2 rounded-xl bg-amber-600 text-white font-bold text-sm hover:bg-amber-700 transition-all disabled:opacity-50"
                     >
                         {isResumingCampaign ? 'Resuming...' : 'Resume Campaign'}
+                    </button>
+                </div>
+            )}
+
+            {/* Crisis Response Mode Banner */}
+            {crisisMode && viewMode === 'wizard' && (
+                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-2xl p-4">
+                    <div className="flex items-center gap-3">
+                        <FaShieldAlt className="text-red-500 text-xl" />
+                        <div>
+                            <p className="text-red-700 dark:text-red-300 font-black text-sm uppercase tracking-wide">
+                                Crisis Response Mode Activated
+                            </p>
+                            <p className="text-red-600 dark:text-red-400 text-xs">
+                                This campaign will address a reputation crisis. LinkedIn + Threads pre-selected for corporate response.
+                            </p>
+                        </div>
+                    </div>
+                    <button
+                        onClick={() => setCrisisMode(false)}
+                        className="px-4 py-2 rounded-xl bg-red-100 dark:bg-red-800/50 text-red-700 dark:text-red-300 font-bold text-xs hover:bg-red-200 dark:hover:bg-red-800 transition-all"
+                    >
+                        <FaTimes className="inline mr-1" /> Dismiss
                     </button>
                 </div>
             )}
@@ -1585,12 +1720,63 @@ export default function CampaignCenter() {
                     </div>
 
                     {/* Goal Preview */}
-                    <div className="bg-slate-50 dark:bg-slate-700 p-4 rounded-2xl mb-8 border border-slate-100 dark:border-slate-600">
+                    <div className="bg-slate-50 dark:bg-slate-700 p-4 rounded-2xl mb-4 border border-slate-100 dark:border-slate-600">
                         <p className="text-sm text-slate-600 dark:text-slate-300 font-medium">
                             <span className="text-slate-400 dark:text-slate-500 text-xs uppercase tracking-wider">Goal: </span>
                             {goal}
                         </p>
                     </div>
+
+                    {/* v6.0: Strategy Recommendation Badge - Format-specific colors */}
+                    {formatRecommendation && (() => {
+                        // Dynamic color scheme based on format
+                        const colorSchemes = {
+                            Video: {
+                                gradient: 'from-rose-50 to-red-50 dark:from-rose-900/20 dark:to-red-900/20',
+                                border: 'border-rose-100 dark:border-rose-800/50',
+                                iconColor: 'text-rose-500',
+                                textColor: 'text-rose-600 dark:text-rose-400',
+                                cardBorder: 'border-rose-500'
+                            },
+                            Carousel: {
+                                gradient: 'from-teal-50 to-cyan-50 dark:from-teal-900/20 dark:to-cyan-900/20',
+                                border: 'border-teal-100 dark:border-teal-800/50',
+                                iconColor: 'text-teal-500',
+                                textColor: 'text-teal-600 dark:text-teal-400',
+                                cardBorder: 'border-teal-500'
+                            },
+                            Static: {
+                                gradient: 'from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20',
+                                border: 'border-purple-100 dark:border-purple-800/50',
+                                iconColor: 'text-purple-500',
+                                textColor: 'text-purple-600 dark:text-purple-400',
+                                cardBorder: 'border-purple-500'
+                            }
+                        };
+                        const colors = colorSchemes[formatRecommendation.format] || colorSchemes.Static;
+
+                        return (
+                            <div className={`bg-gradient-to-r ${colors.gradient} p-5 rounded-2xl mb-8 border ${colors.border} animate-fade-in`}>
+                                <div className="flex items-center gap-2 mb-3">
+                                    <FaMagic className={colors.iconColor} />
+                                    <span className={`text-xs font-black uppercase tracking-widest ${colors.textColor}`}>Strategy Recommendation</span>
+                                </div>
+                                <div className={`bg-white dark:bg-slate-800 p-4 rounded-xl border-l-4 ${colors.cardBorder} shadow-sm`}>
+                                    <div className="flex items-center gap-3">
+                                        <span className="text-3xl">{formatRecommendation.icon}</span>
+                                        <div>
+                                            <p className="font-black text-slate-800 dark:text-white text-lg">{formatRecommendation.format}</p>
+                                            <p className="text-sm text-slate-500 dark:text-slate-400">{formatRecommendation.reason}</p>
+                                        </div>
+                                    </div>
+                                </div>
+                                <p className="text-xs text-slate-500 dark:text-slate-400 mt-3 flex items-center gap-1">
+                                    <FaInfoCircle className="text-slate-400" />
+                                    This is a suggestion — manually select any channels below
+                                </p>
+                            </div>
+                        );
+                    })()}
 
                     {/* Channel Grid */}
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-10">
@@ -1888,7 +2074,10 @@ export default function CampaignCenter() {
                                                                 {Array.isArray(url) ? (
                                                                     <CarouselViewer slides={url} channelName={`${channel.name} ${formatLabel}`} />
                                                                 ) : (typeof url === 'string' && (url.endsWith('.html') || url.startsWith('data:text/html'))) ? (
-                                                                    <div className="aspect-video bg-black rounded-2xl overflow-hidden border border-slate-100 dark:border-slate-600 relative group">
+                                                                    <div
+                                                                        className="bg-black rounded-2xl overflow-hidden border border-slate-100 dark:border-slate-600 relative group"
+                                                                        style={getAssetContainerStyle(channelId)}
+                                                                    >
                                                                         <iframe
                                                                             src={url}
                                                                             title={`${channel.name} Motion`}
@@ -1899,11 +2088,17 @@ export default function CampaignCenter() {
                                                                         </div>
                                                                     </div>
                                                                 ) : url ? (
-                                                                    <div className="aspect-video bg-slate-50 dark:bg-slate-700 rounded-2xl overflow-hidden border border-slate-100 dark:border-slate-600">
-                                                                        <img src={url} alt={`${channel.name} ${formatLabel}`} className="w-full h-full object-cover" />
+                                                                    <div
+                                                                        className="bg-slate-50 dark:bg-slate-700 rounded-2xl overflow-hidden border border-slate-100 dark:border-slate-600"
+                                                                        style={getAssetContainerStyle(channelId)}
+                                                                    >
+                                                                        <img src={url} alt={`${channel.name} ${formatLabel}`} className="w-full h-full object-contain" />
                                                                     </div>
                                                                 ) : (
-                                                                    <div className="aspect-video bg-red-50 dark:bg-red-900/20 rounded-2xl flex flex-col items-center justify-center border border-red-200 dark:border-red-800 gap-2">
+                                                                    <div
+                                                                        className="bg-red-50 dark:bg-red-900/20 rounded-2xl flex flex-col items-center justify-center border border-red-200 dark:border-red-800 gap-2"
+                                                                        style={{ ...getAssetContainerStyle(channelId), minHeight: '120px' }}
+                                                                    >
                                                                         <FaExclamationTriangle className="text-3xl text-red-400" />
                                                                         <p className="text-red-500 text-xs font-bold uppercase">Generation Failed</p>
                                                                     </div>

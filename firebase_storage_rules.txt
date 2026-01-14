@@ -1,0 +1,222 @@
+// =============================================================================
+// Firebase Storage Security Rules for ALI Platform
+// =============================================================================
+// Version: 1.0 (Phase 0: Brand DNA Engine)
+// Last Updated: 2026-01-15
+//
+// DEPLOYMENT INSTRUCTIONS:
+// 1. Go to Firebase Console > Your Project > Storage > Rules
+// 2. Copy the entire 'rules_version' block below and paste it
+// 3. Click "Publish"
+//
+// Or using Firebase CLI:
+//   firebase deploy --only storage
+// =============================================================================
+
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // =========================================================================
+    // HELPER FUNCTIONS
+    // =========================================================================
+    
+    // Check if user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Check if user owns the resource (userId in path matches authenticated user)
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    // Validate file size (in bytes)
+    function isValidSize(maxSizeBytes) {
+      return request.resource.size <= maxSizeBytes;
+    }
+    
+    // Check if content type matches allowed types
+    function hasContentType(allowedTypes) {
+      return request.resource.contentType in allowedTypes;
+    }
+    
+    // =========================================================================
+    // SIZE CONSTANTS (for reference)
+    // =========================================================================
+    // 1 MB  = 1 * 1024 * 1024  = 1048576 bytes
+    // 5 MB  = 5 * 1024 * 1024  = 5242880 bytes
+    // 10 MB = 10 * 1024 * 1024 = 10485760 bytes
+    
+    // =========================================================================
+    // USER-SPECIFIC FILE PATHS
+    // =========================================================================
+    // Structure: users/{userId}/{category}/{filename}
+    
+    match /users/{userId}/{allPaths=**} {
+      // CRITICAL: Users can ONLY read/write their OWN files
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId);
+    }
+    
+    // =========================================================================
+    // BRAND ASSETS (Phase 0: Brand DNA Engine)
+    // =========================================================================
+    // Path: brand/{userId}/...
+    // Supports: PDFs (brand guidelines), SVGs (patterns), Images (logos)
+    
+    match /brand/{userId}/{document=**} {
+      // Only owners can read their brand assets
+      allow read: if isOwner(userId);
+      
+      // Write permission with content type and size validation
+      allow write: if isOwner(userId)
+        && (
+          // PDF Brand Guidelines - max 10MB
+          (hasContentType(['application/pdf']) && isValidSize(10 * 1024 * 1024))
+          
+          // SVG Brand Patterns - max 1MB
+          || (hasContentType(['image/svg+xml']) && isValidSize(1 * 1024 * 1024))
+          
+          // PNG/JPG Logos - max 5MB
+          || (hasContentType(['image/png', 'image/jpeg']) && isValidSize(5 * 1024 * 1024))
+        );
+    }
+    
+    // =========================================================================
+    // ONBOARDING UPLOADS (Phase 0: Brand DNA Engine)
+    // =========================================================================
+    // Path: onboarding/{userId}/...
+    // Temporary storage for brand onboarding flow
+    
+    match /onboarding/{userId}/{document=**} {
+      // Only owners can read their onboarding uploads
+      allow read: if isOwner(userId);
+      
+      // Write permission with content type and size validation
+      allow write: if isOwner(userId)
+        && (
+          // PDF Brand Guidelines - max 10MB
+          (hasContentType(['application/pdf']) && isValidSize(10 * 1024 * 1024))
+          
+          // SVG Patterns - max 1MB
+          || (hasContentType(['image/svg+xml']) && isValidSize(1 * 1024 * 1024))
+          
+          // PNG/JPG/WebP Images (Logos, screenshots) - max 5MB
+          || (hasContentType(['image/png', 'image/jpeg', 'image/webp']) && isValidSize(5 * 1024 * 1024))
+        );
+    }
+    
+    // =========================================================================
+    // CAMPAIGN ASSETS
+    // =========================================================================
+    // Path: campaigns/{userId}/...
+    // Generated campaign creatives (images, videos)
+    
+    match /campaigns/{userId}/{document=**} {
+      // Only owners can read their campaign assets
+      allow read: if isOwner(userId);
+      
+      // Write permission with content type and size validation
+      allow write: if isOwner(userId)
+        && (
+          // Images - max 10MB
+          (hasContentType(['image/png', 'image/jpeg', 'image/webp', 'image/gif']) && isValidSize(10 * 1024 * 1024))
+          
+          // Videos - max 100MB
+          || (hasContentType(['video/mp4', 'video/webm']) && isValidSize(100 * 1024 * 1024))
+        );
+    }
+    
+    // =========================================================================
+    // TUTORIAL ASSETS
+    // =========================================================================
+    // Path: tutorials/{tutorialId}/...
+    // Note: Tutorials may be shared, so read is more permissive
+    
+    match /tutorials/{tutorialId}/{document=**} {
+      // Any authenticated user can read tutorial assets (shared resources)
+      allow read: if isAuthenticated();
+      
+      // Only system (admin) can write - handled by backend service account
+      allow write: if false; // Deny client-side writes; backend handles uploads
+    }
+    
+    // =========================================================================
+    // TEMP UPLOADS (Processing Pipeline)
+    // =========================================================================
+    // Path: temp/{userId}/...
+    // Temporary files for processing - auto-deleted by lifecycle rules
+    
+    match /temp/{userId}/{document=**} {
+      allow read: if isOwner(userId);
+      
+      // Allow most common file types for processing
+      allow write: if isOwner(userId)
+        && isValidSize(50 * 1024 * 1024); // 50MB max for temp uploads
+    }
+    
+    // =========================================================================
+    // PUBLIC ASSETS (Read-Only)
+    // =========================================================================
+    // Path: public/...
+    // Shared resources like default patterns, fonts, templates
+    
+    match /public/{document=**} {
+      // Anyone can read public assets
+      allow read: if true;
+      
+      // No client-side writes allowed
+      allow write: if false;
+    }
+    
+    // =========================================================================
+    // DEFAULT: DENY ALL
+    // =========================================================================
+    // Any path not explicitly matched above is denied
+    // This is the default Firebase behavior but stated explicitly for clarity
+    
+  }
+}
+
+// =============================================================================
+// CONTENT TYPE REFERENCE
+// =============================================================================
+// 
+// Documents:
+//   - application/pdf (PDF)
+// 
+// Images:
+//   - image/png (PNG)
+//   - image/jpeg (JPEG)
+//   - image/gif (GIF) 
+//   - image/webp (WebP)
+//   - image/svg+xml (SVG)
+// 
+// Video:
+//   - video/mp4 (MP4)
+//   - video/webm (WebM)
+// 
+// Audio:
+//   - audio/mpeg (MP3)
+//   - audio/wav (WAV)
+//   - audio/ogg (OGG)
+// 
+// =============================================================================
+// TESTING CHECKLIST
+// =============================================================================
+// 
+// [ ] User A can upload PDF to brand/{userA_uid}/guidelines.pdf
+// [ ] User A can upload SVG to brand/{userA_uid}/pattern.svg
+// [ ] User A can upload PNG to brand/{userA_uid}/logo.png
+// [ ] User A CANNOT read brand/{userB_uid}/...
+// [ ] User A CANNOT write to brand/{userB_uid}/...
+// [ ] Unauthenticated user CANNOT read any user files
+// [ ] Unauthenticated user CANNOT write any files
+// [ ] PDF > 10MB is rejected
+// [ ] SVG > 1MB is rejected
+// [ ] Invalid content type is rejected
+// [ ] Public assets are readable by anyone
+// 
+// =============================================================================

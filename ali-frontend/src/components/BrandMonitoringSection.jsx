@@ -560,6 +560,7 @@ export default function BrandMonitoringSection({ brandName }) {
                     response={crisisResponse}
                     loading={crisisLoading}
                     onClose={closeModal}
+                    navigate={navigate}
                 />
             )}
         </>
@@ -742,7 +743,7 @@ function MentionCard({ mention, onCrisisResponse, onRemove }) {
 }
 
 // Crisis Response Modal Component
-function CrisisResponseModal({ mention, response, loading, onClose }) {
+function CrisisResponseModal({ mention, response, loading, onClose, navigate }) {
     const getEscalationColor = (level) => {
         switch (level) {
             case 'critical': return 'bg-red-600';
@@ -750,6 +751,35 @@ function CrisisResponseModal({ mention, response, loading, onClose }) {
             case 'medium': return 'bg-yellow-500';
             default: return 'bg-blue-500';
         }
+    };
+
+    // Crisis-to-Campaign Bridge Handler
+    const handleDraftCampaign = () => {
+        if (!response) return;
+
+        // Build the Do's and Don'ts list
+        const keyPoints = [
+            ...(response.key_messages || []).map(m => `DO: ${m}`),
+            ...(response.do_not_say || []).map(p => `DON'T: ${p}`)
+        ];
+
+        // Map escalation level to recommended tone
+        const toneMapping = {
+            'critical': 'Empathetic & Urgent',
+            'high': 'Sincere & Reassuring',
+            'medium': 'Calm & Professional',
+            'low': 'Informative & Positive'
+        };
+
+        const crisisData = {
+            crisis_summary: response.executive_summary || mention?.title || 'Reputation crisis',
+            recommended_tone: toneMapping[response.escalation_level] || 'Professional & Empathetic',
+            key_points: keyPoints.slice(0, 5) // Limit to 5 key points
+        };
+
+        // Navigate to Campaign Center with crisis data
+        navigate('/campaign-center', { state: { crisis_data: crisisData } });
+        onClose();
     };
 
     return (
@@ -919,12 +949,20 @@ function CrisisResponseModal({ mention, response, loading, onClose }) {
                 </div>
 
                 {/* Footer */}
-                <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex-shrink-0">
+                <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex-shrink-0 flex gap-3">
                     <button
                         onClick={onClose}
-                        className="w-full py-3 bg-slate-800 text-white font-bold rounded-xl hover:bg-slate-900 transition-colors"
+                        className="flex-1 py-3 bg-slate-200 text-slate-700 font-bold rounded-xl hover:bg-slate-300 transition-colors"
                     >
                         Close
+                    </button>
+                    <button
+                        onClick={handleDraftCampaign}
+                        disabled={loading || !response}
+                        className="flex-1 py-3 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                        <FaArrowRight className="text-sm" />
+                        Draft Response Campaign
                     </button>
                 </div>
             </div>

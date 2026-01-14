@@ -96,21 +96,31 @@ class RelevanceFilterAgent(BaseAgent):
             # might NOT apply to the relevant articles.
             target_name = monitoring_topic
             industry = brand_profile.get('industry', 'Business') # Keep industry as loose context
+            industry_display = industry  # For prompt consistency
             context_desc = f"Topic/Keyword being monitored: {monitoring_topic}"
         else:
             # We are monitoring the user's specific brand
+            # SENIOR PR MANAGER: Extract full Brand DNA for precision filtering
             target_name = brand_name
-            industry = brand_profile.get('industry', brand_profile.get('offerings', ['Unknown'])[0] if brand_profile.get('offerings') else 'Unknown')
+            industry = brand_profile.get('industry', '')
             offerings = brand_profile.get('offerings', [])
             description = brand_profile.get('description', '')
+            mission = brand_profile.get('mission', '')
             location = brand_profile.get('location', brand_profile.get('cultural_nuance', ''))
             website = brand_profile.get('website', '')
-            tone = brand_profile.get('tone', '')
+            
+            # Graceful degradation: warn if DNA missing but allow content through
+            if not industry and not description:
+                logger.warning(f"⚠️ Brand DNA missing for '{brand_name}' - relevance filtering will be less precise")
+            
+            # Build fallback for industry if not set
+            industry_display = industry if industry else (offerings[0] if offerings else 'Business')
             
             context_desc = f"""• Name: {target_name}
-• Industry/Sector: {industry}
+• Industry/Sector: {industry_display}
 • Products/Services: {', '.join(offerings[:5]) if offerings else 'Not specified'}
 • Description: {description[:200] if description else 'Not specified'}
+• Mission: {mission[:150] if mission else 'Not specified'}
 • Location/Markets: {location if location else 'Not specified'}
 • Website: {website if website else 'Not specified'}"""
 
@@ -137,26 +147,31 @@ KNOWN FALSE POSITIVES (user flagged as irrelevant):
 {examples_list}
 """
 
-        prompt = f"""You are a relevance filter expert.
-Target ID: {target_name}
-Context: {context_desc}
+        prompt = f"""You are a SENIOR PR MANAGER acting as a relevance filter expert.
+Target Brand: {target_name}
+{context_desc}
 {feedback_context}
 
-Task: Identify articles RELEVANT to "{target_name}".
-1. IGNORE articles clearly about a completely different entity with a similar name.
-2. KEEP articles that discuss "{target_name}" or are relevant to this topic.
+═══════════════════════════════════════════════════════════════════════════════
+CRITICAL QUESTION FOR EACH ARTICLE:
+═══════════════════════════════════════════════════════════════════════════════
+"Is this article about {target_name} the {industry_display if not is_generic_topic else 'topic being monitored'}?"
+
+If the article refers to a DIFFERENT entity with the same or similar name, mark it NOT RELEVANT.
 
 ═══════════════════════════════════════════════════════════════════════════════
-DISAMBIGUATION GUIDELINES:
+DISAMBIGUATION RULES (STRICT):
 ═══════════════════════════════════════════════════════════════════════════════
-1. An article is RELEVANT if it's actually about the business/brand described above
+1. An article is RELEVANT only if it's clearly about the specific brand/entity described above
 2. An article is NOT RELEVANT if:
-   - It's about a PERSON with the same name (e.g., celebrity, athlete)
-   - It's about a DIFFERENT COMPANY with a similar name/ticker
-   - It's about an acronym that expands to something else
+   - It mentions a PERSON with the same name (celebrity, athlete, politician, etc.)
+   - It refers to a DIFFERENT COMPANY with a similar name or stock ticker
+   - It discusses an acronym that expands to something unrelated
    - The brand name appears coincidentally but the article is about something else
-3. Look for contextual clues: industry terms, location, products mentioned
-4. When uncertain, lean towards RELEVANT (false negatives are worse than false positives for now)
+   - The industry/sector discussed doesn't match the brand's industry
+3. Use contextual clues: industry terms, products, location, company type
+4. When uncertain AND the industry context matches, lean towards RELEVANT
+5. When uncertain AND the industry context DOES NOT match, mark NOT RELEVANT
 
 ═══════════════════════════════════════════════════════════════════════════════
 ARTICLES TO ANALYZE:

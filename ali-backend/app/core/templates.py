@@ -307,8 +307,39 @@ GLOBAL_FAILSAFE_CSS = '''
     }
 '''
 
+# Phase 2: Pattern Layer CSS for Brand Pattern Overlays
+PATTERN_LAYER_CSS = '''
+    .pattern-overlay {
+        position: fixed;
+        top: 0; left: 0; width: 100%; height: 100%;
+        pointer-events: none;
+        z-index: 5;
+        opacity: 0.1;
+        mix-blend-mode: multiply;
+        background-repeat: repeat;
+        background-size: 100px 100px;
+    }
+'''
 
-def get_motion_template(template_name: str, image_url: str, logo_url: str, color: str, text: str, luminance_mode: str = 'dark', layout_variant: str = 'hero-center') -> str:
+
+def _encode_pattern_svg(pattern_svg: str) -> str:
+    """URL-encode an SVG string for use in CSS background-image."""
+    if not pattern_svg:
+        return ""
+    import urllib.parse
+    return urllib.parse.quote(pattern_svg, safe='')
+
+
+def _get_pattern_overlay_html(pattern_svg: str) -> str:
+    """Generate pattern overlay div HTML if pattern_svg is provided."""
+    if not pattern_svg:
+        return ""
+    encoded = _encode_pattern_svg(pattern_svg)
+    return f'<div class="pattern-overlay" style="background-image: url(\'data:image/svg+xml,{encoded}\');"></div>'
+
+
+
+def get_motion_template(template_name: str, image_url: str, logo_url: str, color: str, text: str, luminance_mode: str = 'dark', layout_variant: str = 'hero-center', pattern_svg: str = None) -> str:
     """
     Returns complete HTML5 motion asset for the given template.
     
@@ -327,32 +358,33 @@ def get_motion_template(template_name: str, image_url: str, logo_url: str, color
             - 'top-banner': Text at top, safe for TikTok/Reels
             - 'corner-badge': Minimal branding, logo focus
             - 'split-screen': Text box overlay, explainer style
+        pattern_svg: Optional SVG pattern string for brand texture overlay
     
     Returns:
         Complete HTML string ready for base64 encoding
     """
 
     if template_name == "luxury":
-        return _luxury_template(image_url, logo_url, color, text, layout_variant)
+        return _luxury_template(image_url, logo_url, color, text, layout_variant, pattern_svg)
     elif template_name == "cyber":
-        return _cyber_template(image_url, logo_url, color, text, layout_variant)
+        return _cyber_template(image_url, logo_url, color, text, layout_variant, pattern_svg)
     elif template_name == "editorial":
-        return _editorial_template(image_url, logo_url, color, text, layout_variant)
+        return _editorial_template(image_url, logo_url, color, text, layout_variant, pattern_svg)
     elif template_name == "aurora":
-        return _aurora_template(image_url, logo_url, color, text, luminance_mode, layout_variant)
+        return _aurora_template(image_url, logo_url, color, text, luminance_mode, layout_variant, pattern_svg)
     elif template_name == "gridlock":
-        return _gridlock_template(image_url, logo_url, color, text, luminance_mode, layout_variant)
+        return _gridlock_template(image_url, logo_url, color, text, luminance_mode, layout_variant, pattern_svg)
     elif template_name == "scrapbook":
-        return _scrapbook_template(image_url, logo_url, color, text, layout_variant)
+        return _scrapbook_template(image_url, logo_url, color, text, layout_variant, pattern_svg)
     elif template_name == "pop":
-        return _pop_template(image_url, logo_url, color, text, layout_variant)
+        return _pop_template(image_url, logo_url, color, text, layout_variant, pattern_svg)
     elif template_name == "swiss":
-        return _swiss_template(image_url, logo_url, color, text, layout_variant)
+        return _swiss_template(image_url, logo_url, color, text, layout_variant, pattern_svg)
     else:
-        return _minimal_template(image_url, logo_url, color, text, layout_variant)
+        return _minimal_template(image_url, logo_url, color, text, layout_variant, pattern_svg)
 
 
-def _luxury_template(image_url: str, logo_url: str, color: str, text: str, layout_variant: str = 'hero-center') -> str:
+def _luxury_template(image_url: str, logo_url: str, color: str, text: str, layout_variant: str = 'hero-center', pattern_svg: str = None) -> str:
     """
     Luxury Cinematic Template - "Veo Competitor"
     Features: Ken Burns zoom, arch-shaped image mask, italic headline accents,
@@ -381,6 +413,7 @@ def _luxury_template(image_url: str, logo_url: str, color: str, text: str, layou
         {GLOBAL_GRAIN_CSS}
         {GLOBAL_LAYOUT_CSS}
         {GLOBAL_FAILSAFE_CSS}
+        {PATTERN_LAYER_CSS}
         
         /* Arch-shaped image container */
         #image-arch {{
@@ -492,6 +525,7 @@ def _luxury_template(image_url: str, logo_url: str, color: str, text: str, layou
     <div id="glass-card" class="variant-{layout_variant}">
         <div id="text" class="{text_size_class}">{text}</div>
     </div>
+    {_get_pattern_overlay_html(pattern_svg)}
     <div class="grain"></div>
     
     <script>
@@ -600,7 +634,7 @@ def _luxury_template(image_url: str, logo_url: str, color: str, text: str, layou
 </html>'''
 
 
-def _cyber_template(image_url: str, logo_url: str, color: str, text: str, layout_variant: str = 'hero-center') -> str:
+def _cyber_template(image_url: str, logo_url: str, color: str, text: str, layout_variant: str = 'hero-center', pattern_svg: str = None) -> str:
     """
     Cyber Hype Template - "Tech/Sneaker Style"
     Features: Monochrome + neon color grading, RGB split, glitch effects, 
@@ -629,6 +663,7 @@ def _cyber_template(image_url: str, logo_url: str, color: str, text: str, layout
         {GLOBAL_GRAIN_CSS}
         {GLOBAL_LAYOUT_CSS}
         {GLOBAL_FAILSAFE_CSS}
+        {PATTERN_LAYER_CSS}
         
         /* Monochrome + Neon Color Grading */
         #bg {{
@@ -797,6 +832,7 @@ def _cyber_template(image_url: str, logo_url: str, color: str, text: str, layout
     <div id="text-container" class="variant-{layout_variant}">
         <div id="text" class="glitch {text_size_class}" data-text="{text}">{text}</div>
     </div>
+    {_get_pattern_overlay_html(pattern_svg)}
     <div class="grain"></div>
     
     <script>
@@ -866,7 +902,7 @@ def _cyber_template(image_url: str, logo_url: str, color: str, text: str, layout
 </html>'''
 
 
-def _editorial_template(image_url: str, logo_url: str, color: str, text: str, layout_variant: str = 'hero-center') -> str:
+def _editorial_template(image_url: str, logo_url: str, color: str, text: str, layout_variant: str = 'hero-center', pattern_svg: str = None) -> str:
     """
     Modern Editorial Template - "Business Style"
     Features: Off-center broken grid layout, parallax effect, masked text reveal,
@@ -895,6 +931,7 @@ def _editorial_template(image_url: str, logo_url: str, color: str, text: str, la
         {GLOBAL_GRAIN_CSS}
         {GLOBAL_LAYOUT_CSS}
         {GLOBAL_FAILSAFE_CSS}
+        {PATTERN_LAYER_CSS}
         
         /* Off-Center Broken Grid Layout */
         #image-panel {{
@@ -988,6 +1025,7 @@ def _editorial_template(image_url: str, logo_url: str, color: str, text: str, la
         <div id="divider"></div>
     </div>
     <img id="logo" src="{logo_url}" onerror="this.style.display='none'">
+    {_get_pattern_overlay_html(pattern_svg)}
     <div class="grain"></div>
     
     <script>
@@ -1040,7 +1078,7 @@ def _editorial_template(image_url: str, logo_url: str, color: str, text: str, la
 </html>'''
 
 
-def _minimal_template(image_url: str, logo_url: str, color: str, text: str, layout_variant: str = 'hero-center') -> str:
+def _minimal_template(image_url: str, logo_url: str, color: str, text: str, layout_variant: str = 'hero-center', pattern_svg: str = None) -> str:
     """
     Minimal Template - "Clean/Wellness Style"
     Features: Montserrat font, subtle scale, floating elements, clean fades, accent lines
@@ -1067,6 +1105,7 @@ def _minimal_template(image_url: str, logo_url: str, color: str, text: str, layo
         {GLOBAL_GRAIN_CSS}
         {GLOBAL_LAYOUT_CSS}
         {GLOBAL_FAILSAFE_CSS}
+        {PATTERN_LAYER_CSS}
         .grain {{ opacity: 0.04; }}
         
         #bg {{
@@ -1128,6 +1167,7 @@ def _minimal_template(image_url: str, logo_url: str, color: str, text: str, layo
     <div id="container" class="variant-{layout_variant}">
         <div id="text" class="{text_size_class}">{text}</div>
     </div>
+    {_get_pattern_overlay_html(pattern_svg)}
     <div class="grain"></div>
     
     <script>
@@ -1183,7 +1223,7 @@ def _minimal_template(image_url: str, logo_url: str, color: str, text: str, layo
 </html>'''
 
 
-def _aurora_template(image_url: str, logo_url: str, color: str, text: str, luminance_mode: str = 'dark', layout_variant: str = 'hero-center') -> str:
+def _aurora_template(image_url: str, logo_url: str, color: str, text: str, luminance_mode: str = 'dark', layout_variant: str = 'hero-center', pattern_svg: str = None) -> str:
     """
     Aurora Template - "Apple" Look
     Features: Canvas blob background with 3 merging color blobs using sine waves,
@@ -1228,6 +1268,7 @@ def _aurora_template(image_url: str, logo_url: str, color: str, text: str, lumin
         
         {GLOBAL_GRAIN_CSS}
         {GLOBAL_LAYOUT_CSS}
+        {PATTERN_LAYER_CSS}
         .grain {{ opacity: 0.03; }}
         
         /* Aurora Canvas Background */
@@ -1295,6 +1336,7 @@ def _aurora_template(image_url: str, logo_url: str, color: str, text: str, lumin
     <div id="glass-container" class="variant-{layout_variant}">
         <div id="text" class="{text_size_class}">{text}</div>
     </div>
+    {_get_pattern_overlay_html(pattern_svg)}
     <div class="grain"></div>
     
     <script>
@@ -1363,7 +1405,7 @@ def _aurora_template(image_url: str, logo_url: str, color: str, text: str, lumin
 </html>'''
 
 
-def _gridlock_template(image_url: str, logo_url: str, color: str, text: str, luminance_mode: str = 'dark', layout_variant: str = 'hero-center') -> str:
+def _gridlock_template(image_url: str, logo_url: str, color: str, text: str, luminance_mode: str = 'dark', layout_variant: str = 'hero-center', pattern_svg: str = None) -> str:
     """
     Gridlock Template - "High-Tech" Tron Look
     Features: Moving SVG perspective grid on floor (Tron style),
@@ -1395,6 +1437,7 @@ def _gridlock_template(image_url: str, logo_url: str, color: str, text: str, lum
         
         {GLOBAL_GRAIN_CSS}
         {GLOBAL_LAYOUT_CSS}
+        {PATTERN_LAYER_CSS}
         .grain {{ opacity: 0.05; }}
         
         /* Perspective Grid Container */
@@ -1517,6 +1560,7 @@ def _gridlock_template(image_url: str, logo_url: str, color: str, text: str, lum
     <div id="glass-panel" class="variant-{layout_variant}">
         <div id="text" class="{text_size_class}">{text}</div>
     </div>
+    {_get_pattern_overlay_html(pattern_svg)}
     <div class="grain"></div>
     
     <script>
@@ -1555,7 +1599,7 @@ def _gridlock_template(image_url: str, logo_url: str, color: str, text: str, lum
 </html>'''
 
 
-def _scrapbook_template(image_url: str, logo_url: str, color: str, text: str, layout_variant: str = 'hero-center') -> str:
+def _scrapbook_template(image_url: str, logo_url: str, color: str, text: str, layout_variant: str = 'hero-center', pattern_svg: str = None) -> str:
     """
     Scrapbook Template - "Organic/Tactile"
     Features: Torn edges, stop motion animation, tape effect, handwritten font.
@@ -1582,6 +1626,7 @@ def _scrapbook_template(image_url: str, logo_url: str, color: str, text: str, la
         
         {GLOBAL_GRAIN_CSS}
         {GLOBAL_LAYOUT_CSS}
+        {PATTERN_LAYER_CSS}
         
         /* Container for stop-motion effect */
         #container {{
@@ -1672,6 +1717,7 @@ def _scrapbook_template(image_url: str, logo_url: str, color: str, text: str, la
         <div id="text-scrap" class="variant-{layout_variant} {text_size_class}">{text}</div>
         <img id="logo" src="{logo_url}" onerror="this.style.display='none'">
     </div>
+    {_get_pattern_overlay_html(pattern_svg)}
     <div class="grain"></div>
     
     <script>
@@ -1709,7 +1755,7 @@ def _scrapbook_template(image_url: str, logo_url: str, color: str, text: str, la
 </html>'''
 
 
-def _pop_template(image_url: str, logo_url: str, color: str, text: str, layout_variant: str = 'hero-center') -> str:
+def _pop_template(image_url: str, logo_url: str, color: str, text: str, layout_variant: str = 'hero-center', pattern_svg: str = None) -> str:
     """
     Pop Template - "High Energy"
     Features: Bold borders, hard shadows, marquee text, high contrast.
@@ -1737,6 +1783,7 @@ def _pop_template(image_url: str, logo_url: str, color: str, text: str, layout_v
         
         {GLOBAL_GRAIN_CSS}
         {GLOBAL_LAYOUT_CSS}
+        {PATTERN_LAYER_CSS}
         
         /* Bold Container */
         #main-image {{
@@ -1830,6 +1877,7 @@ def _pop_template(image_url: str, logo_url: str, color: str, text: str, layout_v
     <div class="shape shape-square"></div>
     
     <img id="logo" src="{logo_url}" onerror="this.style.display='none'">
+    {_get_pattern_overlay_html(pattern_svg)}
     <div class="grain"></div>
     
     <script>
@@ -1860,7 +1908,7 @@ def _pop_template(image_url: str, logo_url: str, color: str, text: str, layout_v
 </html>'''
 
 
-def _swiss_template(image_url: str, logo_url: str, color: str, text: str, layout_variant: str = 'hero-center') -> str:
+def _swiss_template(image_url: str, logo_url: str, color: str, text: str, layout_variant: str = 'hero-center', pattern_svg: str = None) -> str:
     """
     Swiss Template - "Trust/Corporate"
     Features: Strict grid, horizontal lines, Helvetica/Inter, orderly animation.
@@ -1888,6 +1936,7 @@ def _swiss_template(image_url: str, logo_url: str, color: str, text: str, layout
         
         {GLOBAL_GRAIN_CSS}
         {GLOBAL_LAYOUT_CSS}
+        {PATTERN_LAYER_CSS}
         
         /* Grid Layout */
         .grid-container {{
@@ -1995,6 +2044,7 @@ def _swiss_template(image_url: str, logo_url: str, color: str, text: str, layout
             <div style="font-size: 12px;">DESIGN SYSTEM V1.0</div>
         </div>
     </div>
+    {_get_pattern_overlay_html(pattern_svg)}
     <div class="grain"></div>
     
     <script>

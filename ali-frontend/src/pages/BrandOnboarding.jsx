@@ -3,10 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import api from '../api/axiosInterceptor';
 import {
     FaRocket, FaPalette, FaCheckCircle, FaGlobe, FaArrowLeft,
-    FaWindowMaximize, FaEdit, FaCloudUploadAlt, FaInfoCircle
+    FaWindowMaximize, FaEdit, FaCloudUploadAlt, FaInfoCircle,
+    FaFilePdf, FaSyncAlt, FaFont, FaSwatchbook
 } from 'react-icons/fa';
 import { useAuth } from '../hooks/useAuth';
-// Firebase imports removed - Unified Asset Pipeline in use
 
 // Define outside to prevent re-creation on every render
 const allCountries = [
@@ -35,12 +35,165 @@ const allCountries = [
     "Yemen", "Zambia", "Zimbabwe"
 ];
 
+// Brand Vibe Options
+const brandVibes = [
+    { id: 'premium_corporate', label: 'Premium / Corporate', desc: 'Executive, authoritative, professional', icon: '🏢' },
+    { id: 'retail_playful', label: 'Retail / Playful', desc: 'Energetic, friendly, approachable', icon: '🎉' },
+    { id: 'minimalist', label: 'Minimalist', desc: 'Clean, modern, purposeful', icon: '◻️' },
+    { id: 'luxury', label: 'Luxury', desc: 'Refined, exclusive, aspirational', icon: '✨' },
+    { id: 'tech_modern', label: 'Tech / Modern', desc: 'Innovative, forward-thinking, digital', icon: '🚀' }
+];
+
+// Brand Preview Card Component
+function BrandPreviewCard({ dna, isLoading, onEdit, onRegenerate, onApprove, isRegenerating }) {
+    if (isLoading) {
+        return (
+            <div className="bg-white rounded-3xl shadow-xl border border-slate-100 p-10 animate-pulse">
+                <div className="flex flex-col items-center py-8">
+                    <div className="relative w-24 h-24 mb-8">
+                        <div className="absolute inset-0 border-8 border-slate-100 rounded-full"></div>
+                        <div className="absolute inset-0 border-8 border-primary border-t-transparent rounded-full animate-spin"></div>
+                        <FaPalette className="absolute inset-0 m-auto text-3xl text-primary animate-pulse" />
+                    </div>
+                    <h3 className="text-2xl font-black text-slate-800 mb-2 tracking-tight">Generating Identity...</h3>
+                    <p className="text-slate-400 text-center">Our AI is crafting your brand DNA</p>
+                </div>
+            </div>
+        );
+    }
+
+    if (!dna) return null;
+
+    const colors = dna.color_palette || {};
+    const fonts = dna.fonts || {};
+    const pattern = dna.pattern || {};
+
+    return (
+        <div className="bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden">
+            {/* Header with Pattern Preview */}
+            <div 
+                className="h-32 relative"
+                style={{ 
+                    background: `linear-gradient(135deg, ${colors.primary || '#3B82F6'}20 0%, ${colors.accent || '#6366F1'}20 100%)`,
+                }}
+            >
+                {pattern.svg_data && (
+                    <div 
+                        className="absolute inset-0 opacity-30"
+                        dangerouslySetInnerHTML={{ __html: pattern.svg_data }}
+                    />
+                )}
+                <div className="absolute bottom-4 left-6 flex gap-3">
+                    <div 
+                        className="w-12 h-12 rounded-xl shadow-lg border-2 border-white"
+                        style={{ backgroundColor: colors.primary || '#3B82F6' }}
+                        title="Primary"
+                    />
+                    <div 
+                        className="w-12 h-12 rounded-xl shadow-lg border-2 border-white"
+                        style={{ backgroundColor: colors.secondary || '#1E293B' }}
+                        title="Secondary"
+                    />
+                    <div 
+                        className="w-12 h-12 rounded-xl shadow-lg border-2 border-white"
+                        style={{ backgroundColor: colors.accent || '#6366F1' }}
+                        title="Accent"
+                    />
+                </div>
+            </div>
+
+            <div className="p-8 space-y-6">
+                {/* Brand Name */}
+                <div>
+                    <h3 className="text-2xl font-black text-slate-800">{dna.brand_name || 'Your Brand'}</h3>
+                    <p className="text-sm text-slate-400 mt-1 capitalize">{dna.brand_vibe?.replace('_', ' ') || 'Minimalist'} Style</p>
+                </div>
+
+                {/* Colors Section */}
+                <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-xs font-black text-slate-400 uppercase tracking-widest">
+                        <FaSwatchbook /> Color Palette
+                    </div>
+                    <div className="flex gap-2 flex-wrap">
+                        {Object.entries(colors).map(([key, value]) => (
+                            <div key={key} className="flex items-center gap-2 bg-slate-50 px-3 py-2 rounded-lg">
+                                <div className="w-5 h-5 rounded-md" style={{ backgroundColor: value }} />
+                                <span className="text-xs font-bold text-slate-600">{value}</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+
+                {/* Fonts Section */}
+                <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-xs font-black text-slate-400 uppercase tracking-widest">
+                        <FaFont /> Typography
+                    </div>
+                    <div className="flex gap-4">
+                        <div className="bg-slate-50 px-4 py-3 rounded-lg flex-1">
+                            <p className="text-xs text-slate-400 mb-1">Header</p>
+                            <p className="text-lg font-bold text-slate-700" style={{ fontFamily: fonts.header }}>{fonts.header || 'Inter'}</p>
+                        </div>
+                        <div className="bg-slate-50 px-4 py-3 rounded-lg flex-1">
+                            <p className="text-xs text-slate-400 mb-1">Body</p>
+                            <p className="text-lg font-bold text-slate-700" style={{ fontFamily: fonts.body }}>{fonts.body || 'Roboto'}</p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Pattern Section */}
+                <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-xs font-black text-slate-400 uppercase tracking-widest">
+                        <FaPalette /> Pattern
+                    </div>
+                    <div className="bg-slate-50 px-4 py-3 rounded-lg flex items-center justify-between">
+                        <span className="text-sm font-bold text-slate-600 capitalize">{pattern.template || 'Wave'} Pattern</span>
+                        <div className="w-16 h-8 rounded overflow-hidden border border-slate-200">
+                            {pattern.svg_data && (
+                                <div 
+                                    className="w-full h-full"
+                                    dangerouslySetInnerHTML={{ __html: pattern.svg_data }}
+                                />
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Tone */}
+                <div className="bg-gradient-to-r from-slate-50 to-blue-50 p-4 rounded-xl">
+                    <p className="text-xs font-black text-slate-400 uppercase tracking-widest mb-2">Tone of Voice</p>
+                    <p className="text-sm text-slate-600 leading-relaxed">{dna.tone || 'Professional and approachable.'}</p>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex gap-3 pt-4">
+                    <button
+                        onClick={onRegenerate}
+                        disabled={isRegenerating}
+                        className="flex-1 flex items-center justify-center gap-2 py-4 rounded-xl bg-slate-100 text-slate-600 font-bold hover:bg-slate-200 transition-all disabled:opacity-50"
+                    >
+                        <FaSyncAlt className={isRegenerating ? 'animate-spin' : ''} />
+                        {isRegenerating ? 'Regenerating...' : 'Regenerate'}
+                    </button>
+                    <button
+                        onClick={onApprove}
+                        className="flex-[2] flex items-center justify-center gap-2 py-4 rounded-xl bg-gradient-to-r from-primary to-blue-700 text-white font-black shadow-lg shadow-blue-500/30 hover:scale-[1.02] active:scale-[0.98] transition-all"
+                    >
+                        <FaCheckCircle />
+                        Approve & Continue
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
 export default function BrandOnboarding() {
     const { currentUser, refreshProfile } = useAuth();
     const navigate = useNavigate();
 
     // Workflow & Toggle States
-    const [step, setStep] = useState('input'); // input, loading, results
+    const [step, setStep] = useState('input'); // input, loading, preview
     const [useDescription, setUseDescription] = useState(false);
 
     // Data States
@@ -49,10 +202,15 @@ export default function BrandOnboarding() {
     const [countries, setCountries] = useState([]);
     const [dna, setDna] = useState(null);
     const [isSaving, setIsSaving] = useState(false);
+    const [isRegenerating, setIsRegenerating] = useState(false);
 
     // Asset Vault States
     const [logoFile, setLogoFile] = useState(null);
     const [logoPreview, setLogoPreview] = useState(null);
+
+    // Phase 0: New States
+    const [pdfFile, setPdfFile] = useState(null);
+    const [brandVibe, setBrandVibe] = useState('minimalist');
 
     // --- 1. LOGO HANDLING ---
     const handleLogoChange = (e) => {
@@ -65,28 +223,72 @@ export default function BrandOnboarding() {
         }
     };
 
-    // --- 2. ANALYSIS HANDLER (Hybrid URL or Text) ---
+    // --- 2. PDF HANDLING ---
+    const handlePdfChange = (e) => {
+        const file = e.target.files[0];
+        if (file && file.type === "application/pdf") {
+            setPdfFile(file);
+        } else if (file) {
+            alert("Please upload a PDF file for brand guidelines.");
+        }
+    };
+
+    // --- 3. ANALYSIS HANDLER (Multipart with PDF support) ---
     const handleAnalyze = async () => {
-        if (!url && !description) return;
+        if (!url && !description && !pdfFile) return;
 
         setStep('loading');
         try {
-            const res = await api.post('/onboarding/analyze-brand', {
-                url: useDescription ? null : url,
-                description: useDescription ? description : null,
-                countries
+            // Build FormData for multipart request
+            const formData = new FormData();
+            
+            if (!useDescription && url) {
+                formData.append('url', url);
+            }
+            if (useDescription && description) {
+                formData.append('description', description);
+            }
+            formData.append('countries', JSON.stringify(countries));
+            formData.append('brand_vibe', brandVibe);
+            
+            if (pdfFile) {
+                formData.append('pdf_file', pdfFile);
+            }
+
+            const res = await api.post('/onboarding/analyze-brand', formData, {
+                headers: { 'Content-Type': 'multipart/form-data' }
             });
+            
             setDna(res.data);
-            setStep('results');
+            setStep('preview');
         } catch (err) {
             console.error("Analysis failed", err);
-            alert("Analysis failed. Please check your URL or description.");
+            alert("Analysis failed. Please check your inputs and try again.");
             setStep('input');
         }
     };
 
-    // --- 3. FINAL SELECTION & ASSET PERSISTENCE ---
-    const handleSelectStyle = async (style) => {
+    // --- 4. REGENERATE HANDLER ---
+    const handleRegenerate = async () => {
+        if (!dna) return;
+        
+        setIsRegenerating(true);
+        try {
+            const res = await api.post('/onboarding/regenerate-dna', {
+                current_dna: dna,
+                brand_vibe: brandVibe
+            });
+            setDna(res.data);
+        } catch (err) {
+            console.error("Regeneration failed", err);
+            alert("Failed to regenerate. Please try again.");
+        } finally {
+            setIsRegenerating(false);
+        }
+    };
+
+    // --- 5. FINAL APPROVAL & ASSET PERSISTENCE ---
+    const handleApprove = async () => {
         setIsSaving(true);
         let finalLogoUrl = null;
 
@@ -98,7 +300,6 @@ export default function BrandOnboarding() {
                 formData.append('remove_bg', 'true'); // Auto-clean logos
                 formData.append('optimize', 'true');
 
-                // Helper to POST multipart
                 const uploadRes = await api.post('/assets/process', formData, {
                     headers: { 'Content-Type': 'multipart/form-data' }
                 });
@@ -111,7 +312,6 @@ export default function BrandOnboarding() {
                     ...dna,
                     website_url: url,
                     description: description,
-                    selected_style: style.id,
                     logo_url: finalLogoUrl
                 }
             });
@@ -137,26 +337,113 @@ export default function BrandOnboarding() {
                         </div>
                         <h2 className="text-3xl font-bold text-slate-800 mb-2 text-center tracking-tight">Establish Your Identity</h2>
                         <p className="text-slate-500 mb-10 max-w-lg mx-auto text-center font-medium">
-                            {useDescription ? "Describe your vision and we'll craft your DNA." : "Give us your URL and we'll extract your core essence."}
+                            {pdfFile ? "We'll extract your brand DNA from your guidelines." : 
+                             useDescription ? "Describe your vision and we'll craft your DNA." : 
+                             "Give us your URL and we'll extract your core essence."}
                         </p>
 
                         <div className="max-w-lg mx-auto space-y-8">
-                            {/* Hybrid Logic */}
+                            
+                            {/* Brand Vibe Selector */}
+                            <div className="space-y-4">
+                                <label className="block text-left text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">
+                                    Brand Vibe
+                                </label>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                    {brandVibes.map(vibe => (
+                                        <button
+                                            key={vibe.id}
+                                            type="button"
+                                            onClick={() => setBrandVibe(vibe.id)}
+                                            className={`p-4 rounded-2xl border-2 text-left transition-all ${
+                                                brandVibe === vibe.id 
+                                                    ? 'border-primary bg-blue-50 shadow-lg' 
+                                                    : 'border-slate-100 bg-white hover:border-slate-200'
+                                            }`}
+                                        >
+                                            <div className="text-2xl mb-2">{vibe.icon}</div>
+                                            <p className="font-bold text-slate-800 text-sm">{vibe.label}</p>
+                                            <p className="text-xs text-slate-400 mt-1">{vibe.desc}</p>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* PDF Brand Guidelines Upload */}
+                            <div className="space-y-4">
+                                <div className="flex items-center justify-between">
+                                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">
+                                        Brand Guidelines (PDF)
+                                    </label>
+                                    <span className="flex items-center gap-1 text-[10px] text-blue-500 font-bold">
+                                        <FaInfoCircle /> Optional
+                                    </span>
+                                </div>
+                                <div className={`relative group border-2 border-dashed rounded-2xl p-4 transition-all ${
+                                    pdfFile ? 'border-green-400 bg-green-50' : 'border-slate-200 hover:border-primary bg-slate-50/50'
+                                }`}>
+                                    <input 
+                                        type="file" 
+                                        accept=".pdf" 
+                                        className="absolute inset-0 opacity-0 cursor-pointer z-10" 
+                                        onChange={handlePdfChange} 
+                                    />
+                                    {pdfFile ? (
+                                        <div className="flex items-center gap-3">
+                                            <FaFilePdf className="text-2xl text-red-500" />
+                                            <div>
+                                                <p className="text-sm font-bold text-slate-700 truncate max-w-[200px]">{pdfFile.name}</p>
+                                                <p className="text-xs text-slate-400">{(pdfFile.size / 1024 / 1024).toFixed(2)} MB</p>
+                                            </div>
+                                            <button 
+                                                onClick={(e) => { e.stopPropagation(); setPdfFile(null); }}
+                                                className="ml-auto text-red-400 hover:text-red-600"
+                                            >
+                                                ✕
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="text-center py-2">
+                                            <FaFilePdf className="text-2xl text-slate-300 mx-auto mb-1 group-hover:text-primary transition-colors" />
+                                            <p className="text-xs text-slate-500 font-bold tracking-tight">Upload Brand Book</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Hybrid URL/Description Input */}
                             <div className="space-y-4">
                                 <label className="block text-left text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">
                                     {useDescription ? "Business Description" : "Website URL"}
                                 </label>
                                 {!useDescription ? (
                                     <div className="group relative">
-                                        <input type="text" placeholder="https://your-business.com" className="w-full p-5 rounded-2xl border border-slate-200 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none text-lg text-center transition-all" value={url} onChange={(e) => setUrl(e.target.value)} />
-                                        <button onClick={() => setUseDescription(true)} className="w-full mt-4 flex items-center justify-center gap-2 text-xs font-bold text-slate-400 hover:text-primary transition-colors">
+                                        <input 
+                                            type="text" 
+                                            placeholder="https://your-business.com" 
+                                            className="w-full p-5 rounded-2xl border border-slate-200 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none text-lg text-center transition-all" 
+                                            value={url} 
+                                            onChange={(e) => setUrl(e.target.value)} 
+                                        />
+                                        <button 
+                                            onClick={() => setUseDescription(true)} 
+                                            className="w-full mt-4 flex items-center justify-center gap-2 text-xs font-bold text-slate-400 hover:text-primary transition-colors"
+                                        >
                                             <FaEdit /> I don't have a website yet
                                         </button>
                                     </div>
                                 ) : (
                                     <div className="group relative">
-                                        <textarea placeholder="Describe your products and 'vibe'..." className="w-full p-5 rounded-2xl border border-slate-200 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none text-lg min-h-[140px] transition-all" value={description} onChange={(e) => setDescription(e.target.value)} />
-                                        <button onClick={() => setUseDescription(false)} className="w-full mt-4 flex items-center justify-center gap-2 text-xs font-bold text-slate-400 hover:text-primary transition-colors">
+                                        <textarea 
+                                            placeholder="Describe your products and 'vibe'..." 
+                                            className="w-full p-5 rounded-2xl border border-slate-200 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none text-lg min-h-[140px] transition-all" 
+                                            value={description} 
+                                            onChange={(e) => setDescription(e.target.value)} 
+                                        />
+                                        <button 
+                                            onClick={() => setUseDescription(false)} 
+                                            className="w-full mt-4 flex items-center justify-center gap-2 text-xs font-bold text-slate-400 hover:text-primary transition-colors"
+                                        >
                                             <FaWindowMaximize /> Use a website URL instead
                                         </button>
                                     </div>
@@ -207,7 +494,11 @@ export default function BrandOnboarding() {
                                 </div>
                             </div>
 
-                            <button onClick={handleAnalyze} disabled={(!url && !description)} className="w-full bg-gradient-to-r from-primary to-blue-700 text-white py-5 rounded-2xl font-black text-lg shadow-xl shadow-blue-500/30 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-30 uppercase tracking-widest">
+                            <button 
+                                onClick={handleAnalyze} 
+                                disabled={(!url && !description && !pdfFile)} 
+                                className="w-full bg-gradient-to-r from-primary to-blue-700 text-white py-5 rounded-2xl font-black text-lg shadow-xl shadow-blue-500/30 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-30 uppercase tracking-widest"
+                            >
                                 Build My DNA
                             </button>
                         </div>
@@ -216,46 +507,34 @@ export default function BrandOnboarding() {
 
                 {/* STEP 2: LOADING */}
                 {step === 'loading' && (
-                    <div className="flex flex-col items-center py-32 text-center">
-                        <div className="relative w-32 h-32 mb-10">
-                            <div className="absolute inset-0 border-8 border-slate-100 rounded-full"></div>
-                            <div className="absolute inset-0 border-8 border-primary border-t-transparent rounded-full animate-spin"></div>
-                            <FaRocket className="absolute inset-0 m-auto text-4xl text-primary animate-pulse" />
-                        </div>
-                        <h3 className="text-3xl font-black text-slate-800 mb-3 tracking-tight">Processing Strategy...</h3>
-                        <p className="text-slate-400 max-w-md mx-auto leading-relaxed">
-                            Comparing your identity with cultural trends in {countries.length > 0 ? countries.join(', ') : 'Global Markets'}.
-                        </p>
-                    </div>
+                    <BrandPreviewCard isLoading={true} />
                 )}
 
-                {/* STEP 3: RESULTS */}
-                {step === 'results' && dna && (
-                    <div className="space-y-10 animate-slide-up">
+                {/* STEP 3: PREVIEW */}
+                {step === 'preview' && dna && (
+                    <div className="space-y-6">
                         <div className="text-center">
-                            <div className="inline-flex items-center gap-2 px-5 py-2.5 bg-green-50 text-green-700 rounded-full text-xs font-black mb-6 border border-green-200 uppercase tracking-widest">
+                            <div className="inline-flex items-center gap-2 px-5 py-2.5 bg-green-50 text-green-700 rounded-full text-xs font-black mb-4 border border-green-200 uppercase tracking-widest">
                                 <FaCheckCircle /> Analysis Complete
                             </div>
-                            <h2 className="text-4xl font-black text-slate-800 mb-3 tracking-tighter">Your Creative North Star</h2>
-                            <p className="text-slate-500 font-medium">Select the aesthetic logic our AI agents should follow.</p>
+                            <h2 className="text-3xl font-black text-slate-800 mb-2 tracking-tighter">Your Brand DNA</h2>
+                            <p className="text-slate-500 font-medium">Review and approve your generated identity.</p>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                            {dna.visual_styles?.map((style, idx) => (
-                                <button key={style.id || idx} onClick={() => handleSelectStyle(style)} disabled={isSaving} className="group relative p-10 bg-white border-2 border-slate-100 rounded-[2rem] hover:border-primary hover:shadow-2xl hover:-translate-y-2 transition-all text-left flex flex-col h-full overflow-hidden">
-                                    <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center mb-8 group-hover:bg-blue-50 transition-colors">
-                                        <FaPalette className="text-2xl text-slate-300 group-hover:text-primary" />
-                                    </div>
-                                    <h4 className="text-2xl font-black text-slate-800 mb-3">{style.label}</h4>
-                                    <p className="text-slate-500 leading-relaxed mb-10 flex-1 font-medium">{style.desc}</p>
-                                    <div className="w-full py-4 rounded-2xl bg-slate-50 text-slate-600 font-black text-center text-xs uppercase tracking-widest group-hover:bg-primary group-hover:text-white transition-all">
-                                        {isSaving ? "Locking identity..." : "Apply This DNA"}
-                                    </div>
-                                </button>
-                            ))}
-                        </div>
-                        <button onClick={() => setStep('input')} className="text-slate-400 hover:text-slate-600 font-bold flex items-center gap-2 mx-auto transition-colors">
-                            <FaArrowLeft /> Refine Input Data
+                        <BrandPreviewCard 
+                            dna={dna}
+                            isLoading={false}
+                            onEdit={() => setStep('input')}
+                            onRegenerate={handleRegenerate}
+                            onApprove={handleApprove}
+                            isRegenerating={isRegenerating}
+                        />
+
+                        <button 
+                            onClick={() => setStep('input')} 
+                            className="text-slate-400 hover:text-slate-600 font-bold flex items-center gap-2 mx-auto transition-colors"
+                        >
+                            <FaArrowLeft /> Back to Edit Inputs
                         </button>
                     </div>
                 )}

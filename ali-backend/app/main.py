@@ -9,7 +9,8 @@ import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 warnings.filterwarnings("ignore", category=FutureWarning)
 
-from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, File, UploadFile, Form
+from typing import Optional
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from dotenv import load_dotenv
@@ -271,32 +272,137 @@ async def heartbeat(campaign_id: str, user: dict = Depends(verify_token)):
         return {"campaign_id": campaign_id, "progress": 0, "status": "error"}
 
 
-# --- 7. ONBOARDING & BRAND DNA (LAZY LOADED) ---
+# --- 7. ONBOARDING & BRAND DNA (Phase 0: Brand DNA Engine) ---
 
 @app.post("/api/onboarding/analyze-brand")
-async def analyze_brand(payload: dict, user: dict = Depends(verify_token)):
+async def analyze_brand(
+    user: dict = Depends(verify_token),
+    url: Optional[str] = Form(None),
+    description: Optional[str] = Form(None),
+    countries: Optional[str] = Form("[]"),  # JSON string of country list
+    brand_vibe: str = Form("minimalist"),
+    industry: Optional[str] = Form(None),
+    pdf_file: Optional[UploadFile] = File(None)
+):
+    """
+    Analyze brand identity from multiple sources.
+    
+    Phase 0: Brand DNA Engine with intelligent fallbacks.
+    
+    Supports:
+    - PDF brand guidelines upload (optional)
+    - Website URL crawling
+    - Text description
+    - Brand Vibe selection for styling
+    
+    Always returns a complete brand_dna object (Senior Constraint).
+    """
     from app.agents.brand_agent import BrandAgent
-    url = payload.get("url")
-    description = payload.get("description") # "No-Website" Fallback
-    countries = payload.get("countries", [])
+    import json
+    
+    # Parse countries JSON
+    try:
+        countries_list = json.loads(countries) if countries else []
+    except json.JSONDecodeError:
+        countries_list = []
+    
+    # Read PDF bytes if uploaded
+    pdf_bytes = None
+    if pdf_file and pdf_file.filename:
+        try:
+            pdf_bytes = await pdf_file.read()
+            logger.info(f"📄 PDF uploaded: {pdf_file.filename} ({len(pdf_bytes)} bytes)")
+        except Exception as e:
+            logger.warning(f"⚠️ Failed to read PDF: {e}")
     
     agent = BrandAgent()
-    # Support both URL crawling and text-based description
-    brand_dna = await agent.analyze_business(url=url, description=description, countries=countries)
+    
+    # Analyze with all available inputs
+    brand_dna = await agent.analyze_business(
+        url=url,
+        description=description,
+        countries=countries_list,
+        pdf_bytes=pdf_bytes,
+        brand_vibe=brand_vibe,
+        industry=industry
+    )
+    
     return brand_dna
+
+
+@app.post("/api/onboarding/analyze-brand-json")
+async def analyze_brand_json(payload: dict, user: dict = Depends(verify_token)):
+    """
+    JSON-based brand analysis (backwards compatible).
+    For clients that don't support multipart/form-data.
+    """
+    from app.agents.brand_agent import BrandAgent
+    
+    url = payload.get("url")
+    description = payload.get("description")
+    countries = payload.get("countries", [])
+    brand_vibe = payload.get("brand_vibe", "minimalist")
+    industry = payload.get("industry")
+    
+    agent = BrandAgent()
+    brand_dna = await agent.analyze_business(
+        url=url, 
+        description=description, 
+        countries=countries,
+        brand_vibe=brand_vibe,
+        industry=industry
+    )
+    return brand_dna
+
+
+@app.post("/api/onboarding/regenerate-dna")
+async def regenerate_brand_dna(payload: dict, user: dict = Depends(verify_token)):
+    """
+    Regenerate brand DNA with variations.
+    
+    Keeps core brand identity but generates new:
+    - Pattern (different template)
+    - Visual styles (alternative options)
+    
+    Called by the "Regenerate" button in the Preview Card.
+    """
+    from app.agents.brand_agent import BrandAgent
+    
+    current_dna = payload.get("current_dna", {})
+    brand_vibe = payload.get("brand_vibe")
+    
+    if not current_dna:
+        raise HTTPException(status_code=400, detail="Current DNA is required for regeneration")
+    
+    agent = BrandAgent()
+    regenerated = await agent.regenerate_dna(current_dna, brand_vibe)
+    
+    return regenerated
+
 
 @app.post("/api/onboarding/complete")
 async def complete_onboarding(payload: dict, user: dict = Depends(verify_token)):
+    """
+    Complete onboarding and save approved brand DNA.
+    
+    Stores the brand DNA in: users/{uid}/brand_profile/current
+    """
     uid = user['uid']
     brand_dna = payload.get("brand_dna")
     
     if not brand_dna:
         raise HTTPException(status_code=400, detail="Brand DNA is required")
-
+    
+    # Add timestamp and ensure completeness
+    brand_dna["approved_at"] = firestore.SERVER_TIMESTAMP
+    brand_dna["approved_by"] = uid
+    
     # Save to user profile and set completion flags
     db.collection('users').document(uid).collection('brand_profile').document('current').set(brand_dna)
     db.collection('users').document(uid).update({
         "onboarding_completed": True,
         "last_updated": firestore.SERVER_TIMESTAMP
     })
-    return {"status": "success"}
+    
+    logger.info(f"✅ Brand DNA saved for user {uid}")
+    return {"status": "success", "brand_name": brand_dna.get("brand_name", "Unknown")}

@@ -23,9 +23,11 @@ api.interceptors.request.use(async (config) => {
 });
 
 // 3. Self-Healing: Auto-logout on 401 (Unauthorized) from backend
+// 4. FAILED_PRECONDITION: Catch missing Firestore composite index errors
 api.interceptors.response.use(
     (response) => response,
     async (error) => {
+        // Handle 401 Unauthorized
         if (error.response && error.response.status === 401) {
             console.warn("⚠️ 401 Unauthorized detected - Logging out user to clear stale session.");
             try {
@@ -38,6 +40,36 @@ api.interceptors.response.use(
                 console.error("Error signing out:", signOutError);
             }
         }
+
+        // Handle FAILED_PRECONDITION (missing Firestore index)
+        // This typically comes from the backend as a 400 or 500 error with specific message
+        const errorData = error.response?.data;
+        const errorMessage = typeof errorData === 'string'
+            ? errorData
+            : (errorData?.detail || errorData?.message || '');
+
+        if (
+            errorMessage.includes('FAILED_PRECONDITION') ||
+            errorMessage.includes('requires an index') ||
+            errorMessage.includes('The query requires an index')
+        ) {
+            // Extract the Firebase Console URL for creating the index
+            const indexUrlMatch = errorMessage.match(/(https:\/\/console\.firebase\.google\.com[^\s"']+)/);
+
+            console.error('🔥 FIRESTORE INDEX REQUIRED 🔥');
+            console.error('Query requires a composite index that does not exist.');
+            console.error('Endpoint:', error.config?.url);
+
+            if (indexUrlMatch && indexUrlMatch[1]) {
+                console.error('📎 Create the index here:', indexUrlMatch[1]);
+            } else {
+                console.error('Check the server logs for the full index creation URL.');
+                console.error('Or deploy indexes with: firebase deploy --only firestore:indexes');
+            }
+
+            console.error('Full error:', errorMessage);
+        }
+
         return Promise.reject(error);
     }
 );

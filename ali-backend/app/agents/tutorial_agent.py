@@ -815,6 +815,119 @@ def generate_tutorial(
             pass
         raise e
 
+
+# --- 4. THE SENIOR TUTOR (Remediation Loop) ---
+def generate_remedial_content(
+    tutorial_id: str,
+    section_index: int,
+    failed_quiz_context: Dict[str, Any],
+    original_section_content: str
+) -> Dict[str, Any]:
+    """
+    THE SENIOR TUTOR: Generates a remedial "Professor's Note" block.
+    Uses a different pedagogical approach (real-world analogy) to re-explain failed concepts.
+    
+    Args:
+        tutorial_id: ID of the tutorial being studied
+        section_index: Index of the section where the quiz was failed
+        failed_quiz_context: Questions the user got wrong with their answers
+        original_section_content: The original text content of the section
+        
+    Returns:
+        A callout_remedial block ready for injection into the tutorial
+    """
+    logger.info(f"🎓 SENIOR TUTOR: Generating remedial content for tutorial {tutorial_id}, section {section_index}")
+    
+    # Use fast model for quick generation (user is waiting)
+    model = get_model(intent='fast')
+    
+    # Extract failed questions for context
+    failed_questions = failed_quiz_context.get("failed_questions", [])
+    user_score = failed_quiz_context.get("score", 0)
+    
+    failed_q_text = "\n".join([
+        f"- Q: {q.get('question', 'Unknown')} | User chose: {q.get('user_answer', 'N/A')} | Correct: {q.get('correct_answer', 'N/A')}"
+        for q in failed_questions
+    ]) if failed_questions else "General comprehension gap."
+    
+    prompt = f"""
+    Act as a **Senior Mentor** helping a struggling student. 
+    The student just scored {user_score:.0f}% on a quiz and needs help understanding the material.
+    
+    ### ORIGINAL LESSON CONTENT (Summary)
+    {original_section_content[:1500]}...
+    
+    ### QUESTIONS THE STUDENT GOT WRONG
+    {failed_q_text}
+    
+    ### YOUR TASK
+    Write a short, encouraging "Professor's Note" (150-200 words) that:
+    1. **Acknowledges** the difficulty without being condescending ("This concept trips up many learners...")
+    2. **Re-explains** the core concept using a DIFFERENT APPROACH than the original:
+       - Use a real-world ANALOGY or METAPHOR
+       - Give a concrete, relatable EXAMPLE
+       - Break it down into simpler steps
+    3. **Connects** specifically to what they got wrong
+    4. **Ends with encouragement** ("Now try again with this in mind!")
+    
+    ### VOICE & TONE
+    - Warm, supportive, like a patient mentor
+    - Never condescending or disappointed
+    - Conversational but professional
+    
+    ### OUTPUT
+    Return ONLY the text content for the note. No JSON, no markdown headers.
+    Start directly with the content.
+    """
+    
+    max_retries = 2
+    for attempt in range(max_retries):
+        try:
+            response = model.generate_content(prompt)
+            content = response.text.strip()
+            
+            # Validate we got actual content
+            if not content or len(content) < 50:
+                raise ValueError("Generated content too short")
+            
+            # Clean up any accidental markdown
+            content = content.strip('`').strip()
+            if content.startswith("```"):
+                content = content.split("```")[1] if "```" in content else content
+            
+            logger.info(f"✅ SENIOR TUTOR: Generated {len(content)} chars of remedial content")
+            
+            return {
+                "type": "callout_remedial",
+                "content": content,
+                "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                "trigger_score": user_score,
+                "section_index": section_index
+            }
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Remedial Generation Attempt {attempt+1} Failed: {e}")
+            if attempt == max_retries - 1:
+                # Graceful fallback with generic encouraging message
+                logger.error(f"❌ Remedial Generation Failed after {max_retries} attempts")
+                return {
+                    "type": "callout_remedial",
+                    "content": (
+                        "Let's take a step back and look at this differently. "
+                        "The concepts in this section can be tricky at first, but here's a helpful way to think about it: "
+                        "imagine you're explaining this to a friend who's new to the topic. "
+                        "What's the one key idea they'd need to understand first? "
+                        "Focus on that core concept, and the rest will start to click. "
+                        "Take your time with the material above, and when you're ready, give the quiz another try. You've got this!"
+                    ),
+                    "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                    "trigger_score": user_score,
+                    "section_index": section_index,
+                    "is_fallback": True
+                }
+            time.sleep(1)
+
+
 def fabricate_block(block, topic, video_agent, image_agent, audio_agent, progress_callback=None):
     """ Helper to call Creative Agents safely. Handles Fallbacks and Alerts. """
     try:

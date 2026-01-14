@@ -50,6 +50,51 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================================
+# Phase 2: Google Fonts Mapping for Brand DNA Fonts
+# Maps common system/brand fonts to closest Google Font equivalents
+# ============================================================================
+GOOGLE_FONT_MAPPING = {
+    # Sans-serif defaults
+    "arial": "Inter",
+    "helvetica": "Inter",
+    "helvetica neue": "Inter",
+    "verdana": "Open Sans",
+    "tahoma": "Open Sans",
+    "segoe ui": "Inter",
+    "roboto": "Roboto",
+    # Serif defaults
+    "times new roman": "Playfair Display",
+    "times": "Playfair Display",
+    "georgia": "DM Serif Display",
+    "palatino": "Libre Baskerville",
+    # Display fonts
+    "impact": "Anton",
+    "comic sans": "Patrick Hand",
+    "comic sans ms": "Patrick Hand",
+    # Monospace
+    "courier": "Roboto Mono",
+    "courier new": "Roboto Mono",
+    "monaco": "Fira Code"
+}
+
+
+def map_font_to_google_font(font_name: str) -> str:
+    """
+    Map a DNA font to the closest Google Font equivalent.
+    
+    Args:
+        font_name: Font name from brand DNA (e.g., "Arial", "Helvetica")
+        
+    Returns:
+        Google Font name or original if already a Google Font
+    """
+    if not font_name:
+        return "Inter"  # Default fallback
+    normalized = font_name.lower().strip()
+    return GOOGLE_FONT_MAPPING.get(normalized, font_name)
+
+
+# ============================================================================
 # V6.0: Browser Pool Pattern - Pre-warmed Chromium instances for faster rendering
 # Eliminates cold-start overhead of ~1-2s per asset
 # ============================================================================

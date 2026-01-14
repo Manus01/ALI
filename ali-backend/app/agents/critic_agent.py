@@ -542,6 +542,86 @@ class CriticAgent:
         logger.info(f"📋 Rubric Evaluation: {verdict} ({overall_score}/100) - {len(all_issues)} issues")
         
         return report
+    
+    async def proofread_and_polish(
+        self,
+        copy_text: str,
+        brand_voice: Dict[str, Any]
+    ) -> tuple[str, int]:
+        """
+        Phase 1: The Editor - Proofread and polish marketing copy.
+        
+        Focus: Grammar, Spelling, Tone consistency with brand voice.
+        
+        Args:
+            copy_text: The text to review
+            brand_voice: Brand voice dictionary with personality, do's, don'ts
+            
+        Returns:
+            Tuple of (corrected_text, quality_score 0-100)
+        """
+        if not copy_text or not copy_text.strip():
+            return copy_text, 100
+        
+        personality = brand_voice.get('personality', 'Professional and approachable')
+        do_list = brand_voice.get('do', [])
+        dont_list = brand_voice.get('dont', [])
+        
+        prompt = f"""
+        You are a Senior Editor reviewing marketing copy for a brand.
+        
+        BRAND VOICE:
+        - Personality: {personality}
+        - DO: {', '.join(do_list) if do_list else 'Be professional and clear'}
+        - DON'T: {', '.join(dont_list) if dont_list else 'Avoid jargon and exaggeration'}
+        
+        COPY TO REVIEW:
+        "{copy_text}"
+        
+        TASK:
+        1. Fix any grammar or spelling errors
+        2. Ensure the tone matches the brand personality
+        3. Remove or rephrase any content that violates the DON'T list
+        4. Apply the DO list guidelines
+        5. Rate the ORIGINAL copy quality from 0-100 (before your fixes)
+        
+        IMPORTANT:
+        - Make minimal changes - preserve the original meaning
+        - If the copy is already good, return it unchanged with a high score
+        - Only rewrite if there are actual issues
+        
+        Return ONLY a JSON object:
+        {{
+            "corrected_text": "the polished copy (or original if no changes needed)",
+            "score": 85,
+            "changes_made": ["list of changes, or empty if none"]
+        }}
+        """
+        
+        try:
+            from app.services.llm_factory import get_model
+            model = get_model(intent='complex')
+            response = await model.generate_content_async(prompt)
+            
+            # Parse response
+            raw_text = response.text.strip()
+            raw_text = re.sub(r'^```json\s*', '', raw_text)
+            raw_text = re.sub(r'\s*```$', '', raw_text)
+            
+            result = json.loads(raw_text)
+            
+            corrected = result.get('corrected_text', copy_text)
+            score = result.get('score', 100)
+            changes = result.get('changes_made', [])
+            
+            if changes:
+                logger.info(f"📝 Editor made {len(changes)} changes (score: {score})")
+            
+            return corrected, score
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Proofreading failed: {e}, returning original text")
+            return copy_text, 100
 
 
 # Singleton

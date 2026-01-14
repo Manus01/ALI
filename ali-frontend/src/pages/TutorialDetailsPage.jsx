@@ -68,6 +68,9 @@ export default function TutorialDetailsPage() {
     const [quizSubmitted, setQuizSubmitted] = useState(false);
     const [score, setScore] = useState(0);
 
+    // Remediation State (Senior Tutor)
+    const [isRemediating, setIsRemediating] = useState(false);
+
     // Clear toast after 3 seconds
     useEffect(() => {
         if (toast) {
@@ -120,6 +123,67 @@ export default function TutorialDetailsPage() {
                 console.error("API Error:", e);
                 setToast({ message: "Failed to submit results. Please try again.", type: "error" });
             }
+        }
+    };
+
+    // Remediation API Call (Senior Tutor)
+    const callRemediateAPI = async (quizBlock) => {
+        setIsRemediating(true);
+        try {
+            const questions = quizBlock.questions || [];
+
+            // Build quiz results with correctness info
+            const quizResults = questions.map((q, qIdx) => {
+                const userIdx = quizAnswers[qIdx];
+                const correctIdx = q.correct_answer !== undefined ? q.correct_answer : q.correct_index;
+                const userOpt = q.options?.[userIdx];
+                const correctOpt = q.options?.[correctIdx];
+
+                return {
+                    question: q.question,
+                    userAnswer: typeof userOpt === 'object' ? userOpt.text : userOpt,
+                    correctAnswer: typeof correctOpt === 'object' ? correctOpt.text : correctOpt,
+                    isCorrect: userIdx == correctIdx,
+                    score: score
+                };
+            });
+
+            const response = await api.post(`/tutorials/${id}/remediate`, {
+                sectionIndex: activeSectionIndex,
+                quizResults: quizResults
+            });
+
+            if (response.data.status === 'success') {
+                // Inject the remedial block into the current section
+                setTutorial(prev => {
+                    const sections = [...prev.sections];
+                    sections[activeSectionIndex] = response.data.updatedSection;
+                    return { ...prev, sections };
+                });
+
+                setToast({
+                    message: "I've added a new note to help you understand this concept better. Review it and try again!",
+                    type: "success"
+                });
+
+                // Reset quiz for retry
+                setQuizSubmitted(false);
+                setQuizAnswers({});
+                setScore(0);
+
+                // Scroll to the new block
+                if (scrollContainerRef.current) {
+                    scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+                }
+            }
+        } catch (err) {
+            console.error('Remediation error:', err);
+            setToast({ message: "Couldn't generate help. Please try again.", type: "error" });
+            // Allow simple retry on error
+            setQuizSubmitted(false);
+            setQuizAnswers({});
+        } finally {
+            setIsRemediating(false);
         }
     };
 
@@ -293,6 +357,22 @@ export default function TutorialDetailsPage() {
                     );
                 }
 
+            case 'callout_remedial':
+                {
+                    const remedialText = typeof block.content === 'string' ? block.content : (block.content?.text || "Review this concept before retrying.");
+                    return (
+                        <div key={idx} className="my-6 p-5 bg-amber-50 border-l-4 border-amber-500 rounded-r-lg shadow-sm animate-fade-in">
+                            <div className="flex gap-3">
+                                <span className="text-2xl flex-shrink-0">👨‍🏫</span>
+                                <div>
+                                    <h4 className="font-bold text-amber-900 text-sm uppercase mb-2">Professor's Note</h4>
+                                    <p className="text-amber-800 leading-relaxed">{remedialText}</p>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                }
+
             case 'quiz_single':
                 {
                     const hasOptions = block.options && block.options.length > 0;
@@ -408,7 +488,17 @@ export default function TutorialDetailsPage() {
                                             </div>
                                         )
                                     ) : (
-                                        <button onClick={() => { setQuizSubmitted(false); setQuizAnswers({}); }} className="mt-2 text-sm text-slate-500 hover:underline"><FaRedo /> Retry</button>
+                                        <button
+                                            onClick={() => callRemediateAPI(block)}
+                                            disabled={isRemediating}
+                                            className="mt-2 px-4 py-2 text-sm bg-amber-100 text-amber-800 hover:bg-amber-200 rounded-lg font-bold flex items-center gap-2 mx-auto transition-colors disabled:opacity-50"
+                                        >
+                                            {isRemediating ? (
+                                                <><span className="animate-spin">⏳</span> Analyzing Gap...</>
+                                            ) : (
+                                                <><FaRedo /> Get Help &amp; Retry</>
+                                            )}
+                                        </button>
                                     )}
                                 </div>
                             )}

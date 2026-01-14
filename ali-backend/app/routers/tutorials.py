@@ -70,6 +70,11 @@ class TutorialRequestCreate(BaseModel):
     context: Optional[str] = Field(None, max_length=1000)
 
 
+class RemediationRequest(BaseModel):
+    """Request for remedial content generation after quiz failure."""
+    sectionIndex: int = Field(..., ge=0, description="Index of the section where quiz was failed")
+    quizResults: List[dict] = Field(..., description="Questions the user got wrong with answers")
+
 # --- 0. TUTORIAL REQUEST SYSTEM (Admin-Gated per Spec v1.2 §4.1) ---
 @router.post("/tutorials/request")
 def request_tutorial(payload: TutorialRequestCreate, user: dict = Depends(verify_token)):
@@ -635,6 +640,133 @@ def mark_complete(tutorial_id: str, payload: CompletionRequest, user: dict = Dep
     except Exception as e:
         logger.error(f"❌ Completion Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- 4. REMEDIATION LOOP (Senior Tutor) ---
+@router.post("/tutorials/{tutorial_id}/remediate")
+def remediate_quiz_failure(
+    tutorial_id: str, 
+    payload: RemediationRequest, 
+    user: dict = Depends(verify_token)
+):
+    """
+    THE SENIOR TUTOR: Generates remedial content when user fails a quiz.
+    Persists the new block to the user's private tutorial document.
+    """
+    try:
+        user_id = user['uid']
+        section_index = payload.sectionIndex
+        quiz_results = payload.quizResults
+        
+        logger.info(f"🎓 Remediation requested for tutorial {tutorial_id}, section {section_index}")
+        _require_db("remediate_quiz_failure")()
+        
+        # 1. Fetch tutorial from user's private collection (or global)
+        tut_ref = db.collection('users').document(user_id).collection('tutorials').document(tutorial_id)
+        tut_doc = tut_ref.get()
+        
+        is_private_copy = tut_doc.exists
+        
+        if not tut_doc.exists:
+            # Try global and create a private copy
+            global_ref = db.collection('tutorials').document(tutorial_id)
+            tut_doc = global_ref.get()
+            
+            if not tut_doc.exists:
+                raise HTTPException(status_code=404, detail="Tutorial not found")
+            
+            # Create private copy for the user (so we can persist their remedial blocks)
+            tut_data = tut_doc.to_dict()
+            tut_data['id'] = tutorial_id
+            tut_data['copied_from_global'] = True
+            tut_data['copied_at'] = firestore.SERVER_TIMESTAMP
+            tut_ref.set(tut_data)
+            is_private_copy = True
+            logger.info(f"📋 Created private copy of tutorial {tutorial_id} for user {user_id}")
+        
+        tut_data = tut_ref.get().to_dict() if is_private_copy else tut_doc.to_dict()
+        sections = tut_data.get('sections', [])
+        
+        if section_index >= len(sections):
+            raise HTTPException(status_code=400, detail=f"Invalid section index: {section_index}")
+        
+        section = sections[section_index]
+        blocks = section.get('blocks', [])
+        
+        # 2. Extract original section text content for context
+        original_content = ""
+        for block in blocks:
+            if block.get('type') == 'text':
+                original_content += block.get('content', '') + "\n"
+        
+        # 3. Build failed quiz context
+        failed_quiz_context = {
+            "score": quiz_results[0].get('score', 0) if quiz_results else 0,
+            "failed_questions": [
+                {
+                    "question": q.get("question", ""),
+                    "user_answer": q.get("userAnswer", ""),
+                    "correct_answer": q.get("correctAnswer", "")
+                }
+                for q in quiz_results if not q.get("isCorrect", True)
+            ]
+        }
+        
+        # 4. Import and call the Senior Tutor agent
+        try:
+            from app.agents.tutorial_agent import generate_remedial_content
+        except ImportError as imp_err:
+            logger.error(f"❌ Tutorial Agent import failed: {imp_err}")
+            raise HTTPException(status_code=503, detail="Remediation service unavailable")
+        
+        remedial_block = generate_remedial_content(
+            tutorial_id=tutorial_id,
+            section_index=section_index,
+            failed_quiz_context=failed_quiz_context,
+            original_section_content=original_content
+        )
+        
+        # 5. Inject remedial block into the section (before the quiz block)
+        # Find the quiz block and insert before it
+        quiz_idx = None
+        for i, block in enumerate(blocks):
+            if block.get('type') in ['quiz', 'quiz_final', 'quiz_single']:
+                quiz_idx = i
+                break
+        
+        if quiz_idx is not None:
+            # Insert before quiz
+            blocks.insert(quiz_idx, remedial_block)
+        else:
+            # Append to end if no quiz found
+            blocks.append(remedial_block)
+        
+        # 6. Update the section in the tutorial
+        sections[section_index]['blocks'] = blocks
+        
+        # 7. Persist to Firestore
+        tut_ref.update({
+            'sections': sections,
+            'last_remediation_at': firestore.SERVER_TIMESTAMP,
+            'remediation_count': firestore.Increment(1)
+        })
+        
+        logger.info(f"✅ Remediation saved for tutorial {tutorial_id}, section {section_index}")
+        
+        return {
+            "status": "success",
+            "remedialBlock": remedial_block,
+            "updatedSection": sections[section_index],
+            "message": "Remedial content generated and saved."
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Remediation Error: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.delete("/tutorials/{tutorial_id}")
 def delete_user_tutorial(tutorial_id: str, user: dict = Depends(verify_token)):

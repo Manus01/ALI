@@ -16,6 +16,8 @@ RUN apt-get update && apt-get install -y \
     fonts-liberation \
     fonts-unifont \
     fonts-noto-color-emoji \
+    fonts-montserrat \
+    fontconfig \
     libnss3 \
     libnspr4 \
     libatk1.0-0 \
@@ -29,6 +31,7 @@ RUN apt-get update && apt-get install -y \
     libxrandr2 \
     libgbm1 \
     libasound2 \
+    && fc-cache -f -v \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Common Python Dependencies

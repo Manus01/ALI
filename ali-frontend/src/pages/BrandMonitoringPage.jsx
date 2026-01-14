@@ -188,7 +188,7 @@ export default function BrandMonitoringPage() {
                 <div className="relative z-10 max-w-3xl space-y-4">
                     <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10 text-xs font-bold uppercase tracking-widest">
                         <FaRobot />
-                        AI Machine Module v2.5
+                        Brand Monitoring Engine
                     </div>
                     <h1 className="text-3xl md:text-4xl font-black leading-tight">
                         Brand Monitoring — Web Research & Monitoring Engine

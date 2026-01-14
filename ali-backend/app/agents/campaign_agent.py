@@ -131,14 +131,19 @@ class CampaignAgent(BaseAgent):
         channels = selected_channels if selected_channels else ["instagram", "linkedin"]
         channel_instructions = self._build_channel_instructions(channels)
         
+        # Phase 1: Extract voice and constraints for enforcement
+        brand_voice = brand_dna.get('voice', {})
+        voice_personality = brand_voice.get('personality', 'Professional and approachable')
+        voice_dos = brand_voice.get('do', [])
+        voice_donts = brand_voice.get('dont', [])
+        constraints = brand_dna.get('constraints', {})
+        banned_phrases = constraints.get('banned_phrases', [])
+        
         prompt = f"""
         Based on:
         Brand DNA: {json.dumps(brand_dna)}
         Goal: {goal}
         User Clarifications: {json.dumps(answers)}
-        Creative Intent: {json.dumps(creative_intent or {})}
-        Creative Memory (do not copy verbatim): {json.dumps(creative_memory or [])}
-        Competitor Snapshot (insights only): {json.dumps(competitor_snapshot or {})}
         {knowledge_block}
         Target Channels: {', '.join(channels)}
         Reusable Hooks (same brand only): {json.dumps(memory_hooks or [])}
@@ -152,17 +157,51 @@ class CampaignAgent(BaseAgent):
         
         {channel_instructions}
         
+        ================================================================================
+        PHASE 1: FORMAT DECISION MATRIX (The Strategist)
+        ================================================================================
+        For EVERY channel, you MUST determine the recommended_format by analyzing the goal:
+        
+        DECISION RULES:
+        - If the message is emotional, complex, story-driven, demonstrates a process, or reveals something → "video"
+        - If the message is urgent, promotional, simple announcement, quote-based, or infographic → "image"
+        - If the message benefits from multiple frames (tutorials, step-by-step, comparisons) → "carousel"
+        
+        HARD OVERRIDES:
+        - TikTok: MUST ALWAYS be "video" (no exceptions)
+        - YouTube Shorts: MUST ALWAYS be "video"
+        - Google Display: MUST ALWAYS be "image" (static ads)
+        - Email/Blog: MUST ALWAYS be "image"
+        
+        ================================================================================
+        PHASE 1: VOICE ENFORCEMENT (The Editor Pre-Check)
+        ================================================================================
+        BRAND VOICE PERSONALITY: {voice_personality}
+        
+        VOICE DO's (MUST FOLLOW):
+        {chr(10).join(['- ' + item for item in voice_dos]) if voice_dos else '- Be professional and approachable'}
+        
+        VOICE DON'Ts (STRICTLY AVOID):
+        {chr(10).join(['- ' + item for item in voice_donts]) if voice_donts else '- Avoid jargon without explanation'}
+        
+        BANNED PHRASES (NEVER USE):
+        {chr(10).join(['- "' + phrase + '"' for phrase in banned_phrases]) if banned_phrases else '- None specified'}
+        
+        All generated copy MUST:
+        1. Match the brand voice personality exactly
+        2. Apply all items from the DO's list
+        3. STRICTLY AVOID all items from the DON'Ts list
+        4. NEVER use any banned phrases
+        ================================================================================
+        
         For EVERY channel, include at minimum:
         - 'visual_prompt': A detailed image generation prompt
-        - 'format_type': REQUIRED. Choose "video" or "image" based on these rules:
-            * TikTok: MUST ALWAYS be "video" (no exceptions)
-            * Instagram/Facebook: Choose "video" if content implies motion, storytelling, demos, or reveals. Choose "image" if it's a static announcement, quote, or infographic.
-            * LinkedIn/Others: Default to "image" unless content specifically benefits from motion
-        - 'caption' or 'body' or 'headlines': Platform-appropriate text copy
+        - 'recommended_format': REQUIRED. One of "video", "image", or "carousel" based on the rules above
+        - 'headline': Primary attention-grabbing text
+        - 'caption' or 'body': Platform-appropriate text copy (following voice enforcement rules)
         
         Also include a general 'theme': A 1-sentence title for the campaign.
         
-        Ensure the tone strictly follows the Brand DNA and respects the cultural target.
         Return ONLY a JSON object with keys for 'theme' and each channel.
         """
         
@@ -216,6 +255,59 @@ class CampaignAgent(BaseAgent):
                 "hook_type": "benefit-led",
                 "hypothesis": "On-brand creative will improve engagement."
             }
+    
+    async def _analyze_goal_for_format(self, goal: str, channel: str) -> str:
+        """
+        Phase 1: Format Decision Matrix
+        
+        Analyze campaign goal complexity and sentiment to determine format.
+        
+        Rules:
+        - Emotional/complex/story-driven → "video"
+        - Urgent/promotional/simple → "image" or "carousel"
+        - TikTok → Always "video" (hard override)
+        
+        Returns: "video", "image", or "carousel"
+        """
+        # Hard override for TikTok
+        if channel.lower() in ['tiktok', 'youtube_shorts']:
+            logger.info(f"📹 Format Matrix: {channel} hardcoded to 'video'")
+            return "video"
+        
+        prompt = f"""
+        Analyze this marketing campaign goal and determine the best visual format.
+        
+        Goal: "{goal}"
+        Target Channel: {channel}
+        
+        DECISION RULES:
+        1. If the message is emotional, complex, story-driven, or involves demonstrations → "video"
+        2. If the message is urgent, promotional, simple announcements, or quote-based → "image"
+        3. If the message benefits from multiple frames (tutorials, step-by-step, comparisons) → "carousel"
+        
+        CHANNEL CONSIDERATIONS:
+        - Instagram/Facebook Stories → prefer "video" for engagement
+        - LinkedIn → prefer "image" unless content is educational or story-based
+        - Google Display → always "image" (static ads)
+        - Email/Blog → always "image" (static content)
+        
+        Return ONLY one word: "video", "image", or "carousel"
+        """
+        
+        try:
+            response = await self.model.generate_content_async(prompt)
+            format_result = response.text.strip().lower().replace('"', '').replace("'", "")
+            
+            # Validate response
+            if format_result not in ["video", "image", "carousel"]:
+                logger.warning(f"⚠️ Invalid format response '{format_result}', defaulting to 'image'")
+                format_result = "image"
+            
+            logger.info(f"📊 Format Matrix for {channel}: '{format_result}' (goal: {goal[:50]}...)")
+            return format_result
+        except Exception as e:
+            logger.error(f"❌ Format analysis failed: {e}, defaulting to 'image'")
+            return "image"
     
     def _build_channel_instructions(self, channels: list) -> str:
         """Build channel-specific prompting instructions based on platform tones."""

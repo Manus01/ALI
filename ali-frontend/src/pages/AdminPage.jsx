@@ -128,10 +128,13 @@ export default function AdminPage() {
     };
 
     const handleDenyTutorialRequest = async (requestId) => {
-        const reason = prompt("Reason for denial (optional):");
+        const reason = prompt("Please provide feedback for the user (e.g., 'Please narrow down the topic to focus on a specific platform.'):");
+        if (reason === null) return; // User cancelled the prompt
         try {
-            await api.post(`/api/admin/tutorial-requests/${requestId}/deny?reason=${encodeURIComponent(reason || '')}`);
-            setActionMsg("❌ Request Denied");
+            await api.post(`/api/admin/tutorial-requests/${requestId}/deny`, {
+                reason: reason || "Request not approved at this time."
+            });
+            setActionMsg("❌ Request Denied with Feedback");
             fetchTutorialRequests();
         } catch (err) {
             console.error(err);
