@@ -25,14 +25,48 @@ sys.modules['google.api_core.exceptions'] = Mock()
 sys.modules['app.services.llm_factory'] = Mock()
 
 # Patch other modules to avoid side effects
+mock_templates = MagicMock()
+mock_templates.get_motion_template.return_value = "<html><body>Test</body></html>"
+mock_templates.get_optimized_template.return_value = "cinematic"
+mock_templates.get_layout_for_channel.return_value = "variant-hero-center"
+mock_templates.TEMPLATE_COMPLEXITY = {"cinematic": 1}
+mock_templates.LAYOUT_VARIANTS = {"hero-center": {}}
+
+# Mock claims_verifier and qc_rubric
+mock_claims = MagicMock()
+mock_claims.verify_claims.return_value = ("cleaned text", {"flags": [], "changes_made": False})
+mock_qc = MagicMock()
+mock_qc.evaluate_copy.return_value = {"score": 95, "checks": {}}
+
 with patch.dict('sys.modules', {
-    'app.core.security': Mock(),
-    'app.core.templates': Mock(),
-    'app.services.image_agent': Mock(),
-    'app.services.asset_processor': Mock(),
+    'app.core.security': MagicMock(),
+    'app.core.templates': mock_templates,
+    'app.services.image_agent': MagicMock(),
+    'app.services.asset_processor': MagicMock(),
+    'app.services.claims_verifier': mock_claims,
+    'app.services.qc_rubric': mock_qc,
 }):
     from app.agents.orchestrator_agent import OrchestratorAgent
     import app.agents.orchestrator_agent as orchestrator_module
+    # Patch module-level imports that weren't patched at import time
+    orchestrator_module.verify_claims = lambda text, policy: ("cleaned", {"flags": [], "changes_made": False})
+    orchestrator_module.evaluate_copy = lambda ch, txt, dna, spec: {"score": 95, "checks": {}}
+    orchestrator_module.get_motion_template = lambda *args, **kwargs: "<html><body>Test</body></html>"
+    orchestrator_module.get_optimized_template = lambda *args, **kwargs: "cinematic"
+    orchestrator_module.TEMPLATE_COMPLEXITY = {"cinematic": 1}
+    # Mock CHANNEL_SPECS with minimal valid channel configuration
+    orchestrator_module.CHANNEL_SPECS = {
+        "instagram": {
+            "formats": [{"size": (1080, 1920), "ratio": "9:16", "type": "story"}],
+            "motion_support": False,
+            "tone": "casual"
+        },
+        "linkedin": {
+            "formats": [{"size": (1200, 627), "ratio": "1.91:1", "type": "feed"}],
+            "motion_support": False,
+            "tone": "professional"
+        }
+    }
 
 class ChaosTest(unittest.IsolatedAsyncioTestCase):
     

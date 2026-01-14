@@ -240,7 +240,7 @@ export default function HFTPage() {
                 </div>
 
                 {/* OPTIONS GRID (10 Items) */}
-                <div className="grid grid-cols-5 gap-3 w-full max-w-4xl">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 w-full max-w-4xl">
                     {roundData.options.map((shape) => (
                         <button
                             key={shape.id}

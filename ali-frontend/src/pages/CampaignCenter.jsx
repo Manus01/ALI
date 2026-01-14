@@ -1100,7 +1100,7 @@ export default function CampaignCenter() {
                             <div className="w-20 h-20 bg-blue-50 dark:bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
                                 <FaPalette className="text-4xl text-primary" />
                             </div>
-                            <h2 className="text-3xl font-black text-slate-800 dark:text-white tracking-tight">Complete Your Branding</h2>
+                            <h2 className="text-2xl md:text-3xl font-black text-slate-800 dark:text-white tracking-tight">Complete Your Branding</h2>
                             <p className="text-slate-500 dark:text-slate-400 mt-2 max-w-lg mx-auto font-medium">
                                 Before creating campaigns, let's establish your brand identity. Our AI will craft your unique DNA.
                             </p>
@@ -1212,7 +1212,7 @@ export default function CampaignCenter() {
                             <div className="absolute inset-0 border-8 border-primary border-t-transparent rounded-full animate-spin"></div>
                             <FaPalette className="absolute inset-0 m-auto text-4xl text-primary animate-pulse" />
                         </div>
-                        <h3 className="text-3xl font-black text-slate-800 dark:text-white mb-3 tracking-tight">Analyzing Your Brand...</h3>
+                        <h3 className="text-2xl md:text-3xl font-black text-slate-800 dark:text-white mb-3 tracking-tight">Analyzing Your Brand...</h3>
                         <p className="text-slate-400 max-w-md mx-auto leading-relaxed">
                             Crafting your unique identity for {countries.length > 0 ? countries.slice(0, 3).join(', ') : 'global markets'}.
                         </p>
@@ -1226,7 +1226,7 @@ export default function CampaignCenter() {
                             <div className="inline-flex items-center gap-2 px-5 py-2.5 bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-full text-xs font-black mb-6 border border-green-200 dark:border-green-800 uppercase tracking-widest">
                                 <FaCheckCircle /> Analysis Complete
                             </div>
-                            <h2 className="text-4xl font-black text-slate-800 dark:text-white mb-3 tracking-tighter">Your Creative North Star</h2>
+                            <h2 className="text-2xl md:text-4xl font-black text-slate-800 dark:text-white mb-3 tracking-tighter">Your Creative North Star</h2>
                             <p className="text-slate-500 dark:text-slate-400 font-medium">Select the aesthetic logic for your campaigns.</p>
                         </div>
 
@@ -1284,7 +1284,7 @@ export default function CampaignCenter() {
             )}
             <header className="flex justify-between items-end">
                 <div>
-                    <h1 className="text-3xl font-black text-slate-800 dark:text-white tracking-tight uppercase">Orchestrator</h1>
+                    <h1 className="text-2xl md:text-3xl font-black text-slate-800 dark:text-white tracking-tight uppercase">Orchestrator</h1>
                     <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1">Goal: {goal || "Unassigned"}</p>
                 </div>
                 {/* User Campaign Counter */}
@@ -1626,7 +1626,7 @@ export default function CampaignCenter() {
             {/* STAGE 1: INPUT */}
             {stage === 'input' && (
                 <div className="bg-white dark:bg-slate-800 p-12 text-center border border-slate-100 dark:border-slate-700 shadow-xl rounded-[3rem]">
-                    <FaMagic className="text-5xl text-primary mx-auto mb-6 opacity-10" style={{ color: primaryColor }} />
+                    <FaMagic className="text-4xl md:text-5xl text-primary mx-auto mb-6 opacity-10" style={{ color: primaryColor }} />
 
                     {/* Active Integrations Badge */}
                     {detectedPlatforms.length > 0 ? (
@@ -1717,7 +1717,7 @@ export default function CampaignCenter() {
                         <div className="w-20 h-20 bg-blue-50 dark:bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-6">
                             <FaGlobe className="text-4xl text-primary" style={{ color: primaryColor }} />
                         </div>
-                        <h2 className="text-3xl font-black text-slate-800 dark:text-white tracking-tight mb-3">Select Your Channels</h2>
+                        <h2 className="text-2xl md:text-3xl font-black text-slate-800 dark:text-white tracking-tight mb-3">Select Your Channels</h2>
                         <p className="text-slate-500 dark:text-slate-400 max-w-lg mx-auto font-medium">
                             Choose where you want your campaign to appear. We'll generate dimension-accurate assets for each platform.
                         </p>
@@ -1878,7 +1878,7 @@ export default function CampaignCenter() {
                                 style={{ color: primaryColor }}
                                 className="transition-all duration-1000 ease-in-out" strokeLinecap="round" />
                         </svg>
-                        <div className="absolute inset-0 flex items-center justify-center font-black text-5xl text-slate-800 dark:text-white tracking-tighter">
+                        <div className="absolute inset-0 flex items-center justify-center font-black text-3xl md:text-5xl text-slate-800 dark:text-white tracking-tighter">
                             {progress.percent}%
                         </div>
                     </div>
@@ -2277,7 +2277,7 @@ export default function CampaignCenter() {
             {/* ERROR STAGE */}
             {stage === 'error' && (
                 <div className="p-16 text-center bg-red-50 border border-red-100 rounded-[3rem]">
-                    <FaExclamationTriangle className="text-5xl text-red-400 mx-auto mb-6" />
+                    <FaExclamationTriangle className="text-4xl md:text-5xl text-red-400 mx-auto mb-6" />
                     <h2 className="text-2xl font-black text-red-800 tracking-tight">Orchestration Halted</h2>
                     <p className="text-red-600 mb-8 font-medium">The AI agents encountered a bottleneck. Please restart the deployment.</p>
                     <button onClick={() => setStage('input')} className="bg-white border border-red-200 px-10 py-4 rounded-2xl font-black text-red-700 hover:bg-red-100 transition-all">Restart Planner</button>

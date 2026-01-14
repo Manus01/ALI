@@ -50,10 +50,17 @@ def verify_claims(text: str, claims_policy: Dict = None) -> Tuple[str, Dict]:
     rewritten = text
 
     for phrase in RISKY_PHRASES:
-        if re.search(rf"\b{re.escape(phrase)}\b", rewritten, flags=re.IGNORECASE):
+        # Handle phrases with special characters (like "100%") that don't work well with \b
+        escaped = re.escape(phrase)
+        # If phrase contains non-word chars at boundaries, use lookahead/lookbehind or simpler match
+        if not phrase[0].isalnum() or not phrase[-1].isalnum():
+            pattern = escaped
+        else:
+            pattern = rf"\b{escaped}\b"
+        if re.search(pattern, rewritten, flags=re.IGNORECASE):
             flags.append(phrase)
             replacement = SAFE_REPLACEMENTS.get(phrase, "designed to help")
-            rewritten = re.sub(rf"\b{re.escape(phrase)}\b", replacement, rewritten, flags=re.IGNORECASE)
+            rewritten = re.sub(pattern, replacement, rewritten, flags=re.IGNORECASE)
 
     blocked_terms = _collect_blocked_terms(claims_policy)
     for blocked in blocked_terms:

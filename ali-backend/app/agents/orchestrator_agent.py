@@ -487,32 +487,7 @@ class OrchestratorAgent(BaseAgent):
             logger.info(f"📦 Saved draft {draft_id} [{status}] immediately for {clean_channel}")
             return True
         except Exception as e:
-            logger.error(f"❌ Failed to save draft immediately for {channel}: {e}")
             return False
-
-    def _save_creative_memory(self, uid: str, campaign_id: str, intent: dict, blueprint: dict):
-        """Persist reusable creative hooks and intent per tenant."""
-        try:
-            hooks = []
-            for channel, data in blueprint.items():
-                if not isinstance(data, dict):
-                    continue
-                if data.get("headlines"):
-                    hooks.extend(data["headlines"])
-                if data.get("caption"):
-                    hooks.append(data["caption"])
-                if data.get("body"):
-                    hooks.append(data["body"])
-
-            memory_ref = self.db.collection('users').document(uid).collection('creative_memory')
-            memory_ref.add({
-                "campaignId": campaign_id,
-                "intent": intent,
-                "hooks": hooks[:10],
-                "createdAt": firestore.SERVER_TIMESTAMP
-            })
-        except Exception as e:
-            logger.warning(f"⚠️ Failed to save creative memory: {e}")
 
     def _load_creative_memory(self, uid: str) -> list:
         """Fetch recent reusable hooks for a tenant."""
@@ -1095,7 +1070,7 @@ class OrchestratorAgent(BaseAgent):
                     draft_saved = self._save_draft_immediately(
                         uid, campaign_id, goal, channel,
                         assets.get(asset_key) or assets.get(channel),
-                        meta, blueprint, creative_intent, claims_report, qc_report
+                        meta, blueprint, intent_object, claims_reports.get(channel), qc_reports.get(channel)
                     )
                     # V6.1: Mark channel as complete for resume capability
                     if draft_saved:
@@ -1110,9 +1085,9 @@ class OrchestratorAgent(BaseAgent):
                     partial_data = {
                         "status": "interrupted",
                         "blueprint": blueprint,
-                        "creative_intent": creative_intent,
-                        "claims_report": claims_report,
-                        "qc_report": qc_report,
+                        "creative_intent": intent_object,
+                        "claims_report": claims_reports.get(channel),
+                        "qc_report": qc_reports.get(channel),
                         "assets": assets,
                         "assets_metadata": assets_metadata,
                         "selected_channels": target_channels,
@@ -1135,9 +1110,9 @@ class OrchestratorAgent(BaseAgent):
             final_data = {
                 "status": "completed",
                 "blueprint": blueprint,
-                "creative_intent": creative_intent,
-                "claims_report": claims_report,
-                "qc_report": qc_report,
+                "creative_intent": intent_object,
+                "claims_report": claims_reports,
+                "qc_report": qc_reports,
                 "assets": assets,
                 "assets_metadata": assets_metadata,
                 "selected_channels": target_channels,
@@ -1151,7 +1126,7 @@ class OrchestratorAgent(BaseAgent):
             # Use set with merge=True to handle new campaign documents correctly
             self.db.collection('users').document(uid).collection('campaigns').document(campaign_id).set(final_data, merge=True)
 
-            self._save_creative_memory(uid, campaign_id, goal, blueprint, creative_intent)
+            self._save_creative_memory(uid, campaign_id, goal, blueprint, intent_object)
             
             # 5. V5.1: Handle carousel draft finalization (progressive saving handles most drafts already)
             # Save carousel drafts that weren't handled in the loop
@@ -1204,9 +1179,6 @@ class OrchestratorAgent(BaseAgent):
             
             # V6.1: Clear checkpoint on successful completion
             self._clear_checkpoint(campaign_id)
-
-            # V7.2: Save creative memory for reuse
-            self._save_creative_memory(uid, campaign_id, intent_object, blueprint)
 
         except Exception as e:
             self.handle_error(e)

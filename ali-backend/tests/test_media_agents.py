@@ -15,6 +15,11 @@ import sys
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("test_media_agents")
 
+# Create a proper exception class for ResourceExhausted mock
+class MockResourceExhausted(Exception):
+    """Mock exception for google.api_core.exceptions.ResourceExhausted"""
+    pass
+
 
 # Mock types module for image agent before importing
 mock_types = MagicMock()
@@ -101,11 +106,12 @@ class TestImageAgent:
         
         assert result is None
     
+    @patch('app.services.image_agent.ResourceExhausted', MockResourceExhausted)
     @patch('app.services.image_agent.types')
     @patch('app.services.image_agent.storage.Client')
     @patch('app.services.image_agent.genai.Client')
     def test_image_agent_handles_generation_failure(self, mock_genai, mock_storage, mock_types):
-        """Test that image generation returns None on API failure"""
+        """Test that image generation returns error dict on API failure"""
         from app.services.image_agent import ImageAgent
         
         mock_client = mock_genai.return_value
@@ -113,8 +119,10 @@ class TestImageAgent:
         
         agent = ImageAgent()
         result = agent.generate_image("Test image prompt")
-        
-        assert result is None
+        # ImageAgent now returns error dict instead of None on failures
+        assert result is not None
+        assert isinstance(result, dict)
+        assert "error" in result
     
     @patch('app.services.image_agent.types')
     @patch('app.services.image_agent.storage.Client')

@@ -109,6 +109,20 @@
             ]
         },
         {
+            "collectionGroup": "modules",
+            "queryScope": "COLLECTION",
+            "fields": [
+                {
+                    "fieldPath": "courseId",
+                    "order": "ASCENDING"
+                },
+                {
+                    "fieldPath": "sequence",
+                    "order": "ASCENDING"
+                }
+            ]
+        },
+        {
             "collectionGroup": "tutorials",
             "queryScope": "COLLECTION_GROUP",
             "fields": [
