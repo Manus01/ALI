@@ -522,8 +522,12 @@ export default function CampaignCenter() {
             setStage('input');
 
             console.log('🚨 Crisis Response Mode Activated:', location.state.crisis_data);
+
+            // STATE HYGIENE (Audit Fix v5.2): Clear crisis_data from location state
+            // to prevent stale data on component remount or page refresh
+            navigate(location.pathname, { replace: true, state: {} });
         }
-    }, [location.state]);
+    }, [location.state, location.pathname, navigate]);
 
     // Define fetchFinalResults before the progress listener useEffect that uses it
     const fetchFinalResults = useCallback(async () => {
