@@ -5,7 +5,7 @@ import Logger from '../services/Logger';
 import {
     FaUserCog, FaDatabase, FaPlay, FaBell, FaLink,
     FaSync, FaInstagram, FaLinkedin, FaFacebook, FaTiktok, FaSpinner, FaFileCsv, FaSearch, FaExclamationTriangle,
-    FaCheckCircle, FaTimesCircle, FaLightbulb, FaThList, FaTrash
+    FaCheckCircle, FaTimesCircle, FaLightbulb, FaThList, FaTrash, FaRedo
 } from 'react-icons/fa';
 
 const CHANNEL_ICONS = {
@@ -150,6 +150,29 @@ export default function AdminPage() {
         } catch (err) {
             console.error(err);
             alert("Generation trigger failed: " + (err.response?.data?.detail || err.message));
+        }
+    };
+
+    const handleDeleteTutorialRequest = async (requestId) => {
+        if (!window.confirm("Are you sure you want to delete this request? This cannot be undone.")) return;
+        try {
+            await api.delete(`/api/admin/tutorial-requests/${requestId}`);
+            setActionMsg("🗑️ Request Deleted");
+            fetchTutorialRequests();
+        } catch (err) {
+            console.error(err);
+            alert("Delete failed: " + (err.response?.data?.detail || err.message));
+        }
+    };
+
+    const handleRetryTutorialRequest = async (requestId) => {
+        try {
+            await api.post(`/api/admin/tutorial-requests/${requestId}/retry`);
+            setActionMsg("🔄 Request Reset for Retry");
+            fetchTutorialRequests();
+        } catch (err) {
+            console.error(err);
+            alert("Retry failed: " + (err.response?.data?.detail || err.message));
         }
     };
 
@@ -452,6 +475,21 @@ export default function AdminPage() {
                                                     {req.status === 'APPROVED' && (
                                                         <button onClick={() => handleTriggerGeneration(req.id)} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-indigo-700 flex items-center gap-1">
                                                             <FaPlay /> Generate
+                                                        </button>
+                                                    )}
+                                                    {req.status === 'FAILED' && (
+                                                        <>
+                                                            <button onClick={() => handleRetryTutorialRequest(req.id)} className="bg-amber-500 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-amber-600 flex items-center gap-1">
+                                                                <FaRedo /> Retry
+                                                            </button>
+                                                            <button onClick={() => handleDeleteTutorialRequest(req.id)} className="bg-red-500 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-red-600 flex items-center gap-1">
+                                                                <FaTrash /> Delete
+                                                            </button>
+                                                        </>
+                                                    )}
+                                                    {(req.status === 'COMPLETED' || req.status === 'DENIED') && (
+                                                        <button onClick={() => handleDeleteTutorialRequest(req.id)} className="bg-slate-500 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-slate-600 flex items-center gap-1">
+                                                            <FaTrash /> Delete
                                                         </button>
                                                     )}
                                                 </div>

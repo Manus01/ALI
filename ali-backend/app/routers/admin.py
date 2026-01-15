@@ -710,16 +710,17 @@ def approve_tutorial_request(request_id: str, admin: dict = Depends(verify_admin
             }
         })
         
-        # Notify user
+        # UPDATE the existing notification (created when request was submitted)
+        # SINGLE NOTIFICATION STRATEGY: One notification that updates through lifecycle
         user_id = data.get("userId")
         if user_id:
-            db.collection("users").document(user_id).collection("notifications").document(f"{request_id}_approved").set({
-                "user_id": user_id,
-                "type": "success",
+            db.collection("users").document(user_id).collection("notifications").document(request_id).update({
+                "type": "info",
+                "status": "approved",
                 "title": "Request Approved!",
-                "message": f"Your tutorial request for '{data.get('topic')}' has been approved and is queued for generation.",
+                "message": f"Your tutorial request for '{data.get('topic')}' has been approved. Generation will start shortly.",
                 "read": False,
-                "created_at": firestore.SERVER_TIMESTAMP
+                "updated_at": firestore.SERVER_TIMESTAMP
             })
         
         logger.info(f"✅ Tutorial request {request_id} approved by {admin.get('email')}")
@@ -870,16 +871,16 @@ def trigger_request_generation(request_id: str, admin: dict = Depends(verify_adm
             **saga_map_data
         })
         
-        # Create notification for user
-        notification_ref = db.collection("users").document(user_id).collection("notifications").document(job_id)
-        notification_ref.set({
-            "user_id": user_id,
+        # SINGLE NOTIFICATION STRATEGY: Reuse the notification created when request was submitted
+        # The notification document ID is the request_id, NOT job_id
+        notification_ref = db.collection("users").document(user_id).collection("notifications").document(request_id)
+        notification_ref.update({
             "type": "info",
             "status": "generating",
-            "title": "Tutorial Generation Started",
+            "title": "Generating Tutorial...",
             "message": f"'{topic}' is now being generated. You'll be notified when ready.",
             "read": False,
-            "created_at": firestore.SERVER_TIMESTAMP
+            "updated_at": firestore.SERVER_TIMESTAMP
         })
         
         # Trigger background job (imports here to avoid circular dependencies)
@@ -890,8 +891,14 @@ def trigger_request_generation(request_id: str, admin: dict = Depends(verify_adm
             try:
                 result = process_tutorial_job(job_id, user_id, topic, notification_ref.id)
                 
-                # Get the actual tutorial ID from the job result
-                tutorial_id = result.get("result_id", job_id) if isinstance(result, dict) else job_id
+                # Get the actual tutorial ID from the job result - do NOT fallback to job_id
+                # as job_id and tutorial_id are different concepts
+                tutorial_id = result.get("result_id") if isinstance(result, dict) else None
+                
+                if not tutorial_id:
+                    logger.error(f"❌ Job {job_id} completed but no result_id returned")
+                    doc_ref.update({"status": "FAILED", "error": "No tutorial ID returned from generation"})
+                    return
                 
                 # --- SAGA MAP: Update Module's tutorialIds ---
                 if saga_map_data.get("moduleId"):
@@ -908,17 +915,22 @@ def trigger_request_generation(request_id: str, admin: dict = Depends(verify_adm
                 # --- SAGA MAP: Assign courseId/moduleId to the tutorial document ---
                 if saga_map_data:
                     try:
-                        # Update global tutorial
-                        db.collection("tutorials").document(tutorial_id).update({
-                            "courseId": saga_map_data.get("courseId"),
-                            "moduleId": saga_map_data.get("moduleId"),
-                        })
-                        # Update user's private copy
-                        db.collection("users").document(user_id).collection("tutorials").document(tutorial_id).update({
-                            "courseId": saga_map_data.get("courseId"),
-                            "moduleId": saga_map_data.get("moduleId"),
-                        })
-                        logger.info(f"🗺️ Saga Map: Tutorial {tutorial_id} assigned to hierarchy")
+                        # Verify tutorial document exists before updating (race condition fix)
+                        tutorial_doc = db.collection("tutorials").document(tutorial_id).get()
+                        if not tutorial_doc.exists:
+                            logger.warning(f"⚠️ Tutorial {tutorial_id} not found in global collection, skipping hierarchy assignment")
+                        else:
+                            # Update global tutorial
+                            db.collection("tutorials").document(tutorial_id).update({
+                                "courseId": saga_map_data.get("courseId"),
+                                "moduleId": saga_map_data.get("moduleId"),
+                            })
+                            # Update user's private copy
+                            db.collection("users").document(user_id).collection("tutorials").document(tutorial_id).update({
+                                "courseId": saga_map_data.get("courseId"),
+                                "moduleId": saga_map_data.get("moduleId"),
+                            })
+                            logger.info(f"🗺️ Saga Map: Tutorial {tutorial_id} assigned to hierarchy")
                     except Exception as assign_err:
                         logger.warning(f"⚠️ Failed to assign tutorial to hierarchy: {assign_err}")
                 
@@ -930,7 +942,8 @@ def trigger_request_generation(request_id: str, admin: dict = Depends(verify_adm
                 
             except Exception as e:
                 logger.error(f"❌ Generation job failed: {e}")
-                doc_ref.update({"status": "FAILED"})
+                doc_ref.update({"status": "FAILED", "error": str(e)})
+
         
         # Start in background thread
         thread = threading.Thread(target=run_job)
@@ -962,7 +975,97 @@ def trigger_request_generation(request_id: str, admin: dict = Depends(verify_adm
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# --- TUTORIAL REQUEST DELETE/RETRY (Admin UI Support) ---
+
+@router.delete("/tutorial-requests/{request_id}")
+def delete_tutorial_request(request_id: str, admin: dict = Depends(verify_admin)):
+    """
+    Delete a tutorial request (for FAILED or COMPLETED requests).
+    """
+    try:
+        doc_ref = db.collection("tutorial_requests").document(request_id)
+        doc = doc_ref.get()
+        
+        if not doc.exists:
+            raise HTTPException(status_code=404, detail="Request not found")
+        
+        data = doc.to_dict()
+        
+        # Only allow deletion of FAILED, COMPLETED, or DENIED requests
+        if data.get("status") in ["PENDING", "APPROVED", "GENERATING"]:
+            raise HTTPException(status_code=400, detail=f"Cannot delete request in {data.get('status')} status")
+        
+        doc_ref.delete()
+        
+        logger.info(f"🗑️ Tutorial request {request_id} deleted by {admin.get('email')}")
+        
+        # Audit Trail
+        log_audit_action(
+            admin_id=admin.get("uid", "unknown"),
+            admin_email=admin.get("email"),
+            action="DELETE_TUTORIAL_REQUEST",
+            target_id=request_id,
+            target_type="tutorialRequest",
+            details={"topic": data.get("topic"), "previous_status": data.get("status")}
+        )
+        
+        return {"status": "success", "message": "Request deleted."}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Delete Request Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/tutorial-requests/{request_id}/retry")
+def retry_tutorial_request(request_id: str, admin: dict = Depends(verify_admin)):
+    """
+    Retry a FAILED tutorial request by resetting its status to APPROVED.
+    """
+    try:
+        doc_ref = db.collection("tutorial_requests").document(request_id)
+        doc = doc_ref.get()
+        
+        if not doc.exists:
+            raise HTTPException(status_code=404, detail="Request not found")
+        
+        data = doc.to_dict()
+        
+        if data.get("status") != "FAILED":
+            raise HTTPException(status_code=400, detail=f"Can only retry FAILED requests. Current: {data.get('status')}")
+        
+        doc_ref.update({
+            "status": "APPROVED",
+            "error": None,
+            "retryCount": firestore.Increment(1),
+            "retriedAt": firestore.SERVER_TIMESTAMP,
+            "retriedBy": admin.get("email")
+        })
+        
+        logger.info(f"🔄 Tutorial request {request_id} reset for retry by {admin.get('email')}")
+        
+        # Audit Trail
+        log_audit_action(
+            admin_id=admin.get("uid", "unknown"),
+            admin_email=admin.get("email"),
+            action="RETRY_TUTORIAL_REQUEST",
+            target_id=request_id,
+            target_type="tutorialRequest",
+            details={"topic": data.get("topic")}
+        )
+        
+        return {"status": "APPROVED", "message": "Request reset for retry. Click Generate to start."}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Retry Request Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # --- ALI ORCHESTRATION HUB ENDPOINTS (Spec: Unified Governance) ---
+
 
 @router.get("/creative-drafts")
 def get_creative_drafts(status: Optional[str] = None, admin: dict = Depends(verify_admin)):

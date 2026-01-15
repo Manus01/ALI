@@ -11,6 +11,11 @@ def process_tutorial_job(job_id: str, user_id: str, topic: str, notification_id:
     """
     Background task that generates the tutorial and updates status.
     Updates the SAME notification to prevent 'stale loading' UI.
+    
+    NOTIFICATION STRATEGY (Spam Reduction):
+    - Do NOT create intermediate "Generation Started" notifications
+    - Only update the existing notification ONCE at completion ("New Lesson Ready")
+    - This reduces notifications from 4+ to 2 per request
     """
     logger.info(f"⚙️ Worker: Starting Job {job_id} for {topic}...")
     
@@ -23,54 +28,17 @@ def process_tutorial_job(job_id: str, user_id: str, topic: str, notification_id:
              "status": "failed",
              "error": "Internal Import Error: AI service client failed to load"
         })
-        return
+        return None
 
     job_ref = db.collection("jobs").document(job_id)
 
-    # Track the Notification ID so we can update it later
-    notification_ref = None
+    # Track the Notification ID so we can update it at completion
+    notifications_col = db.collection("users").document(user_id).collection("notifications")
+    notification_ref = notifications_col.document(notification_id) if notification_id else None
 
     try:
-        # 1. Update Status -> Processing
+        # 1. Update Status -> Processing (no notification spam here)
         job_ref.update({"status": "processing", "started_at": firestore.SERVER_TIMESTAMP})
-
-        # 2. Create or reuse notification to reflect processing immediately
-        notifications_col = db.collection("users").document(user_id).collection("notifications")
-        if notification_id:
-            notification_ref = notifications_col.document(notification_id)
-            notification_ref.set({
-                "user_id": user_id,
-                "status": "processing",
-                "type": "info",
-                "title": "Generation Started",
-                "message": f"AI is crafting your course on '{topic}'. This may take a minute.",
-                "link": None,
-                "read": False,
-                "created_at": firestore.SERVER_TIMESTAMP,
-                "updated_at": firestore.SERVER_TIMESTAMP
-            }, merge=True)
-        else:
-            _, notification_ref = notifications_col.add({
-                "user_id": user_id,
-                "type": "info", # Usually renders as spinner/info icon
-                "status": "processing",
-                "title": "Generation Started",
-                "message": f"AI is crafting your course on '{topic}'. This may take a minute.",
-                "link": None,
-                "read": False,
-                "created_at": firestore.SERVER_TIMESTAMP
-            })
-
-        notification_id_to_use = notification_ref.id if notification_ref else notification_id
-
-        # Define progress callback to update the notification in real-time
-        def update_progress(msg):
-            if notification_ref:
-                notification_ref.update({
-                    "message": msg,
-                    "status": "processing",
-                    "updated_at": firestore.SERVER_TIMESTAMP
-                })
 
         # ⚡ CLOUD RUN KEEP-ALIVE: Heartbeat Thread ⚡
         # This prevents CPU throttling by generating periodic log output
@@ -88,20 +56,21 @@ def process_tutorial_job(job_id: str, user_id: str, topic: str, notification_id:
         heartbeat_thread.start()
         
         try:
-            # 3. Run the Heavy AI Generation (Takes 60s+)
+            # 2. Run the Heavy AI Generation (Takes 60s+)
+            # Note: progress_callback removed to reduce notification spam
             tutorial_data = generate_tutorial(
                 user_id,
                 topic,
-                progress_callback=update_progress,
-                notification_id=notification_id_to_use
+                progress_callback=None,  # No intermediate updates
+                notification_id=notification_id
             )
         finally:
             # Stop heartbeat regardless of success/failure
             heartbeat_active[0] = False
             logger.info(f"💓 Heartbeat stopped for Job {job_id}")
 
-        # 4. UPDATE the Existing Notification to "Ready"
-        # This replaces the "Started" spinner with the "Success" state!
+        # 3. UPDATE the Existing Notification to "Ready" (SINGLE UPDATE)
+        # This is the ONLY notification update - replaces "Request Submitted" with "Success"
         if notification_ref:
             notification_ref.update({
                 "type": "success",
@@ -113,19 +82,22 @@ def process_tutorial_job(job_id: str, user_id: str, topic: str, notification_id:
                 "updated_at": firestore.SERVER_TIMESTAMP
             })
 
-        # 5. Mark Job Complete
+        # 4. Mark Job Complete
         job_ref.update({
             "status": "completed", 
             "result_id": tutorial_data["id"],
             "completed_at": firestore.SERVER_TIMESTAMP
         })
-        logger.info(f"✅ Worker: Job {job_id} Finished.")
+        logger.info(f"✅ Worker: Job {job_id} Finished. Tutorial ID: {tutorial_data['id']}")
+        
+        # Return result for caller to use
+        return {"result_id": tutorial_data["id"]}
 
     except Exception as e:
         logger.error(f"❌ Worker Error: {e}")
         job_ref.update({"status": "failed", "error": str(e)})
         
-        # Also update notification to Failure state if possible
+        # Update notification to Failure state
         if notification_ref:
             notification_ref.update({
                 "type": "error",
@@ -135,3 +107,6 @@ def process_tutorial_job(job_id: str, user_id: str, topic: str, notification_id:
                 "read": False,
                 "updated_at": firestore.SERVER_TIMESTAMP
             })
+        
+        return None
+
