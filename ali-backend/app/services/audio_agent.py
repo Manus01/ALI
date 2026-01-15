@@ -1,12 +1,13 @@
 import os
-
+import base64
 import time
 import logging
 import uuid
 import urllib.parse
 import re
-from typing import Optional, Any
+from typing import Optional, Any, Union
 from google import genai
+from google.genai import types
 from google.cloud import storage
 
 # Configure Logger
@@ -14,8 +15,12 @@ logger = logging.getLogger("ali_platform.services.audio_agent")
 
 # Configuration
 BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "ali-platform-prod-73019.firebasestorage.app")
-# Updated 2026-01-07: gemini-1.5-pro deprecated, using Gemini 2.5 Flash for TTS
-TTS_MODEL = os.getenv("TTS_MODEL", "gemini-2.5-flash") 
+# Updated 2026-01-15: Using Gemini 2.5 Flash TTS Preview model with proper audio config
+TTS_MODEL = os.getenv("TTS_MODEL", "gemini-2.5-flash-preview-tts")
+# Fallback to flash-lite if preview unavailable
+TTS_MODEL_FALLBACK = "gemini-2.5-flash-lite-tts"
+# Default voice name (from Gemini TTS prebuilt voices)
+TTS_VOICE = os.getenv("TTS_VOICE", "Aoede")
 
 class AudioAgent:
     def __init__(self):
@@ -33,18 +38,17 @@ class AudioAgent:
         """Initializes the Google GenAI client with integer Project ID."""
         try:
             project_id = os.getenv("GENAI_PROJECT_ID", os.getenv("PROJECT_ID", "776425171266"))
-
             location = os.getenv("AI_STUDIO_LOCATION", "us-central1")
             self.client = genai.Client(
                 vertexai=True,
                 project=str(project_id),
                 location=location
             )
-            logger.info("✅ AudioAgent initialized (Gemini 2.5 TTS).")
+            logger.info(f"✅ AudioAgent initialized (Model: {TTS_MODEL}).")
         except Exception as e:
             logger.error(f"❌ AudioAgent Client Init Failed: {e}")
 
-    def _upload_bytes(self, data: bytes, folder: str = "general", extension: str = "mp3", content_type: str = "audio/mpeg") -> dict:
+    def _upload_bytes(self, data: bytes, folder: str = "general", extension: str = "wav", content_type: str = "audio/wav") -> dict:
         """Uploads raw bytes to GCS and returns a persistent Firebase Download URL."""
         if not self.storage_client: return {"url": "", "gcs_object_key": ""}
         try:
@@ -63,7 +67,7 @@ class AudioAgent:
             blob.metadata = metadata
             blob.patch()
             
-            logger.info(f"   ✅ Audio Uploaded (Persistent): {filename}")
+            logger.info(f"   ✅ Audio Uploaded (Persistent): {filename} ({len(data)} bytes)")
             
             # Construct Persistent URL
             encoded_path = urllib.parse.quote(filename, safe="")
@@ -78,92 +82,192 @@ class AudioAgent:
             logger.error(f"❌ Upload Failed: {e}")
             return {"url": "", "gcs_object_key": ""}
 
-    def generate_audio(self, text: str, folder: str = "general") -> Optional[str]:
+    def generate_audio(self, text: str, folder: str = "general") -> Optional[Union[str, dict]]:
         """
-        Generates audio using Gemini 2.5 Pro (TTS Prompting).
-        Returns a persistent Firebase URL.
-        """
-        if not self.client or not text: return None
+        Generates audio using Gemini 2.5 TTS Preview model.
         
-        request_id = str(uuid.uuid4())
+        IMPORTANT: This uses:
+        - response_modalities=["AUDIO"] to request audio output
+        - speechConfig with prebuilt voice configuration
+        
+        Returns a persistent Firebase URL dict or None on failure.
+        """
+        if not self.client or not text: 
+            logger.error("❌ AudioAgent client not initialized or empty text")
+            return None
+        
+        request_id = str(uuid.uuid4())[:8]
         
         # Validation: Text length limit for TTS
         if len(text) > 4096:
             logger.warning(f"⚠️ Text too long for TTS ({len(text)} chars). Truncating.")
             text = text[:4096]
             
-        logger.info(f"🎙️ Gemini 2.5 TTS Generating (Req: {request_id}): {text[:50]}...")
+        logger.info(f"🎙️ TTS Generation Started (Req: {request_id})")
+        logger.info(f"   Model: {TTS_MODEL}")
+        logger.info(f"   Voice: {TTS_VOICE}")
+        logger.info(f"   Text preview: {text[:80]}...")
         
         try:
-            clean_text = re.sub(r'[*#`]', '', text) # Sanitize markdown
-
-            # Prompting for specific voice and format
-            prompt = f"Generate spoken audio for the following text using the 'Aoede' voice (High Definition). Return raw MP3 bytes.\n\nTEXT: {clean_text}"
-
-            operation = self.client.models.generate_content(
-                model=TTS_MODEL,
-                contents=prompt
-            )
-
-            # Manual Polling (Standardized)
-            response = operation
-            if hasattr(operation, "done"):
-                while not operation.done():
-                    time.sleep(1)
-                
-                if getattr(operation, "error", None):
-                    logger.error(f"❌ TTS Operation Failed: {operation.error}")
-                    return None
-                    
-                # Extract Result
-                if hasattr(operation, "result"):
-                    # Handle both method and property
-                    if callable(operation.result):
-                        response = operation.result() 
-                    else:
-                        response = operation.result
-
-            # Byte Extraction
-            audio_bytes = None
+            # Sanitize markdown artifacts from text
+            clean_text = re.sub(r'[*#`_~]', '', text)
+            clean_text = re.sub(r'\[([^\]]+)\]\([^)]+\)', r'\1', clean_text)  # Remove markdown links
             
-            # Helper for bytes normalization
+            # Build proper GenerateContentConfig for TTS
+            # CRITICAL: responseModalities=["AUDIO"] tells Gemini to output audio bytes
+            speech_config = types.SpeechConfig(
+                voice_config=types.VoiceConfig(
+                    prebuilt_voice_config=types.PrebuiltVoiceConfig(
+                        voice_name=TTS_VOICE
+                    )
+                )
+            )
+            
+            generation_config = types.GenerateContentConfig(
+                response_modalities=["AUDIO"],
+                speech_config=speech_config
+            )
+            
+            logger.info(f"   📤 Sending TTS request...")
+            
+            # Call generate_content with proper config
+            response = self.client.models.generate_content(
+                model=TTS_MODEL,
+                contents=clean_text,  # For TTS, just pass the text directly
+                config=generation_config
+            )
+            
+            # === DEBUG LOGGING: Log raw response structure ===
+            logger.info(f"   📥 Response received. Inspecting structure...")
+            
+            # Log response type and main attributes
+            logger.info(f"   Response type: {type(response).__name__}")
+            
+            if hasattr(response, 'candidates') and response.candidates:
+                logger.info(f"   Candidates count: {len(response.candidates)}")
+                candidate = response.candidates[0]
+                
+                if hasattr(candidate, 'content') and candidate.content:
+                    content = candidate.content
+                    if hasattr(content, 'parts') and content.parts:
+                        logger.info(f"   Parts count: {len(content.parts)}")
+                        
+                        for i, part in enumerate(content.parts):
+                            logger.info(f"   Part[{i}] type: {type(part).__name__}")
+                            logger.info(f"   Part[{i}] attributes: {[attr for attr in dir(part) if not attr.startswith('_')]}")
+                            
+                            # Check for inline_data
+                            if hasattr(part, 'inline_data'):
+                                inline_data = part.inline_data
+                                if inline_data:
+                                    logger.info(f"   Part[{i}].inline_data found!")
+                                    logger.info(f"   inline_data type: {type(inline_data).__name__}")
+                                    if hasattr(inline_data, 'mime_type'):
+                                        logger.info(f"   inline_data.mime_type: {inline_data.mime_type}")
+                                    if hasattr(inline_data, 'data'):
+                                        data = inline_data.data
+                                        logger.info(f"   inline_data.data type: {type(data).__name__}")
+                                        if data:
+                                            if isinstance(data, bytes):
+                                                logger.info(f"   inline_data.data size: {len(data)} bytes")
+                                            elif isinstance(data, str):
+                                                logger.info(f"   inline_data.data is string, length: {len(data)}")
+                                else:
+                                    logger.info(f"   Part[{i}].inline_data is None/empty")
+                            
+                            # Check for text
+                            if hasattr(part, 'text') and part.text:
+                                logger.info(f"   Part[{i}].text (first 100 chars): {part.text[:100] if len(part.text) > 100 else part.text}")
+                    else:
+                        logger.warning(f"   ⚠️ No parts in content")
+                else:
+                    logger.warning(f"   ⚠️ No content in candidate")
+            else:
+                logger.warning(f"   ⚠️ No candidates in response")
+                # Log additional response info for debugging
+                if hasattr(response, 'text'):
+                    logger.info(f"   response.text: {response.text[:200] if response.text else 'None'}")
+                logger.info(f"   Response dir: {[a for a in dir(response) if not a.startswith('_')]}")
+            
+            # === BYTE EXTRACTION ===
+            audio_bytes = None
+            mime_type = None
+            
             def _normalize_bytes(raw: Any) -> Optional[bytes]:
-                if raw is None: return None
-                if isinstance(raw, bytes): return raw
-                if isinstance(raw, bytearray): return bytes(raw)
+                """Normalize various data types to bytes, including Base64 decoding."""
+                if raw is None: 
+                    return None
+                if isinstance(raw, bytes): 
+                    return raw
+                if isinstance(raw, bytearray): 
+                    return bytes(raw)
+                if isinstance(raw, str):
+                    # Try Base64 decode
+                    try:
+                        decoded = base64.b64decode(raw)
+                        logger.info(f"   ✅ Base64 decoded: {len(decoded)} bytes")
+                        return decoded
+                    except Exception as e:
+                        logger.warning(f"   ⚠️ Base64 decode failed: {e}")
+                        return None
                 if isinstance(raw, list):
-                    try: return bytes(raw)
-                    except Exception: 
-                        logger.warning("Audio concatenation fallback failed.")
-                        return b"".join(raw) if all(isinstance(x, (bytes, bytearray)) for x in raw) else None
+                    try: 
+                        return bytes(raw)
+                    except Exception:
+                        if all(isinstance(x, (bytes, bytearray)) for x in raw):
+                            return b"".join(raw)
+                        return None
                 return None
 
             try:
-                # Attempt 1: Inline Data in Candidates
-                if response and getattr(response, "candidates", None):
-                    for part in response.candidates[0].content.parts:
-                        inline_data = getattr(part, "inline_data", None)
-                        if inline_data and getattr(inline_data, "data", None):
-                            audio_bytes = _normalize_bytes(inline_data.data)
+                # Extract from candidates -> content -> parts -> inline_data
+                if response and getattr(response, 'candidates', None):
+                    for candidate in response.candidates:
+                        if not hasattr(candidate, 'content') or not candidate.content:
+                            continue
+                        if not hasattr(candidate.content, 'parts') or not candidate.content.parts:
+                            continue
+                            
+                        for part in candidate.content.parts:
+                            inline_data = getattr(part, 'inline_data', None)
+                            if inline_data:
+                                raw_data = getattr(inline_data, 'data', None)
+                                if raw_data:
+                                    audio_bytes = _normalize_bytes(raw_data)
+                                    mime_type = getattr(inline_data, 'mime_type', 'audio/wav')
+                                    if audio_bytes:
+                                        logger.info(f"   ✅ Audio bytes extracted: {len(audio_bytes)} bytes, mime: {mime_type}")
+                                        break
+                        if audio_bytes:
                             break
-                
-                # Attempt 2: Text Fallback (Encoded)
-                if not audio_bytes and getattr(response, "text", None):
-                    # Sometimes comes back as text if prompt wasn't obeyed perfectly, or strictly text mode
-                    # But for TTS prompt, if it fails to give bytes, it might be an error message.
-                    # We'll valid check len.
-                    pass 
 
             except Exception as e:
-                logger.warning(f"⚠️ Byte extraction warning: {e}")
+                logger.warning(f"⚠️ Byte extraction error: {e}", exc_info=True)
 
+            if audio_bytes and len(audio_bytes) > 100:  # Sanity check: audio should be >100 bytes
+                # Determine file extension from mime_type
+                ext = "wav"
+                content_type = "audio/wav"
+                if mime_type:
+                    if "mp3" in mime_type or "mpeg" in mime_type:
+                        ext = "mp3"
+                        content_type = "audio/mpeg"
+                    elif "ogg" in mime_type:
+                        ext = "ogg"
+                        content_type = "audio/ogg"
+                    elif "wav" in mime_type:
+                        ext = "wav"
+                        content_type = "audio/wav"
+                
+                logger.info(f"   🎵 Audio generation successful! ({len(audio_bytes)} bytes, {ext})")
+                return self._upload_bytes(audio_bytes, folder=folder, extension=ext, content_type=content_type)
+
+            logger.error(f"❌ Audio Generation failed: No valid audio bytes returned.")
+            logger.error(f"   audio_bytes is None: {audio_bytes is None}")
             if audio_bytes:
-                # Return full dict (URL + Key)
-                return self._upload_bytes(audio_bytes, folder=folder)
-
-            logger.error("❌ Audio Generation failed: No bytes returned.")
+                logger.error(f"   audio_bytes length: {len(audio_bytes)}")
             return None
 
         except Exception as e:
-            logger.error(f"❌ Audio Generation Error: {e}")
+            logger.error(f"❌ Audio Generation Error: {e}", exc_info=True)
             return None
