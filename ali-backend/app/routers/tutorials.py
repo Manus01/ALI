@@ -126,8 +126,54 @@ def request_tutorial(payload: TutorialRequestCreate, user: dict = Depends(verify
         traceback.print_exc()
         raise HTTPException(status_code=500, detail="Failed to submit request.")
 
-
 # --- 1. ASYNC GENERATION (Admin-Only per Spec v1.2 §4.1) ---
+
+# --- FALLBACK: Lookup Tutorial by Request ID ---
+@router.get("/tutorials/by-request/{request_id}")
+def get_tutorial_by_request_id(request_id: str, user: dict = Depends(verify_token)):
+    """
+    Fallback endpoint: If a notification links to a request_id,
+    this resolves it to the actual tutorial_id and returns a redirect hint.
+    Used by frontend when direct tutorial fetch returns 404.
+    """
+    try:
+        _require_db("get_tutorial_by_request_id")()
+        
+        doc = db.collection("tutorial_requests").document(request_id).get()
+        if not doc.exists:
+            raise HTTPException(status_code=404, detail="Request not found")
+        
+        data = doc.to_dict()
+        
+        # Security: Only allow user to lookup their own requests
+        if data.get("userId") != user["uid"] and not user.get("is_admin", False):
+            raise HTTPException(status_code=403, detail="Not authorized to view this request")
+        
+        tutorial_id = data.get("tutorialId")
+        
+        if not tutorial_id:
+            # Tutorial not generated yet - return status info
+            return {
+                "status": data.get("status", "PENDING"),
+                "tutorialId": None,
+                "topic": data.get("topic")
+            }
+        
+        return {
+            "status": "COMPLETED",
+            "tutorialId": tutorial_id,
+            "topic": data.get("topic")
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Lookup by Request ID Error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to lookup request")
+
+
+# --- 2. ASYNC GENERATION (Admin-Only per Spec v1.2 §4.1) ---
+
 @router.post("/generate/tutorial")
 def start_tutorial_job(
     topic: str,

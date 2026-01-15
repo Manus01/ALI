@@ -91,13 +91,35 @@ export default function TutorialDetailsPage() {
                 setActiveSectionIndex(0);
             } catch (err) {
                 console.error(err);
+
+                // FALLBACK: Check if this ID is a request_id (notification link mismatch fix)
+                if (err.response?.status === 404) {
+                    try {
+                        const fallback = await api.get(`/tutorials/by-request/${id}`);
+                        if (fallback.data.tutorialId) {
+                            // Redirect to the actual tutorial
+                            navigate(`/tutorials/${fallback.data.tutorialId}`, { replace: true });
+                            return;
+                        } else if (fallback.data.status && fallback.data.status !== 'COMPLETED') {
+                            // Tutorial is still generating - show friendly message
+                            const statusMsg = fallback.data.status.toLowerCase().replace('_', ' ');
+                            setError(`Your tutorial "${fallback.data.topic || 'requested lesson'}" is still ${statusMsg}. Please check back shortly.`);
+                            setLoading(false);
+                            return;
+                        }
+                    } catch {
+                        // Request ID also not found - genuine 404
+                    }
+                }
+
                 setError('Unable to load this tutorial right now. Please try again.');
             } finally {
                 setLoading(false);
             }
         };
         fetchTutorial();
-    }, [currentUser, id]);
+    }, [currentUser, id, navigate]);
+
 
     // 2. RESET STATE ON PAGE CHANGE
     useEffect(() => {
