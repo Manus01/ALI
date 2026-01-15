@@ -5,7 +5,7 @@ import Logger from '../services/Logger';
 import {
     FaUserCog, FaDatabase, FaPlay, FaBell, FaLink,
     FaSync, FaInstagram, FaLinkedin, FaFacebook, FaTiktok, FaSpinner, FaFileCsv, FaSearch, FaExclamationTriangle,
-    FaCheckCircle, FaTimesCircle, FaLightbulb, FaThList
+    FaCheckCircle, FaTimesCircle, FaLightbulb, FaThList, FaTrash
 } from 'react-icons/fa';
 
 const CHANNEL_ICONS = {
@@ -255,6 +255,18 @@ export default function AdminPage() {
         } catch (err) {
             console.error(err);
             alert("Failed to delete report");
+        }
+    };
+
+    const handleClearAllReports = async () => {
+        if (!window.confirm("⚠️ Are you sure you want to delete ALL error reports? This cannot be undone.")) return;
+        try {
+            const res = await api.delete('/api/admin/tasks/reports/all');
+            setAiReports([]);
+            setActionMsg(`🧹 Cleared ${res.data.deleted_count || 'all'} reports.`);
+        } catch (err) {
+            console.error(err);
+            alert("Failed to clear reports: " + (err.response?.data?.detail || err.message));
         }
     };
 
@@ -869,6 +881,9 @@ export default function AdminPage() {
                         <button onClick={handleRunTroubleshooter} disabled={loadingAI} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-indigo-700 transition-all flex items-center gap-2">
                             {loadingAI ? <FaSpinner className="animate-spin" /> : <FaSearch />} Analyze Logs Now
                         </button>
+                        <button onClick={handleClearAllReports} className="bg-red-500 text-white px-4 py-2 rounded-xl text-xs font-bold hover:bg-red-600 transition-all flex items-center gap-2">
+                            <FaTrash /> Clear All
+                        </button>
                         <button onClick={fetchAiReports} className="text-xs font-bold text-slate-500 hover:bg-slate-50 px-3 py-2 rounded-xl transition-all flex items-center gap-1">
                             <FaSync /> Refresh
                         </button>
@@ -904,11 +919,18 @@ export default function AdminPage() {
                                     <FaExclamationTriangle className="transform rotate-180" />
                                 </button>
                                 <div className="flex justify-between items-start mb-3 pr-8">
-                                    <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${report.severity === 'CRITICAL' ? 'bg-red-500 text-white' :
-                                        report.severity === 'HIGH' ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'
-                                        }`}>
-                                        {report.severity}
-                                    </span>
+                                    <div className="flex items-center gap-2">
+                                        <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${report.severity === 'CRITICAL' ? 'bg-red-500 text-white' :
+                                            report.severity === 'HIGH' ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'
+                                            }`}>
+                                            {report.severity}
+                                        </span>
+                                        {(report.occurrence_count && report.occurrence_count > 1) && (
+                                            <span className="px-2 py-1 rounded-full text-[10px] font-black bg-amber-100 text-amber-700 flex items-center gap-1">
+                                                🔁 Happened {report.occurrence_count} times
+                                            </span>
+                                        )}
+                                    </div>
                                     <span className="text-[10px] font-mono text-slate-400">{new Date(report.created_at).toLocaleTimeString()}</span>
                                 </div>
                                 <h3 className="font-bold text-slate-800 text-sm mb-2">{report.title}</h3>

@@ -145,18 +145,38 @@ class TroubleshootingAgent:
             return {"status": "healthy", "scanned_events": 0}
 
         tasks_created = 0
+        tasks_updated = 0
         logger.info(f"🐕 Watchdog: Analyzing {len(events)} anomalous events...")
         
         for event in events:
-            # Check for existing pending task to dedupe
             sig = event.get('signature')
-            exists = db.collection('admin_tasks').where(filter=FieldFilter('type', '==', 'error_report')).where(filter=FieldFilter('error_signature', '==', sig)).where(filter=FieldFilter('status', '==', 'pending')).limit(1).get()
-            if len(exists) > 0: continue
+            
+            # DEDUPLICATION: Check for existing unresolved report with same signature
+            existing_docs = db.collection('admin_tasks')\
+                .where(filter=FieldFilter('type', '==', 'error_report'))\
+                .where(filter=FieldFilter('error_signature', '==', sig))\
+                .where(filter=FieldFilter('status', '!=', 'resolved'))\
+                .limit(1).get()
+            
+            if len(existing_docs) > 0:
+                # UPDATE existing report: increment occurrence_count and update timestamp
+                existing_doc = existing_docs[0]
+                existing_data = existing_doc.to_dict()
+                current_count = existing_data.get('occurrence_count', 1)
+                
+                db.collection('admin_tasks').document(existing_doc.id).update({
+                    'occurrence_count': current_count + 1,
+                    'last_occurred_at': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                    'updated_at': datetime.datetime.now(datetime.timezone.utc).isoformat()
+                })
+                tasks_updated += 1
+                logger.debug(f"📊 Deduplicated: Updated occurrence_count to {current_count + 1} for signature {sig[:30]}...")
+                continue
 
-            # Analyze
+            # Analyze new error
             analysis = self.analyze_error(event)
             
-            # File Report
+            # File NEW Report with occurrence_count = 1
             db.collection("admin_tasks").add({
                  "type": "error_report",
                  "status": "pending",
@@ -166,11 +186,13 @@ class TroubleshootingAgent:
                  "error_signature": sig,
                  "raw_log": event.get("payload"),
                  "sre_analysis": analysis,
-                 "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
+                 "occurrence_count": 1,
+                 "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                 "last_occurred_at": datetime.datetime.now(datetime.timezone.utc).isoformat()
             })
             tasks_created += 1
             
-        return {"status": "anomalies_detected", "new_reports": tasks_created}
+        return {"status": "anomalies_detected", "new_reports": tasks_created, "updated_reports": tasks_updated}
 
     def analyze_error(self, error_entry: Dict[str, Any]) -> Dict[str, Any]:
         """
@@ -245,13 +267,29 @@ class TroubleshootingAgent:
                     analysis = {"root_cause": "AI Analysis Failed", "suggested_fix": text}
             
             return analysis
-            
+        
         except Exception as e:
+            # IMPROVED ERROR CLASSIFICATION: Catch ResourceExhausted specifically
+            error_str = str(e)
+            error_type = type(e).__name__
+            
+            # Check for Quota/ResourceExhausted errors (google.api_core.exceptions.ResourceExhausted)
+            if 'ResourceExhausted' in error_type or 'quota' in error_str.lower() or '429' in error_str:
+                logger.warning(f"⚠️ Quota Limit Detected: {e}")
+                return {
+                    "root_cause": "Quota Limit Reached",
+                    "suggested_fix": "API quota exceeded. Wait for quota reset or increase limits in Google Cloud Console.",
+                    "severity": "MEDIUM",
+                    "is_transient": True,
+                    "technical_details": error_str
+                }
+            
             logger.warning(f"⚠️ Analysis Failed: {e}")
             return {
                 "root_cause": "Analysis Engine Failure",
-                "suggested_fix": "Check AI quotas.",
-                "technical_details": str(e)
+                "suggested_fix": "Check AI quotas and service status.",
+                "severity": "HIGH",
+                "technical_details": error_str
             }
 
     # DEPRECATED: Old Manual Trigger (Refactored to monitor_system_health)

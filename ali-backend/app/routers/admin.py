@@ -576,6 +576,39 @@ def get_pending_tasks(admin: dict = Depends(verify_admin)):
         logger.error(f"❌ Fetch Pending Tasks Error: {e}")
         return {"tasks": []}
 
+@router.delete("/tasks/reports/all")
+def clear_all_reports(admin: dict = Depends(verify_admin)):
+    """
+    Clears ALL error_report documents from 'admin_tasks' collection.
+    Used for testing/cleanup to wipe the slate clean.
+    """
+    try:
+        # Fetch all error_report documents
+        reports_ref = db.collection("admin_tasks").where(filter=FieldFilter("type", "==", "error_report"))
+        deleted_count = 0
+        
+        for doc in reports_ref.stream():
+            doc.reference.delete()
+            deleted_count += 1
+        
+        logger.info(f"🧹 Cleared {deleted_count} error reports by {admin.get('email')}")
+        
+        # Audit Trail
+        log_audit_action(
+            admin_id=admin.get("uid", "unknown"),
+            admin_email=admin.get("email"),
+            action="CLEAR_ALL_REPORTS",
+            target_id="admin_tasks",
+            target_type="collection",
+            details={"deleted_count": deleted_count}
+        )
+        
+        return {"status": "success", "message": f"Cleared {deleted_count} reports.", "deleted_count": deleted_count}
+    except Exception as e:
+        logger.error(f"❌ Clear Reports Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.delete("/tasks/{task_id}")
 def delete_admin_task(task_id: str, admin: dict = Depends(verify_admin)):
     """
