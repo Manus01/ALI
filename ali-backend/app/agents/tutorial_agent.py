@@ -244,6 +244,112 @@ def review_tutorial_quality(tutorial_data: Dict[str, Any], original_blueprint: D
         logger.warning(f"⚠️ QA Audit Failed: {e}")
         return {"score": 0, "status": "FLAGGED", "feedback": "Audit failed due to error.", "flags": [str(e)]}
 
+# --- BLUEPRINT PARSER (Flexible Schema Handling) ---
+def _parse_blueprint_response(data: Dict[str, Any], topic: str) -> Dict[str, Any]:
+    """
+    Parses the LLM blueprint response flexibly.
+    Handles multiple schema formats:
+    1. Standard: { "title": ..., "sections": [...] }
+    2. 4C/ID: { "curriculum_blueprint": [{ "task_class_title": ..., "learning_task": ..., ... }] }
+    3. Alternative: { "title": ..., "modules": [...] }
+    
+    Returns normalized blueprint with 'sections' list.
+    """
+    # Extract root-level metadata
+    result = {
+        "title": data.get("title") or data.get("course_title") or f"Course: {topic}",
+        "course_goal": data.get("course_goal") or data.get("goal") or data.get("description") or "",
+        "pedagogical_metaphor": data.get("pedagogical_metaphor") or data.get("metaphor") or "Abstract Concept",
+        "sections": []
+    }
+    
+    # CASE 1: Standard 'sections' key
+    if data.get("sections") and isinstance(data["sections"], list) and len(data["sections"]) > 0:
+        result["sections"] = data["sections"]
+        logger.info(f"📋 Blueprint Parser: Found {len(result['sections'])} sections (standard schema)")
+        return result
+    
+    # CASE 2: Alternative 'modules' key
+    if data.get("modules") and isinstance(data["modules"], list) and len(data["modules"]) > 0:
+        result["sections"] = data["modules"]
+        logger.info(f"📋 Blueprint Parser: Found {len(result['sections'])} modules mapped to sections")
+        return result
+    
+    # CASE 3: 4C/ID 'curriculum_blueprint' schema
+    if data.get("curriculum_blueprint") and isinstance(data["curriculum_blueprint"], list):
+        curriculum = data["curriculum_blueprint"]
+        logger.info(f"📋 Blueprint Parser: Converting 4C/ID curriculum_blueprint ({len(curriculum)} task classes)")
+        
+        for task_class in curriculum:
+            # Extract title from various possible keys
+            section_title = (
+                task_class.get("task_class_title") or
+                task_class.get("title") or
+                task_class.get("learning_task", {}).get("title") if isinstance(task_class.get("learning_task"), dict) else
+                task_class.get("learning_task") or
+                "Untitled Section"
+            )
+            
+            # Determine section type from 4C/ID components
+            section_type = "general"
+            if task_class.get("supportive_information") or task_class.get("Supportive"):
+                section_type = "supportive"
+            elif task_class.get("procedural_information") or task_class.get("Procedural") or task_class.get("jit_information"):
+                section_type = "procedural"
+            elif task_class.get("part_task_practice") or task_class.get("Practice"):
+                section_type = "practice"
+            
+            # Extract goal from various sources
+            goal = ""
+            if isinstance(task_class.get("learning_task"), dict):
+                goal = task_class["learning_task"].get("objective") or task_class["learning_task"].get("goal") or ""
+            elif isinstance(task_class.get("learning_task"), str):
+                goal = task_class["learning_task"]
+            
+            if not goal:
+                goal = task_class.get("goal") or task_class.get("objective") or f"Master {section_title}"
+            
+            # Build normalized section
+            section = {
+                "title": section_title,
+                "type": section_type,
+                "goal": goal
+            }
+            
+            # Preserve additional 4C/ID metadata for downstream processing
+            if task_class.get("supportive_information"):
+                section["supportive_info"] = task_class["supportive_information"]
+            if task_class.get("procedural_information") or task_class.get("jit_information"):
+                section["procedural_info"] = task_class.get("procedural_information") or task_class.get("jit_information")
+            if task_class.get("part_task_practice"):
+                section["practice_info"] = task_class["part_task_practice"]
+            
+            result["sections"].append(section)
+        
+        if result["sections"]:
+            return result
+    
+    # CASE 4: Nested structure - try to flatten
+    for key in ["content", "curriculum", "outline", "structure", "lessons"]:
+        if data.get(key) and isinstance(data[key], list) and len(data[key]) > 0:
+            logger.info(f"📋 Blueprint Parser: Found nested '{key}' key, attempting flatten")
+            result["sections"] = [
+                {
+                    "title": item.get("title") or item.get("name") or f"Section {i+1}",
+                    "type": item.get("type") or "general",
+                    "goal": item.get("goal") or item.get("objective") or item.get("description") or ""
+                }
+                for i, item in enumerate(data[key])
+                if isinstance(item, dict)
+            ]
+            if result["sections"]:
+                return result
+    
+    # No valid sections found
+    logger.warning(f"⚠️ Blueprint Parser: Could not extract sections from response keys: {list(data.keys())}")
+    return result
+
+
 # --- 1. THE ARCHITECT (Curriculum + Metaphor) ---
 def generate_curriculum_blueprint(topic, profile, campaign_context, struggles, struggle_topics: Optional[List[Dict[str, Any]]] = None, connected_channels: List[str] = None):
     # UPGRADE: Using Gemini 2.5 Pro for High-Level Instructional Design
@@ -284,13 +390,17 @@ def generate_curriculum_blueprint(topic, profile, campaign_context, struggles, s
     for attempt in range(max_retries):
         try:
             response = model.generate_content(prompt)
-            data = extract_json_safe(response.text)
+            raw_data = extract_json_safe(response.text)
             
-            # Validation: Ensure sections exist
+            # Use flexible parser to normalize the response
+            data = _parse_blueprint_response(raw_data, topic)
+            
+            # Validation: Ensure sections exist after parsing
             if not data.get("sections") or len(data["sections"]) == 0:
-                logger.warning(f"⚠️ Blueprint Warning: No sections found in response: {data}")
-                raise ValueError("AI generated a blueprint with no sections.")
+                logger.warning(f"⚠️ Blueprint Warning: No sections found after parsing. Raw keys: {list(raw_data.keys())}")
+                raise ValueError(f"AI generated a blueprint with no sections. Schema: {list(raw_data.keys())}")
                 
+            logger.info(f"✅ Blueprint Generated: '{data.get('title')}' with {len(data['sections'])} sections")
             return data
         except Exception as e:
             logger.warning(f"⚠️ Blueprint Attempt {attempt+1} Failed: {e}")
