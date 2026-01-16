@@ -4,7 +4,7 @@ import api from '../api/axiosInterceptor';
 import { useAuth } from '../hooks/useAuth';
 import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
-import { FaArrowLeft, FaHeadphones, FaCheck, FaTrophy, FaChevronRight, FaChevronLeft, FaTimes, FaSearchPlus, FaExclamationTriangle, FaRedo, FaInfoCircle } from 'react-icons/fa';
+import { FaArrowLeft, FaHeadphones, FaCheck, FaTrophy, FaChevronRight, FaChevronLeft, FaTimes, FaSearchPlus, FaExclamationTriangle, FaRedo, FaInfoCircle, FaGamepad, FaExchangeAlt, FaMagic } from 'react-icons/fa';
 import MermaidBlock from '../components/MermaidBlock';
 
 // Secure Markdown Styling - removed unused 'node' destructuring
@@ -41,6 +41,188 @@ function AudioBlock({ block, idx }) {
                             "{block.transcript}"
                         </div>
                     )}
+                </div>
+            )}
+        </div>
+    );
+}
+
+// Separate component for Game block (Interactive Simulations)
+function GameBlock({ block, idx }) {
+    const [selectedItems, setSelectedItems] = useState({});
+    const [feedback, setFeedback] = useState(null); // { type: 'success' | 'error', message: string }
+    const [isComplete, setIsComplete] = useState(false);
+
+    const gameType = block.game_type || 'sorter';
+    const config = block.config || {};
+
+    const handleOptionSelect = (value, correctValue) => {
+        if (isComplete) return;
+        const isCorrect = value === correctValue;
+        setFeedback({
+            type: isCorrect ? 'success' : 'error',
+            message: isCorrect ? '✓ Correct! Well done.' : '✗ Not quite. Try again!'
+        });
+        if (isCorrect) setIsComplete(true);
+    };
+
+    const handleSorterSelect = (itemLabel, category) => {
+        setSelectedItems(prev => ({ ...prev, [itemLabel]: category }));
+    };
+
+    const checkSorterAnswers = () => {
+        const items = config.items || [];
+        const allCorrect = items.every(item => selectedItems[item.label] === item.category);
+        setFeedback({
+            type: allCorrect ? 'success' : 'error',
+            message: allCorrect ? '✓ Perfect sorting! All items placed correctly.' : '✗ Some items are in the wrong category. Review and try again!'
+        });
+        if (allCorrect) setIsComplete(true);
+    };
+
+    const handleFixerSelect = (optionIndex) => {
+        if (isComplete) return;
+        const correctIndex = config.correctIndex ?? 0;
+        const isCorrect = optionIndex === correctIndex;
+        setFeedback({
+            type: isCorrect ? 'success' : 'error',
+            message: isCorrect ? '✓ Correct fix identified!' : '✗ That\'s not the best fix. Try again!'
+        });
+        if (isCorrect) setIsComplete(true);
+    };
+
+    return (
+        <div key={idx} className="my-8 p-6 bg-gradient-to-br from-purple-50 to-indigo-50 border border-purple-200 rounded-2xl shadow-sm">
+            {/* Header */}
+            <div className="flex items-center gap-3 mb-4">
+                <div className="bg-purple-100 p-3 rounded-full text-purple-600">
+                    <FaGamepad className="text-xl" />
+                </div>
+                <div>
+                    <span className="bg-purple-600 text-white px-3 py-1 rounded-full text-xs font-bold uppercase">
+                        Interactive Simulation
+                    </span>
+                    <h4 className="font-bold text-purple-900 mt-1">{block.title || 'Practice Challenge'}</h4>
+                </div>
+            </div>
+
+            {block.instructions && (
+                <p className="text-purple-800 mb-4 text-sm">{block.instructions}</p>
+            )}
+
+            {/* Sorter Game */}
+            {gameType === 'sorter' && (
+                <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-4 mb-4">
+                        <div className="bg-white/70 p-4 rounded-xl border border-purple-100">
+                            <div className="flex items-center gap-2 mb-3 text-green-700 font-bold text-sm">
+                                <FaCheck /> {config.leftLabel || 'Category A'}
+                            </div>
+                            {(config.items || []).filter(i => selectedItems[i.label] === 'left').map((item, i) => (
+                                <div key={i} className="bg-green-100 text-green-800 px-3 py-2 rounded-lg text-sm mb-2 font-medium">{item.label}</div>
+                            ))}
+                        </div>
+                        <div className="bg-white/70 p-4 rounded-xl border border-purple-100">
+                            <div className="flex items-center gap-2 mb-3 text-red-700 font-bold text-sm">
+                                <FaTimes /> {config.rightLabel || 'Category B'}
+                            </div>
+                            {(config.items || []).filter(i => selectedItems[i.label] === 'right').map((item, i) => (
+                                <div key={i} className="bg-red-100 text-red-800 px-3 py-2 rounded-lg text-sm mb-2 font-medium">{item.label}</div>
+                            ))}
+                        </div>
+                    </div>
+                    <div className="space-y-2">
+                        <p className="text-xs text-purple-600 font-bold uppercase">Items to Sort:</p>
+                        {(config.items || []).filter(i => !selectedItems[i.label]).map((item, i) => (
+                            <div key={i} className="flex items-center gap-2">
+                                <span className="flex-1 bg-white p-3 rounded-lg border border-purple-200 text-slate-700 font-medium text-sm">{item.label}</span>
+                                <button
+                                    onClick={() => handleSorterSelect(item.label, 'left')}
+                                    className="px-3 py-2 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors text-xs font-bold"
+                                >
+                                    ← Left
+                                </button>
+                                <button
+                                    onClick={() => handleSorterSelect(item.label, 'right')}
+                                    className="px-3 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition-colors text-xs font-bold"
+                                >
+                                    Right →
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                    {Object.keys(selectedItems).length === (config.items || []).length && !isComplete && (
+                        <button
+                            onClick={checkSorterAnswers}
+                            className="w-full py-3 bg-purple-600 text-white rounded-xl font-bold shadow-lg hover:bg-purple-700 transition-colors mt-4"
+                        >
+                            Check My Sorting
+                        </button>
+                    )}
+                </div>
+            )}
+
+            {/* Scenario Game */}
+            {gameType === 'scenario' && (
+                <div className="space-y-4">
+                    <div className="bg-white/80 p-4 rounded-xl border border-purple-100">
+                        <div className="flex items-center gap-2 mb-2 text-purple-600">
+                            <FaExchangeAlt />
+                            <span className="text-xs font-bold uppercase">Scenario</span>
+                        </div>
+                        <p className="font-bold text-slate-800">{config.prompt || block.objective || 'What would you do?'}</p>
+                    </div>
+                    <div className="space-y-2">
+                        {(config.choices || []).map((choice, i) => (
+                            <button
+                                key={i}
+                                onClick={() => handleOptionSelect(choice.value, config.correctValue)}
+                                disabled={isComplete}
+                                className={`w-full text-left p-4 rounded-xl border transition-all font-medium ${isComplete && choice.value === config.correctValue
+                                    ? 'bg-green-100 border-green-500 text-green-800'
+                                    : 'bg-white border-purple-200 hover:border-purple-400 hover:bg-purple-50 text-slate-700'
+                                    } ${isComplete ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                            >
+                                {choice.label}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Fixer Game */}
+            {gameType === 'fixer' && (
+                <div className="space-y-4">
+                    <div className="bg-white/80 p-4 rounded-xl border border-purple-100">
+                        <div className="flex items-center gap-2 mb-2 text-amber-600">
+                            <FaMagic />
+                            <span className="text-xs font-bold uppercase">Identify the Error</span>
+                        </div>
+                        <p className="font-bold text-slate-800">{config.prompt || 'Find and fix the problem below:'}</p>
+                    </div>
+                    <div className="space-y-2">
+                        {(config.options || []).map((option, i) => (
+                            <button
+                                key={i}
+                                onClick={() => handleFixerSelect(i)}
+                                disabled={isComplete}
+                                className={`w-full text-left p-4 rounded-xl border transition-all font-medium ${isComplete && i === (config.correctIndex ?? 0)
+                                    ? 'bg-green-100 border-green-500 text-green-800'
+                                    : 'bg-white border-purple-200 hover:border-purple-400 hover:bg-purple-50 text-slate-700'
+                                    } ${isComplete ? 'cursor-not-allowed' : 'cursor-pointer'}`}
+                            >
+                                {option}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Feedback */}
+            {feedback && (
+                <div className={`mt-4 p-4 rounded-xl font-bold text-center animate-fade-in ${feedback.type === 'success' ? 'bg-green-100 text-green-800 border border-green-300' : 'bg-red-100 text-red-800 border border-red-300'
+                    }`}>
+                    {feedback.message}
                 </div>
             )}
         </div>
@@ -527,6 +709,10 @@ export default function TutorialDetailsPage() {
                         </div>
                     );
                 }
+
+            case 'game':
+                return <GameBlock block={block} idx={idx} key={idx} />;
+
             default: return null;
         }
     };

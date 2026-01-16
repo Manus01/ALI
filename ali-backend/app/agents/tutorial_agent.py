@@ -317,11 +317,26 @@ def _parse_blueprint_response(data: Dict[str, Any], topic: str) -> Dict[str, Any
             }
             
             # Preserve additional 4C/ID metadata for downstream processing
-            if task_class.get("supportive_information"):
+            # NEW: Handle 'components' list format from AI responses
+            components = task_class.get("components")
+            if components and isinstance(components, list):
+                for comp in components:
+                    if not isinstance(comp, dict):
+                        continue
+                    comp_type = comp.get("type", "").lower()
+                    if comp_type == "supportive":
+                        section["supportive_info"] = comp
+                    elif comp_type == "procedural":
+                        section["procedural_info"] = comp
+                    elif comp_type == "practice":
+                        section["practice_info"] = comp
+            
+            # Fallback: Check for direct keys if components list wasn't present
+            if not section.get("supportive_info") and task_class.get("supportive_information"):
                 section["supportive_info"] = task_class["supportive_information"]
-            if task_class.get("procedural_information") or task_class.get("jit_information"):
+            if not section.get("procedural_info") and (task_class.get("procedural_information") or task_class.get("jit_information")):
                 section["procedural_info"] = task_class.get("procedural_information") or task_class.get("jit_information")
-            if task_class.get("part_task_practice"):
+            if not section.get("practice_info") and task_class.get("part_task_practice"):
                 section["practice_info"] = task_class["part_task_practice"]
             
             result["sections"].append(section)
