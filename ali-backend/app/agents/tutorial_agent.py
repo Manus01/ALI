@@ -317,8 +317,8 @@ def _parse_blueprint_response(data: Dict[str, Any], topic: str) -> Dict[str, Any
             }
             
             # Preserve additional 4C/ID metadata for downstream processing
-            # NEW: Handle 'components' list format from AI responses
-            components = task_class.get("components")
+            # NEW: Handle 'components' or 'instructional_components' list format from AI responses
+            components = task_class.get("components") or task_class.get("instructional_components")
             if components and isinstance(components, list):
                 for comp in components:
                     if not isinstance(comp, dict):
@@ -803,7 +803,7 @@ def generate_tutorial(
             "difficulty": profile.get("marketing_knowledge", "NOVICE"),
             "sections": final_sections,
             "owner_id": user_id,
-            "status": TutorialStatus.DRAFT.value,
+            "status": "PUBLISHED",
             "is_public": False,
             "tags": [profile.get("learning_style", "VISUAL"), metaphor],
             "timestamp": firestore.SERVER_TIMESTAMP,

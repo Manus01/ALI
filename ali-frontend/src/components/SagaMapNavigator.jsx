@@ -1,21 +1,33 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FaBook, FaLock, FaCheckCircle, FaStar, FaMapMarkerAlt, FaSpinner, FaGraduationCap } from 'react-icons/fa';
+import { FaBook, FaLock, FaCheckCircle, FaStar, FaMapMarkerAlt, FaSpinner, FaGraduationCap, FaChevronDown, FaChevronRight } from 'react-icons/fa';
 import api from '../api/axiosInterceptor';
 
 /**
  * SagaMapNavigator Component
  * Visual Node-based Roadmap for ALI Courses.
  * Spec v2.2 §4.3: CourseManifest hierarchy for structured learning paths.
+ * 
+ * Props:
+ * - onModuleSelect: Callback when a module is clicked
+ * - compact: Boolean to enable compact mode (reduced spacing, collapsible courses)
  */
-export default function SagaMapNavigator({ onModuleSelect }) {
+export default function SagaMapNavigator({ onModuleSelect, compact = false }) {
     const [courses, setCourses] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [expandedCourses, setExpandedCourses] = useState(new Set());
 
     useEffect(() => {
         fetchCourses();
     }, []);
+
+    // Auto-expand first course on load
+    useEffect(() => {
+        if (courses.length > 0 && expandedCourses.size === 0) {
+            setExpandedCourses(new Set([courses[0].id]));
+        }
+    }, [courses]);
 
     const fetchCourses = async () => {
         try {
@@ -29,9 +41,21 @@ export default function SagaMapNavigator({ onModuleSelect }) {
         }
     };
 
+    const toggleCourse = (courseId) => {
+        setExpandedCourses(prev => {
+            const next = new Set(prev);
+            if (next.has(courseId)) {
+                next.delete(courseId);
+            } else {
+                next.add(courseId);
+            }
+            return next;
+        });
+    };
+
     if (loading) {
         return (
-            <div className="flex flex-col items-center justify-center h-96 gap-4 text-slate-400">
+            <div className="flex flex-col items-center justify-center h-64 md:h-96 gap-4 text-slate-400">
                 <FaSpinner className="animate-spin text-3xl text-indigo-500" />
                 <p className="font-medium animate-pulse">Charting your saga...</p>
             </div>
@@ -40,8 +64,8 @@ export default function SagaMapNavigator({ onModuleSelect }) {
 
     if (error) {
         return (
-            <div className="p-8 text-center bg-red-50 dark:bg-red-900/10 rounded-3xl border border-red-100 dark:border-red-900/30">
-                <FaMapMarkerAlt className="mx-auto text-4xl text-red-300 mb-4" />
+            <div className="p-6 md:p-8 text-center bg-red-50 dark:bg-red-900/10 rounded-2xl md:rounded-3xl border border-red-100 dark:border-red-900/30">
+                <FaMapMarkerAlt className="mx-auto text-3xl md:text-4xl text-red-300 mb-4" />
                 <p className="text-red-500 font-medium">{error}</p>
                 <button
                     onClick={fetchCourses}
@@ -53,23 +77,39 @@ export default function SagaMapNavigator({ onModuleSelect }) {
         );
     }
 
+    if (courses.length === 0) {
+        return (
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+                <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4">
+                    <FaGraduationCap className="text-2xl text-slate-300 dark:text-slate-600" />
+                </div>
+                <h3 className="text-lg font-bold text-slate-400 dark:text-slate-500 mb-2">
+                    No Courses Yet
+                </h3>
+                <p className="text-sm text-slate-400 dark:text-slate-500 max-w-sm">
+                    Complete tutorials to unlock learning paths and track your progress.
+                </p>
+            </div>
+        );
+    }
+
     return (
-        <div className="relative w-full max-w-4xl mx-auto py-12 px-4 md:px-8">
+        <div className={`relative w-full mx-auto ${compact ? 'py-6' : 'py-8 md:py-12'} px-2 sm:px-4`}>
             {/* Header */}
-            <div className="text-center mb-16 relative z-10">
+            <div className="text-center mb-8 md:mb-12 relative z-10">
                 <motion.div
                     initial={{ opacity: 0, y: -20 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="inline-flex items-center gap-3 px-6 py-2 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-300 rounded-full text-sm font-bold uppercase tracking-wider mb-4 border border-indigo-100 dark:border-indigo-800"
+                    className="inline-flex items-center gap-2 px-4 py-1.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-300 rounded-full text-xs font-bold uppercase tracking-wider mb-3 border border-indigo-100 dark:border-indigo-800"
                 >
                     <FaGraduationCap />
-                    Ali Learning Sagas
+                    <span className="hidden sm:inline">Ali Learning</span> Sagas
                 </motion.div>
                 <motion.h2
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: 0.1 }}
-                    className="text-4xl md:text-5xl font-black text-slate-800 dark:text-white tracking-tight"
+                    className="text-2xl sm:text-3xl md:text-4xl font-black text-slate-800 dark:text-white tracking-tight"
                 >
                     Your Journey
                 </motion.h2>
@@ -77,122 +117,152 @@ export default function SagaMapNavigator({ onModuleSelect }) {
                     initial={{ opacity: 0 }}
                     animate={{ opacity: 1 }}
                     transition={{ delay: 0.2 }}
-                    className="text-slate-500 dark:text-slate-400 mt-2 max-w-lg mx-auto"
+                    className="text-slate-500 dark:text-slate-400 mt-2 text-sm md:text-base max-w-md mx-auto"
                 >
-                    Master your brand DNA through these structured modules.
+                    Master your brand DNA through structured modules.
                 </motion.p>
             </div>
 
-            {/* Path SVG Line - Background */}
-            <div className="absolute top-40 left-1/2 -translate-x-1/2 w-1 h-full bg-slate-100 dark:bg-slate-800 -z-10 hidden md:block" />
+            {/* Courses List */}
+            <div className={`space-y-6 md:space-y-8 ${compact ? 'max-w-3xl' : 'max-w-4xl'} mx-auto`}>
+                {courses.map((course, courseIdx) => {
+                    const isExpanded = expandedCourses.has(course.id);
+                    const progressPercent = course.total_modules > 0
+                        ? Math.round((course.completed_modules / course.total_modules) * 100)
+                        : 0;
 
-            {/* Courses Timeline */}
-            <div className="space-y-24 relative">
-                {courses.map((course, courseIdx) => (
-                    <div key={course.id} className="relative">
-                        {/* Course Marker Label */}
-                        <div className="flex md:justify-center mb-8 sticky top-4 z-20">
-                            <motion.div
-                                initial={{ scale: 0.8, opacity: 0 }}
-                                whileInView={{ scale: 1, opacity: 1 }}
-                                viewport={{ once: true }}
-                                className="bg-white dark:bg-slate-900 shadow-xl shadow-indigo-500/10 border border-slate-100 dark:border-slate-700 px-6 py-3 rounded-2xl flex items-center gap-4 max-w-md backdrop-blur-md"
+                    return (
+                        <div key={course.id} className="relative">
+                            {/* Course Header - Clickable on mobile */}
+                            <button
+                                onClick={() => toggleCourse(course.id)}
+                                className="w-full text-left mb-4 md:mb-6 group"
                             >
-                                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white font-bold shadow-lg">
-                                    {courseIdx + 1}
-                                </div>
-                                <div>
-                                    <h3 className="font-bold text-slate-800 dark:text-white text-lg leading-tight">{course.title}</h3>
-                                    <p className="text-xs text-slate-400 font-medium uppercase tracking-wide">
-                                        {course.completed_modules}/{course.total_modules} Modules Complete
-                                    </p>
-                                </div>
-                            </motion.div>
-                        </div>
+                                <motion.div
+                                    initial={{ scale: 0.95, opacity: 0 }}
+                                    whileInView={{ scale: 1, opacity: 1 }}
+                                    viewport={{ once: true }}
+                                    className="bg-white dark:bg-slate-800 shadow-lg shadow-slate-200/50 dark:shadow-slate-900/30 border border-slate-100 dark:border-slate-700 px-4 py-3 md:px-6 md:py-4 rounded-xl md:rounded-2xl flex items-center gap-3 md:gap-4 transition-all hover:shadow-xl"
+                                >
+                                    {/* Course Number */}
+                                    <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-white font-bold shadow-lg flex-shrink-0">
+                                        {courseIdx + 1}
+                                    </div>
 
-                        {/* Modules Grid/Path */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-y-16 relative">
-                            {course.modules?.map((module, modIdx) => {
-                                const isLeft = modIdx % 2 === 0;
-                                const isUnlocked = module.is_unlocked;
-                                const isCompleted = module.progress_percent >= 100;
-
-                                return (
-                                    <motion.div
-                                        key={module.id}
-                                        initial={{ opacity: 0, x: isLeft ? -20 : 20 }}
-                                        whileInView={{ opacity: 1, x: 0 }}
-                                        viewport={{ once: true, margin: "-50px" }}
-                                        className={`relative flex ${isLeft ? 'md:flex-row-reverse md:text-right' : 'md:flex-row md:text-left'} md:col-start-${isLeft ? '1' : '2'} items-center gap-6`}
-                                    >
-                                        {/* Connecting Line to Center (Desktop) */}
-                                        <div className={`hidden md:block absolute top-1/2 w-8 h-1 bg-slate-100 dark:bg-slate-800 ${isLeft ? '-right-10' : '-left-10'}`} />
-
-                                        {/* Node Content Card */}
-                                        <div
-                                            onClick={() => isUnlocked && onModuleSelect(module)}
-                                            className={`
-                                                flex-1 group relative overflow-hidden rounded-2xl p-6 transition-all duration-300
-                                                ${isUnlocked
-                                                    ? 'bg-white dark:bg-slate-800 cursor-pointer hover:-translate-y-1 hover:shadow-xl hover:shadow-indigo-500/10 border border-slate-100 dark:border-slate-700'
-                                                    : 'bg-slate-50 dark:bg-slate-900 opacity-60 grayscale cursor-not-allowed border border-slate-100 dark:border-slate-800'
-                                                }
-                                            `}
-                                        >
-                                            {/* Status Badge */}
-                                            <div className={`absolute top-4 ${isLeft ? 'md:left-4 right-4' : 'right-4'} text-xl`}>
-                                                {isCompleted ? (
-                                                    <FaCheckCircle className="text-green-500" />
-                                                ) : isUnlocked ? (
-                                                    <div className="w-3 h-3 bg-indigo-500 rounded-full animate-pulse shadow-[0_0_10px_rgba(99,102,241,0.5)]" />
-                                                ) : (
-                                                    <FaLock className="text-slate-300 dark:text-slate-600" />
-                                                )}
+                                    {/* Course Info */}
+                                    <div className="flex-1 min-w-0">
+                                        <h3 className="font-bold text-slate-800 dark:text-white text-base md:text-lg leading-tight truncate">
+                                            {course.title}
+                                        </h3>
+                                        <div className="flex items-center gap-3 mt-1">
+                                            <span className="text-[10px] md:text-xs text-slate-400 font-medium uppercase tracking-wide">
+                                                {course.completed_modules}/{course.total_modules} Modules
+                                            </span>
+                                            {/* Progress bar */}
+                                            <div className="hidden sm:block flex-1 max-w-[100px] h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                                                <div
+                                                    className="h-full bg-gradient-to-r from-indigo-500 to-purple-500 rounded-full transition-all"
+                                                    style={{ width: `${progressPercent}%` }}
+                                                />
                                             </div>
-
-                                            <h4 className="font-bold text-slate-800 dark:text-slate-100 mb-2 pr-6">{module.title}</h4>
-
-                                            {isUnlocked ? (
-                                                <div className="space-y-3">
-                                                    <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2">
-                                                        {module.description || "Master these concepts to level up."}
-                                                    </p>
-                                                    {/* Progress Bar */}
-                                                    <div className="w-full h-1.5 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
-                                                        <motion.div
-                                                            initial={{ width: 0 }}
-                                                            whileInView={{ width: `${module.progress_percent}%` }}
-                                                            className="h-full bg-gradient-to-r from-indigo-500 to-purple-500"
-                                                        />
-                                                    </div>
-                                                </div>
-                                            ) : (
-                                                <div className="flex items-center gap-2 text-xs text-slate-400 mt-4 bg-slate-100 dark:bg-slate-800/50 py-2 px-3 rounded-lg w-fit md:ml-auto md:mr-0 lg:ml-0">
-                                                    <FaLock size={10} />
-                                                    <span>{module.unlock_reason || "Locked"}</span>
-                                                </div>
-                                            )}
+                                            <span className="hidden sm:inline text-[10px] text-slate-400 font-bold">
+                                                {progressPercent}%
+                                            </span>
                                         </div>
+                                    </div>
 
-                                        {/* Center Node (Mobile & Desktop) */}
-                                        <div className={`
-                                            absolute md:static left-1/2 md:left-auto -translate-x-1/2 md:translate-x-0 -top-12 md:top-auto
-                                            w-12 h-12 rounded-full border-4 border-white dark:border-slate-900 z-10 flex items-center justify-center shadow-lg
-                                            ${isCompleted ? 'bg-green-500 text-white' : isUnlocked ? 'bg-indigo-600 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-400'}
-                                        `}>
-                                            {isCompleted ? <FaCheckCircle /> : isUnlocked ? <FaStar /> : <FaLock size={12} />}
+                                    {/* Expand/Collapse indicator */}
+                                    <div className="text-slate-400 group-hover:text-indigo-500 transition-colors">
+                                        {isExpanded ? <FaChevronDown /> : <FaChevronRight />}
+                                    </div>
+                                </motion.div>
+                            </button>
+
+                            {/* Modules Grid - Collapsible */}
+                            <AnimatePresence>
+                                {isExpanded && (
+                                    <motion.div
+                                        initial={{ opacity: 0, height: 0 }}
+                                        animate={{ opacity: 1, height: 'auto' }}
+                                        exit={{ opacity: 0, height: 0 }}
+                                        transition={{ duration: 0.3 }}
+                                        className="overflow-hidden"
+                                    >
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4 pl-2 md:pl-4 border-l-2 border-slate-100 dark:border-slate-800 ml-5 md:ml-6">
+                                            {course.modules?.map((module, modIdx) => {
+                                                const isUnlocked = module.is_unlocked;
+                                                const isCompleted = module.progress_percent >= 100;
+                                                const isInProgress = module.progress_percent > 0 && module.progress_percent < 100;
+
+                                                return (
+                                                    <motion.div
+                                                        key={module.id}
+                                                        initial={{ opacity: 0, x: -10 }}
+                                                        animate={{ opacity: 1, x: 0 }}
+                                                        transition={{ delay: modIdx * 0.05 }}
+                                                        onClick={() => isUnlocked && onModuleSelect(module)}
+                                                        className={`
+                                                            relative overflow-hidden rounded-xl p-4 transition-all duration-300
+                                                            ${isUnlocked
+                                                                ? 'bg-white dark:bg-slate-800 cursor-pointer hover:-translate-y-0.5 hover:shadow-lg border border-slate-100 dark:border-slate-700'
+                                                                : 'bg-slate-50 dark:bg-slate-900/50 opacity-60 cursor-not-allowed border border-slate-100 dark:border-slate-800'
+                                                            }
+                                                        `}
+                                                    >
+                                                        {/* Status Icon */}
+                                                        <div className="absolute top-3 right-3">
+                                                            {isCompleted ? (
+                                                                <FaCheckCircle className="text-green-500" />
+                                                            ) : isUnlocked ? (
+                                                                <div className={`w-2.5 h-2.5 rounded-full ${isInProgress ? 'bg-amber-500 animate-pulse' : 'bg-indigo-500'}`} />
+                                                            ) : (
+                                                                <FaLock className="text-slate-300 dark:text-slate-600 text-sm" />
+                                                            )}
+                                                        </div>
+
+                                                        {/* Module Content */}
+                                                        <h4 className="font-bold text-sm text-slate-800 dark:text-slate-100 mb-1.5 pr-6 line-clamp-2">
+                                                            {module.title}
+                                                        </h4>
+
+                                                        {isUnlocked ? (
+                                                            <div className="space-y-2">
+                                                                <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2">
+                                                                    {module.description || "Master these concepts to level up."}
+                                                                </p>
+                                                                {/* Progress Bar */}
+                                                                <div className="w-full h-1 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                                                                    <motion.div
+                                                                        initial={{ width: 0 }}
+                                                                        animate={{ width: `${module.progress_percent}%` }}
+                                                                        transition={{ delay: 0.2, duration: 0.5 }}
+                                                                        className="h-full bg-gradient-to-r from-indigo-500 to-purple-500"
+                                                                    />
+                                                                </div>
+                                                                <span className="text-[10px] font-bold text-slate-400">
+                                                                    {Math.round(module.progress_percent)}% complete
+                                                                </span>
+                                                            </div>
+                                                        ) : (
+                                                            <div className="flex items-center gap-1.5 text-[10px] text-slate-400 mt-2">
+                                                                <FaLock size={8} />
+                                                                <span>{module.unlock_reason || "Complete previous modules"}</span>
+                                                            </div>
+                                                        )}
+                                                    </motion.div>
+                                                );
+                                            })}
                                         </div>
-
                                     </motion.div>
-                                );
-                            })}
+                                )}
+                            </AnimatePresence>
                         </div>
-                    </div>
-                ))}
-
-                {/* Future Path Fade */}
-                <div className="h-32 bg-gradient-to-b from-transparent to-white dark:to-slate-950 relative z-20 -mt-10 pointer-events-none" />
+                    );
+                })}
             </div>
+
+            {/* Bottom Fade */}
+            <div className="h-16 bg-gradient-to-b from-transparent to-slate-50 dark:to-slate-950 relative z-10 -mt-8 pointer-events-none" />
         </div>
     );
 }
