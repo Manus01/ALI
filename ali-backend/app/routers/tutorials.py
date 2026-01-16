@@ -145,16 +145,31 @@ def get_tutorial_by_request_id(request_id: str, user: dict = Depends(verify_toke
         
         data = doc.to_dict()
         
+        # DEBUG: Log the retrieved document data
+        logger.info(f"🔍 Tutorial Request Lookup - Request ID: {request_id}")
+        logger.info(f"🔍 Retrieved data: {data}")
+        
         # Security: Only allow user to lookup their own requests
         if data.get("userId") != user["uid"] and not user.get("is_admin", False):
             raise HTTPException(status_code=403, detail="Not authorized to view this request")
         
-        tutorial_id = data.get("tutorialId")
+        # Check both legacy and new field names
+        tutorial_id = data.get("tutorialId") or data.get("generated_tutorial_id")
         
         if not tutorial_id:
-            # Tutorial not generated yet - return status info
+            # Tutorial not generated/linked yet - return specific error based on status
+            status = data.get("status", "PENDING")
+            if status == "COMPLETED":
+                # Status says completed but tutorial_id is missing - this is the bug case
+                logger.warning(f"⚠️ Request {request_id} marked COMPLETED but no tutorial_id linked!")
+                raise HTTPException(
+                    status_code=404, 
+                    detail="Tutorial not yet linked to this request"
+                )
+            
+            # Return status info for pending/generating states
             return {
-                "status": data.get("status", "PENDING"),
+                "status": status,
                 "tutorialId": None,
                 "topic": data.get("topic")
             }

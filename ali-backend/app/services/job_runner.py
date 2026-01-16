@@ -69,6 +69,33 @@ def process_tutorial_job(job_id: str, user_id: str, topic: str, notification_id:
             heartbeat_active[0] = False
             logger.info(f"💓 Heartbeat stopped for Job {job_id}")
 
+        # ⚡ CRITICAL: Link the generated tutorial to the original request ⚡
+        # This enables the fallback GET /tutorials/by-request/{id} endpoint
+        tutorial_id = tutorial_data.get("id")
+        
+        # Try to find and update the tutorial_requests document
+        # (The job_id may match the request notification, or we search by topic/user)
+        try:
+            requests_ref = db.collection("tutorial_requests")
+            # Query for pending requests matching this user and topic
+            query = requests_ref.where("userId", "==", user_id).where("topic", "==", topic).where("status", "in", ["APPROVED", "GENERATING"]).limit(1)
+            matching_requests = list(query.stream())
+            
+            if matching_requests:
+                request_doc = matching_requests[0]
+                request_doc.reference.update({
+                    "generated_tutorial_id": tutorial_id,
+                    "tutorialId": tutorial_id,  # Legacy field for compatibility
+                    "status": "COMPLETED",
+                    "completedAt": firestore.SERVER_TIMESTAMP
+                })
+                logger.info(f"✅ Linked tutorial {tutorial_id} to request {request_doc.id}")
+            else:
+                logger.warning(f"⚠️ No matching tutorial_request found for user={user_id}, topic={topic}")
+        except Exception as link_err:
+            # Non-fatal: log but don't fail the job
+            logger.error(f"⚠️ Failed to link tutorial to request: {link_err}")
+
         # 3. UPDATE the Existing Notification to "Ready" (SINGLE UPDATE)
         # This is the ONLY notification update - replaces "Request Submitted" with "Success"
         if notification_ref:
