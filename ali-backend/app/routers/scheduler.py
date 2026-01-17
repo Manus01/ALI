@@ -117,3 +117,50 @@ async def scheduler_health():
     Returns basic health status without authentication.
     """
     return {"status": "healthy", "service": "watchdog_scheduler"}
+
+
+@router.post("/scheduler/brand-monitoring-scan")
+async def scheduled_brand_monitoring_scan(
+    request: Request,
+    authorization: Optional[str] = Header(None)
+):
+    """
+    Endpoint called by Cloud Scheduler to run hourly brand monitoring scan.
+    Scans all users for new mentions, detects opportunities, and logs to BigQuery.
+    
+    Cloud Scheduler Config:
+    - Frequency: 0 * * * * (every hour)
+    - Target: HTTP
+    - URL: https://YOUR-CLOUD-RUN-URL/internal/scheduler/brand-monitoring-scan
+    - HTTP method: POST
+    - Auth header: Add OIDC token
+    - Service account: Cloud Scheduler service account with invoker permissions
+    """
+    # Verify caller is Cloud Scheduler
+    if not verify_scheduler_token(authorization):
+        logger.warning("🚫 Unauthorized brand monitoring scan attempt")
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    
+    logger.info("🔍 Scheduled Brand Monitoring: Starting hourly scan...")
+    
+    try:
+        from app.services.brand_monitoring_scanner import get_scanner
+        
+        scanner = get_scanner()
+        result = await scanner.run_hourly_scan()
+        
+        logger.info(f"✅ Scheduled Brand Monitoring Complete: {result.get('users_scanned', 0)} users scanned")
+        return {
+            "status": "success",
+            "triggered_by": "cloud_scheduler",
+            "result": result
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Scheduled Brand Monitoring Error: {e}")
+        # Return 200 to prevent Cloud Scheduler from retrying
+        return {
+            "status": "error",
+            "error": str(e)
+        }
+

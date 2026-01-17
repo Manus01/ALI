@@ -85,6 +85,89 @@ GENERATION_LOGS_SCHEMA = [
     bigquery.SchemaField("created_at", "TIMESTAMP", mode="REQUIRED"),
 ]
 
+# --- BRAND INTELLIGENCE SCHEMAS ---
+
+BRAND_MENTIONS_LOG_SCHEMA = [
+    bigquery.SchemaField("mention_id", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("user_id", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("entity_name", "STRING", mode="REQUIRED"),  # Brand or competitor name
+    bigquery.SchemaField("entity_type", "STRING"),  # "brand" or "competitor"
+    bigquery.SchemaField("source_type", "STRING"),  # "news", "social", "blog", "forum"
+    bigquery.SchemaField("source_platform", "STRING"),  # "linkedin", "twitter", etc.
+    bigquery.SchemaField("country", "STRING"),  # ISO country code (e.g., "US", "GB", "DE")
+    bigquery.SchemaField("language", "STRING"),  # ISO language code (e.g., "en", "de")
+    bigquery.SchemaField("url", "STRING"),
+    bigquery.SchemaField("title", "STRING"),
+    bigquery.SchemaField("content_snippet", "STRING"),  # First 500 chars
+    bigquery.SchemaField("sentiment", "STRING"),  # "positive", "neutral", "negative"
+    bigquery.SchemaField("sentiment_score", "FLOAT"),  # -1.0 to 1.0
+    bigquery.SchemaField("severity", "INTEGER"),  # 1-10 for negative
+    bigquery.SchemaField("key_concerns", "JSON"),  # List of concerns
+    bigquery.SchemaField("detected_at", "TIMESTAMP", mode="REQUIRED"),
+    bigquery.SchemaField("published_at", "TIMESTAMP"),
+]
+
+ACTIONS_LOG_SCHEMA = [
+    bigquery.SchemaField("action_id", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("user_id", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("mention_id", "STRING"),  # Related mention
+    bigquery.SchemaField("action_type", "STRING"),  # "respond", "amplify", "ignore", "escalate"
+    bigquery.SchemaField("channels_used", "JSON"),  # ["linkedin", "press_release"]
+    bigquery.SchemaField("content_generated", "JSON"),  # Content per channel
+    bigquery.SchemaField("strategic_agenda", "STRING"),  # Agenda used
+    bigquery.SchemaField("ai_suggested", "BOOLEAN"),  # Was this AI-recommended?
+    bigquery.SchemaField("user_approved", "BOOLEAN"),  # Did user approve?
+    bigquery.SchemaField("created_at", "TIMESTAMP", mode="REQUIRED"),
+]
+
+OUTCOMES_LOG_SCHEMA = [
+    bigquery.SchemaField("outcome_id", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("action_id", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("user_id", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("metric_type", "STRING"),  # "engagement", "sentiment_shift", "reach"
+    bigquery.SchemaField("metric_value", "FLOAT"),
+    bigquery.SchemaField("baseline_value", "FLOAT"),
+    bigquery.SchemaField("user_feedback", "STRING"),  # "effective", "ineffective", null
+    bigquery.SchemaField("auto_detected", "BOOLEAN"),
+    bigquery.SchemaField("measured_at", "TIMESTAMP", mode="REQUIRED"),
+]
+
+COMPETITOR_ACTIONS_LOG_SCHEMA = [
+    bigquery.SchemaField("action_id", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("user_id", "STRING", mode="REQUIRED"),  # Who's monitoring
+    bigquery.SchemaField("competitor_name", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("action_type", "STRING"),  # "campaign", "pr", "product_launch", etc.
+    bigquery.SchemaField("description", "STRING"),  # AI-generated summary
+    bigquery.SchemaField("estimated_impact", "STRING"),  # "high", "medium", "low"
+    bigquery.SchemaField("source_urls", "JSON"),  # Evidence URLs
+    bigquery.SchemaField("detected_at", "TIMESTAMP", mode="REQUIRED"),
+]
+
+BRAND_HEALTH_SCORES_SCHEMA = [
+    bigquery.SchemaField("score_id", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("user_id", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("date", "DATE", mode="REQUIRED"),
+    bigquery.SchemaField("overall_score", "FLOAT"),  # 0-100
+    bigquery.SchemaField("sentiment_score", "FLOAT"),  # Component
+    bigquery.SchemaField("visibility_score", "FLOAT"),  # Component
+    bigquery.SchemaField("response_score", "FLOAT"),  # Component
+    bigquery.SchemaField("competitor_position", "INTEGER"),  # Rank vs competitors
+    bigquery.SchemaField("score_breakdown", "JSON"),  # Detailed components
+    bigquery.SchemaField("created_at", "TIMESTAMP", mode="REQUIRED"),
+]
+
+ANONYMIZED_PATTERNS_SCHEMA = [
+    bigquery.SchemaField("pattern_id", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("pattern_type", "STRING"),  # "response", "content", "competitor"
+    bigquery.SchemaField("industry", "STRING"),  # Industry category
+    bigquery.SchemaField("situation", "STRING"),  # "negative_press", "product_launch", etc.
+    bigquery.SchemaField("strategy_used", "STRING"),  # What approach
+    bigquery.SchemaField("agenda", "STRING"),  # Strategic agenda
+    bigquery.SchemaField("effectiveness_avg", "FLOAT"),  # Avg outcome score
+    bigquery.SchemaField("sample_count", "INTEGER"),  # How many examples
+    bigquery.SchemaField("updated_at", "TIMESTAMP", mode="REQUIRED"),
+]
+
 
 class BigQueryService:
     """Service for BigQuery operations in ALI Platform."""
@@ -166,9 +249,17 @@ class BigQueryService:
             return {"dataset": False}
         
         tables = [
+            # Original tables
             ("prediction_logs", PREDICTION_LOGS_SCHEMA),
             ("unified_analytics_history", UNIFIED_ANALYTICS_SCHEMA),
             ("generation_logs", GENERATION_LOGS_SCHEMA),
+            # Brand Intelligence tables
+            ("brand_mentions_log", BRAND_MENTIONS_LOG_SCHEMA),
+            ("actions_log", ACTIONS_LOG_SCHEMA),
+            ("outcomes_log", OUTCOMES_LOG_SCHEMA),
+            ("competitor_actions_log", COMPETITOR_ACTIONS_LOG_SCHEMA),
+            ("brand_health_scores", BRAND_HEALTH_SCORES_SCHEMA),
+            ("anonymized_patterns", ANONYMIZED_PATTERNS_SCHEMA),
         ]
         
         for table_name, schema in tables:
@@ -249,6 +340,178 @@ class BigQueryService:
         except Exception as e:
             logger.error(f"❌ Query failed: {e}")
             return []
+    
+    # --- BRAND INTELLIGENCE INSERT METHODS ---
+    
+    def _insert_to_table(self, table_name: str, data: Dict[str, Any], timestamp_field: str = "created_at") -> bool:
+        """Generic insert helper for any table."""
+        if not self.client:
+            logger.warning("⚠️ BigQuery not available, skipping insert")
+            return False
+            
+        table_ref = self._get_table_ref(table_name)
+        data.setdefault(timestamp_field, datetime.utcnow().isoformat())
+        
+        try:
+            errors = self.client.insert_rows_json(table_ref, [data])
+            if errors:
+                logger.error(f"❌ Insert errors for {table_name}: {errors}")
+                return False
+            return True
+        except Exception as e:
+            logger.error(f"❌ Failed to insert to {table_name}: {e}")
+            return False
+    
+    def insert_mention_log(self, data: Dict[str, Any]) -> bool:
+        """Log a detected mention to BigQuery."""
+        return self._insert_to_table("brand_mentions_log", data, "detected_at")
+    
+    def insert_action_log(self, data: Dict[str, Any]) -> bool:
+        """Log a PR action taken."""
+        return self._insert_to_table("actions_log", data, "created_at")
+    
+    def insert_outcome_log(self, data: Dict[str, Any]) -> bool:
+        """Log an action outcome measurement."""
+        return self._insert_to_table("outcomes_log", data, "measured_at")
+    
+    def insert_competitor_action(self, data: Dict[str, Any]) -> bool:
+        """Log an observed competitor action."""
+        return self._insert_to_table("competitor_actions_log", data, "detected_at")
+    
+    def insert_health_score(self, data: Dict[str, Any]) -> bool:
+        """Log a brand health score snapshot."""
+        return self._insert_to_table("brand_health_scores", data, "created_at")
+    
+    def insert_pattern(self, data: Dict[str, Any]) -> bool:
+        """Insert or update an anonymized pattern."""
+        return self._insert_to_table("anonymized_patterns", data, "updated_at")
+    
+    # --- BRAND INTELLIGENCE QUERY METHODS ---
+    
+    def query_similar_mentions(self, user_id: str, sentiment: str, entity_type: str = "brand", limit: int = 10) -> List[Dict]:
+        """Find similar past mentions to power recommendations."""
+        if not self.client:
+            return []
+            
+        query = f"""
+        SELECT 
+            mention_id, entity_name, title, sentiment, sentiment_score, severity,
+            source_type, detected_at
+        FROM `{self._get_table_ref('brand_mentions_log')}`
+        WHERE user_id = @user_id
+          AND entity_type = @entity_type
+          AND sentiment = @sentiment
+        ORDER BY detected_at DESC
+        LIMIT @limit
+        """
+        
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("user_id", "STRING", user_id),
+                bigquery.ScalarQueryParameter("entity_type", "STRING", entity_type),
+                bigquery.ScalarQueryParameter("sentiment", "STRING", sentiment),
+                bigquery.ScalarQueryParameter("limit", "INT64", limit),
+            ]
+        )
+        
+        try:
+            results = self.client.query(query, job_config=job_config)
+            return [dict(row) for row in results]
+        except Exception as e:
+            logger.error(f"❌ Query failed: {e}")
+            return []
+    
+    def get_brand_health_trend(self, user_id: str, days: int = 30) -> List[Dict]:
+        """Get brand health score trend for charting."""
+        if not self.client:
+            return []
+            
+        query = f"""
+        SELECT date, overall_score, sentiment_score, visibility_score, response_score
+        FROM `{self._get_table_ref('brand_health_scores')}`
+        WHERE user_id = @user_id
+          AND date >= DATE_SUB(CURRENT_DATE(), INTERVAL @days DAY)
+        ORDER BY date ASC
+        """
+        
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("user_id", "STRING", user_id),
+                bigquery.ScalarQueryParameter("days", "INT64", days),
+            ]
+        )
+        
+        try:
+            results = self.client.query(query, job_config=job_config)
+            return [dict(row) for row in results]
+        except Exception as e:
+            logger.error(f"❌ Query failed: {e}")
+            return []
+    
+    def get_geographic_sentiment_breakdown(self, user_id: str, days: int = 30, entity_type: str = "brand") -> Dict[str, Any]:
+        """
+        Get sentiment breakdown by country.
+        Returns top 5 positive, top 5 negative, and full list for detailed report.
+        """
+        if not self.client:
+            return {"top_positive": [], "top_negative": [], "all_countries": []}
+            
+        query = f"""
+        WITH country_stats AS (
+            SELECT 
+                country,
+                COUNT(*) as mention_count,
+                AVG(sentiment_score) as avg_sentiment,
+                COUNTIF(sentiment = 'positive') as positive_count,
+                COUNTIF(sentiment = 'negative') as negative_count,
+                COUNTIF(sentiment = 'neutral') as neutral_count
+            FROM `{self._get_table_ref('brand_mentions_log')}`
+            WHERE user_id = @user_id
+              AND entity_type = @entity_type
+              AND country IS NOT NULL
+              AND detected_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL @days DAY)
+            GROUP BY country
+        )
+        SELECT 
+            country,
+            mention_count,
+            avg_sentiment,
+            positive_count,
+            negative_count,
+            neutral_count,
+            ROUND(positive_count * 100.0 / mention_count, 1) as positive_pct,
+            ROUND(negative_count * 100.0 / mention_count, 1) as negative_pct
+        FROM country_stats
+        ORDER BY avg_sentiment DESC
+        """
+        
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("user_id", "STRING", user_id),
+                bigquery.ScalarQueryParameter("entity_type", "STRING", entity_type),
+                bigquery.ScalarQueryParameter("days", "INT64", days),
+            ]
+        )
+        
+        try:
+            results = list(self.client.query(query, job_config=job_config))
+            all_countries = [dict(row) for row in results]
+            
+            # Top 5 positive (highest avg_sentiment)
+            top_positive = all_countries[:5]
+            
+            # Top 5 negative (lowest avg_sentiment, reverse the list)
+            top_negative = all_countries[-5:][::-1] if len(all_countries) >= 5 else all_countries[::-1]
+            
+            return {
+                "top_positive": top_positive,
+                "top_negative": top_negative,
+                "all_countries": all_countries,
+                "total_countries": len(all_countries)
+            }
+        except Exception as e:
+            logger.error(f"❌ Geographic query failed: {e}")
+            return {"top_positive": [], "top_negative": [], "all_countries": [], "total_countries": 0}
 
 
 # --- CONVENIENCE FUNCTIONS ---
@@ -283,3 +546,62 @@ def log_prediction(
         "confidence_score": confidence_score,
         **kwargs
     })
+
+
+def log_mention(
+    mention_id: str,
+    user_id: str,
+    entity_name: str,
+    entity_type: str,
+    sentiment: str,
+    **kwargs
+) -> bool:
+    """Convenience function to log a brand/competitor mention."""
+    service = get_bigquery_service()
+    return service.insert_mention_log({
+        "mention_id": mention_id,
+        "user_id": user_id,
+        "entity_name": entity_name,
+        "entity_type": entity_type,
+        "sentiment": sentiment,
+        **kwargs
+    })
+
+
+def log_action(
+    action_id: str,
+    user_id: str,
+    action_type: str,
+    channels_used: List[str],
+    **kwargs
+) -> bool:
+    """Convenience function to log a PR action taken."""
+    service = get_bigquery_service()
+    return service.insert_action_log({
+        "action_id": action_id,
+        "user_id": user_id,
+        "action_type": action_type,
+        "channels_used": channels_used,
+        **kwargs
+    })
+
+
+def log_outcome(
+    outcome_id: str,
+    action_id: str,
+    user_id: str,
+    metric_type: str,
+    metric_value: float,
+    **kwargs
+) -> bool:
+    """Convenience function to log an action outcome."""
+    service = get_bigquery_service()
+    return service.insert_outcome_log({
+        "outcome_id": outcome_id,
+        "action_id": action_id,
+        "user_id": user_id,
+        "metric_type": metric_type,
+        "metric_value": metric_value,
+        **kwargs
+    })
+
