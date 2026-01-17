@@ -126,21 +126,50 @@ class AudioAgent:
                 )
             )
             
-            # Use MP3 encoding for better browser compatibility and smaller file size
-            generation_config = types.GenerateContentConfig(
-                response_modalities=["AUDIO"],
-                speech_config=speech_config,
-                audio_encoding="MP3"  # Explicitly request MP3 output format
-            )
+            # === ATTEMPT 1: MP3 Encoding (preferred for browser compatibility) ===
+            response = None
+            used_fallback = False
             
-            logger.info(f"   📤 Sending TTS request...")
-            
-            # Call generate_content with proper config
-            response = self.client.models.generate_content(
-                model=TTS_MODEL,
-                contents=clean_text,  # For TTS, just pass the text directly
-                config=generation_config
-            )
+            try:
+                generation_config_mp3 = types.GenerateContentConfig(
+                    response_modalities=["AUDIO"],
+                    speech_config=speech_config,
+                    audio_encoding="MP3"  # Explicitly request MP3 output format
+                )
+                
+                logger.info(f"   📤 Sending TTS request (MP3 encoding)...")
+                
+                response = self.client.models.generate_content(
+                    model=TTS_MODEL,
+                    contents=clean_text,
+                    config=generation_config_mp3
+                )
+                logger.info(f"   ✅ MP3 generation succeeded.")
+                
+            except Exception as mp3_error:
+                # === ATTEMPT 2: Fallback to default/WAV encoding ===
+                logger.warning(f"⚠️ MP3 generation failed: {mp3_error}. Falling back to default...")
+                
+                try:
+                    generation_config_default = types.GenerateContentConfig(
+                        response_modalities=["AUDIO"],
+                        speech_config=speech_config
+                        # No audio_encoding param - use API default (WAV/PCM)
+                    )
+                    
+                    logger.info(f"   📤 Sending TTS request (default/WAV encoding)...")
+                    
+                    response = self.client.models.generate_content(
+                        model=TTS_MODEL,
+                        contents=clean_text,
+                        config=generation_config_default
+                    )
+                    used_fallback = True
+                    logger.info(f"   ✅ Fallback WAV generation succeeded.")
+                    
+                except Exception as fallback_error:
+                    logger.error(f"❌ TTS Critical Failure (both MP3 and WAV failed): {fallback_error}")
+                    raise fallback_error  # Re-raise to be caught by outer exception handler
             
             # === DEBUG LOGGING: Log raw response structure ===
             logger.info(f"   📥 Response received. Inspecting structure...")
@@ -250,9 +279,14 @@ class AudioAgent:
                 logger.warning(f"⚠️ Byte extraction error: {e}", exc_info=True)
 
             if audio_bytes and len(audio_bytes) > 100:  # Sanity check: audio should be >100 bytes
-                # Determine file extension from mime_type (default to MP3 for browser compatibility)
-                ext = "mp3"
-                content_type = "audio/mpeg"
+                # Determine file extension from mime_type
+                # Default based on whether fallback (WAV) was used or not (MP3)
+                if used_fallback:
+                    ext = "wav"
+                    content_type = "audio/wav"
+                else:
+                    ext = "mp3"
+                    content_type = "audio/mpeg"
                 if mime_type:
                     if "mp3" in mime_type or "mpeg" in mime_type:
                         ext = "mp3"
@@ -275,5 +309,7 @@ class AudioAgent:
             return None
 
         except Exception as e:
-            logger.error(f"❌ Audio Generation Error: {e}", exc_info=True)
+            logger.error(f"❌ TTS Critical Failure: {e}")
+            logger.error(f"   Exception type: {type(e).__name__}")
+            logger.error(f"   Full exception details:", exc_info=True)
             return None
