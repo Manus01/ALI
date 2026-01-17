@@ -1519,7 +1519,7 @@ class AssetProcessor:
             project_id_int = int(os.getenv("GENAI_PROJECT_ID")) 
             vertexai.init(project=project_id_int, location="us-central1")
 
-            veo_model_name = os.getenv("VEO_VIDEO_MODEL_NAME", "veo-3.1-generate")
+            veo_model_name = os.getenv("VEO_VIDEO_MODEL_NAME", "veo-3.1-generate-001")
             model = ImageGenerationModel.from_pretrained(veo_model_name)
 
             # Generate video (returns an Operation)

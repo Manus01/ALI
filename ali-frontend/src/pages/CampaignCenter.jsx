@@ -14,6 +14,8 @@ import { getFirestore, doc, onSnapshot } from 'firebase/firestore';
 
 import { allCountries } from '../data/countries';
 import CarouselViewer from '../components/CarouselViewer';
+// V8.0: Responsive sub-components for Campaign Center
+import { BrandDnaWizard, AssetLibrary, ChannelResultCard } from '../components/campaign';
 
 export default function CampaignCenter() {
     const { currentUser, userProfile, refreshProfile } = useAuth();
@@ -1263,7 +1265,7 @@ export default function CampaignCenter() {
     }
 
     return (
-        <div className="p-8 max-w-5xl mx-auto space-y-8 animate-fade-in pb-20">
+        <div className="p-4 sm:p-6 lg:p-8 max-w-5xl mx-auto space-y-6 sm:space-y-8 animate-fade-in pb-20">
             {resumeInfo && (
                 <div className="bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                     <div>

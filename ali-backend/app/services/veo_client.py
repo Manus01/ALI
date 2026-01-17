@@ -34,8 +34,8 @@ logger = logging.getLogger("ali_platform.services.veo_client")
 
 # Cost-optimized configuration
 VEO_CONFIG = {
-    "model": "veo-3.1-generate",  # Use generate endpoint
-    "fast_model": "veo-3.1-fast-generate",
+    "model": "veo-3.1-generate-001",  # Use stable generate endpoint
+    "fast_model": "veo-3.1-fast-generate-001",
     "default_resolution": "720p",
     "default_duration": 4,
     "duration_options": [4, 6, 12, 25],  # Supported durations in seconds
@@ -61,6 +61,23 @@ CHANNEL_ASPECT_RATIOS = {
     "facebook": "16:9",
     "twitter": "16:9",
     "pinterest": "9:16"
+}
+
+# Channel-specific video durations (seconds)
+# TikTok/Reels: 15-60s optimal, using 15s for AI
+# YouTube Shorts: up to 60s, using 25s for premium
+# Standard feed posts: 4-6s for quick engagement
+CHANNEL_DURATIONS = {
+    "tiktok": 15,           # TikTok - 15 seconds optimal
+    "instagram": 12,        # Instagram Reel - 12 seconds
+    "instagram_story": 6,   # Story - 6 seconds per slide
+    "facebook_story": 6,    # Story - 6 seconds
+    "youtube_shorts": 25,   # YouTube Shorts - 25 seconds max AI
+    "youtube": 25,          # YouTube - longer content
+    "linkedin": 6,          # LinkedIn - quick engagement
+    "facebook": 6,          # Facebook feed - 6 seconds
+    "twitter": 6,           # Twitter/X - 6 seconds
+    "pinterest": 4          # Pinterest - 4 seconds
 }
 
 
@@ -309,17 +326,8 @@ class VeoClient:
         Convenience method for channel-aware video generation.
         Automatically applies channel-specific settings.
         """
-        # Determine optimal duration based on channel
-        channel_durations = {
-            "tiktok": 12,          # Longer for TikTok engagement
-            "youtube_shorts": 12,  # Longer for Shorts
-            "instagram": 6,
-            "instagram_story": 6,
-            "linkedin": 6,
-            "facebook": 6
-        }
-
-        duration = channel_durations.get(channel, 4)
+        # Determine optimal duration based on channel using module-level config
+        duration = CHANNEL_DURATIONS.get(channel, VEO_CONFIG["default_duration"])
         
         # Enhance prompt with brand context if available
         if brand_dna:

@@ -126,50 +126,25 @@ class AudioAgent:
                 )
             )
             
-            # === ATTEMPT 1: MP3 Encoding (preferred for browser compatibility) ===
-            response = None
-            used_fallback = False
+            # === AUDIO GENERATION ===
+            # Note: Gemini TTS outputs PCM/WAV audio by default.
+            # The audio_encoding param does NOT exist in GenerateContentConfig.
+            # HTML5 <audio> elements support WAV playback natively.
             
-            try:
-                generation_config_mp3 = types.GenerateContentConfig(
-                    response_modalities=["AUDIO"],
-                    speech_config=speech_config,
-                    audio_encoding="MP3"  # Explicitly request MP3 output format
-                )
-                
-                logger.info(f"   📤 Sending TTS request (MP3 encoding)...")
-                
-                response = self.client.models.generate_content(
-                    model=TTS_MODEL,
-                    contents=clean_text,
-                    config=generation_config_mp3
-                )
-                logger.info(f"   ✅ MP3 generation succeeded.")
-                
-            except Exception as mp3_error:
-                # === ATTEMPT 2: Fallback to default/WAV encoding ===
-                logger.warning(f"⚠️ MP3 generation failed: {mp3_error}. Falling back to default...")
-                
-                try:
-                    generation_config_default = types.GenerateContentConfig(
-                        response_modalities=["AUDIO"],
-                        speech_config=speech_config
-                        # No audio_encoding param - use API default (WAV/PCM)
-                    )
-                    
-                    logger.info(f"   📤 Sending TTS request (default/WAV encoding)...")
-                    
-                    response = self.client.models.generate_content(
-                        model=TTS_MODEL,
-                        contents=clean_text,
-                        config=generation_config_default
-                    )
-                    used_fallback = True
-                    logger.info(f"   ✅ Fallback WAV generation succeeded.")
-                    
-                except Exception as fallback_error:
-                    logger.error(f"❌ TTS Critical Failure (both MP3 and WAV failed): {fallback_error}")
-                    raise fallback_error  # Re-raise to be caught by outer exception handler
+            generation_config = types.GenerateContentConfig(
+                response_modalities=["AUDIO"],
+                speech_config=speech_config
+            )
+            
+            logger.info(f"   📤 Sending TTS request...")
+            
+            response = self.client.models.generate_content(
+                model=TTS_MODEL,
+                contents=clean_text,
+                config=generation_config
+            )
+            
+            logger.info(f"   ✅ TTS generation succeeded.")
             
             # === DEBUG LOGGING: Log raw response structure ===
             logger.info(f"   📥 Response received. Inspecting structure...")
@@ -280,13 +255,10 @@ class AudioAgent:
 
             if audio_bytes and len(audio_bytes) > 100:  # Sanity check: audio should be >100 bytes
                 # Determine file extension from mime_type
-                # Default based on whether fallback (WAV) was used or not (MP3)
-                if used_fallback:
-                    ext = "wav"
-                    content_type = "audio/wav"
-                else:
-                    ext = "mp3"
-                    content_type = "audio/mpeg"
+                # Gemini TTS outputs PCM/WAV by default
+                ext = "wav"
+                content_type = "audio/wav"
+                
                 if mime_type:
                     if "mp3" in mime_type or "mpeg" in mime_type:
                         ext = "mp3"
@@ -295,7 +267,6 @@ class AudioAgent:
                         ext = "ogg"
                         content_type = "audio/ogg"
                     elif "wav" in mime_type or "L16" in mime_type:
-                        # Keep WAV only if explicitly returned by the API
                         ext = "wav"
                         content_type = "audio/wav"
                 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FaBook, FaLock, FaCheckCircle, FaStar, FaMapMarkerAlt, FaSpinner, FaGraduationCap, FaChevronDown, FaChevronRight } from 'react-icons/fa';
+import { FaBook, FaLock, FaCheckCircle, FaStar, FaMapMarkerAlt, FaSpinner, FaGraduationCap, FaChevronDown, FaChevronRight, FaPlay } from 'react-icons/fa';
 import api from '../api/axiosInterceptor';
 
 /**
@@ -17,6 +17,7 @@ export default function SagaMapNavigator({ onModuleSelect, compact = false }) {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [expandedCourses, setExpandedCourses] = useState(new Set());
+    const [expandedModules, setExpandedModules] = useState(new Set());
 
     useEffect(() => {
         fetchCourses();
@@ -48,6 +49,18 @@ export default function SagaMapNavigator({ onModuleSelect, compact = false }) {
                 next.delete(courseId);
             } else {
                 next.add(courseId);
+            }
+            return next;
+        });
+    };
+
+    const toggleModule = (moduleId) => {
+        setExpandedModules(prev => {
+            const next = new Set(prev);
+            if (next.has(moduleId)) {
+                next.delete(moduleId);
+            } else {
+                next.add(moduleId);
             }
             return next;
         });
@@ -193,6 +206,8 @@ export default function SagaMapNavigator({ onModuleSelect, compact = false }) {
                                                 const isUnlocked = module.is_unlocked;
                                                 const isCompleted = module.progress_percent >= 100;
                                                 const isInProgress = module.progress_percent > 0 && module.progress_percent < 100;
+                                                const isModuleExpanded = expandedModules.has(module.id);
+                                                const tutorialIds = module.tutorialIds || [];
 
                                                 return (
                                                     <motion.div
@@ -200,55 +215,105 @@ export default function SagaMapNavigator({ onModuleSelect, compact = false }) {
                                                         initial={{ opacity: 0, x: -10 }}
                                                         animate={{ opacity: 1, x: 0 }}
                                                         transition={{ delay: modIdx * 0.05 }}
-                                                        onClick={() => isUnlocked && onModuleSelect(module)}
                                                         className={`
-                                                            relative overflow-hidden rounded-xl p-4 transition-all duration-300
+                                                            relative overflow-hidden rounded-xl transition-all duration-300
                                                             ${isUnlocked
-                                                                ? 'bg-white dark:bg-slate-800 cursor-pointer hover:-translate-y-0.5 hover:shadow-lg border border-slate-100 dark:border-slate-700'
-                                                                : 'bg-slate-50 dark:bg-slate-900/50 opacity-60 cursor-not-allowed border border-slate-100 dark:border-slate-800'
+                                                                ? 'bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700'
+                                                                : 'bg-slate-50 dark:bg-slate-900/50 opacity-60 border border-slate-100 dark:border-slate-800'
                                                             }
                                                         `}
                                                     >
-                                                        {/* Status Icon */}
-                                                        <div className="absolute top-3 right-3">
-                                                            {isCompleted ? (
-                                                                <FaCheckCircle className="text-green-500" />
-                                                            ) : isUnlocked ? (
-                                                                <div className={`w-2.5 h-2.5 rounded-full ${isInProgress ? 'bg-amber-500 animate-pulse' : 'bg-indigo-500'}`} />
-                                                            ) : (
-                                                                <FaLock className="text-slate-300 dark:text-slate-600 text-sm" />
-                                                            )}
-                                                        </div>
+                                                        {/* Module Header - Clickable to expand */}
+                                                        <button
+                                                            onClick={() => isUnlocked && toggleModule(module.id)}
+                                                            disabled={!isUnlocked}
+                                                            className={`w-full text-left p-4 ${isUnlocked ? 'cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-700/50' : 'cursor-not-allowed'}`}
+                                                        >
+                                                            {/* Status Icon */}
+                                                            <div className="absolute top-3 right-3 flex items-center gap-2">
+                                                                {isCompleted ? (
+                                                                    <FaCheckCircle className="text-green-500" />
+                                                                ) : isUnlocked ? (
+                                                                    <div className={`w-2.5 h-2.5 rounded-full ${isInProgress ? 'bg-amber-500 animate-pulse' : 'bg-indigo-500'}`} />
+                                                                ) : (
+                                                                    <FaLock className="text-slate-300 dark:text-slate-600 text-sm" />
+                                                                )}
+                                                                {isUnlocked && tutorialIds.length > 0 && (
+                                                                    <span className="text-slate-400">
+                                                                        {isModuleExpanded ? <FaChevronDown size={12} /> : <FaChevronRight size={12} />}
+                                                                    </span>
+                                                                )}
+                                                            </div>
 
-                                                        {/* Module Content */}
-                                                        <h4 className="font-bold text-sm text-slate-800 dark:text-slate-100 mb-1.5 pr-6 line-clamp-2">
-                                                            {module.title}
-                                                        </h4>
+                                                            {/* Module Content */}
+                                                            <h4 className="font-bold text-sm text-slate-800 dark:text-slate-100 mb-1.5 pr-12 line-clamp-2">
+                                                                {module.title}
+                                                            </h4>
 
-                                                        {isUnlocked ? (
-                                                            <div className="space-y-2">
-                                                                <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2">
-                                                                    {module.description || "Master these concepts to level up."}
-                                                                </p>
-                                                                {/* Progress Bar */}
-                                                                <div className="w-full h-1 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
-                                                                    <motion.div
-                                                                        initial={{ width: 0 }}
-                                                                        animate={{ width: `${module.progress_percent}%` }}
-                                                                        transition={{ delay: 0.2, duration: 0.5 }}
-                                                                        className="h-full bg-gradient-to-r from-indigo-500 to-purple-500"
-                                                                    />
+                                                            {isUnlocked ? (
+                                                                <div className="space-y-2">
+                                                                    <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-2">
+                                                                        {module.description || `${tutorialIds.length} tutorial${tutorialIds.length !== 1 ? 's' : ''} in this module`}
+                                                                    </p>
+                                                                    {/* Progress Bar */}
+                                                                    <div className="w-full h-1 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden">
+                                                                        <motion.div
+                                                                            initial={{ width: 0 }}
+                                                                            animate={{ width: `${module.progress_percent}%` }}
+                                                                            transition={{ delay: 0.2, duration: 0.5 }}
+                                                                            className="h-full bg-gradient-to-r from-indigo-500 to-purple-500"
+                                                                        />
+                                                                    </div>
+                                                                    <span className="text-[10px] font-bold text-slate-400">
+                                                                        {Math.round(module.progress_percent)}% complete • {tutorialIds.length} lesson{tutorialIds.length !== 1 ? 's' : ''}
+                                                                    </span>
                                                                 </div>
-                                                                <span className="text-[10px] font-bold text-slate-400">
-                                                                    {Math.round(module.progress_percent)}% complete
-                                                                </span>
-                                                            </div>
-                                                        ) : (
-                                                            <div className="flex items-center gap-1.5 text-[10px] text-slate-400 mt-2">
-                                                                <FaLock size={8} />
-                                                                <span>{module.unlock_reason || "Complete previous modules"}</span>
-                                                            </div>
-                                                        )}
+                                                            ) : (
+                                                                <div className="flex items-center gap-1.5 text-[10px] text-slate-400 mt-2">
+                                                                    <FaLock size={8} />
+                                                                    <span>{module.unlock_reason || "Complete previous modules"}</span>
+                                                                </div>
+                                                            )}
+                                                        </button>
+
+                                                        {/* Tutorials List (Expanded) */}
+                                                        <AnimatePresence>
+                                                            {isModuleExpanded && isUnlocked && tutorialIds.length > 0 && (
+                                                                <motion.div
+                                                                    initial={{ opacity: 0, height: 0 }}
+                                                                    animate={{ opacity: 1, height: 'auto' }}
+                                                                    exit={{ opacity: 0, height: 0 }}
+                                                                    transition={{ duration: 0.2 }}
+                                                                    className="overflow-hidden border-t border-slate-100 dark:border-slate-700"
+                                                                >
+                                                                    <div className="p-3 space-y-2 bg-slate-50/50 dark:bg-slate-900/30">
+                                                                        {tutorialIds.map((tutorialId, tutIdx) => (
+                                                                            <button
+                                                                                key={tutorialId}
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    onModuleSelect({ id: tutorialId });
+                                                                                }}
+                                                                                className="w-full flex items-center gap-3 p-2.5 bg-white dark:bg-slate-800 rounded-lg border border-slate-100 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-600 hover:shadow-sm transition-all text-left group"
+                                                                            >
+                                                                                <div className="w-6 h-6 bg-indigo-100 dark:bg-indigo-900/40 rounded-full flex items-center justify-center flex-shrink-0">
+                                                                                    <FaPlay className="text-indigo-500 text-[8px]" />
+                                                                                </div>
+                                                                                <div className="flex-1 min-w-0">
+                                                                                    <span className="text-xs font-medium text-slate-700 dark:text-slate-200 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors truncate block">
+                                                                                        Lesson {tutIdx + 1}
+                                                                                    </span>
+                                                                                    <span className="text-[10px] text-slate-400 truncate block">
+                                                                                        {tutorialId.substring(0, 20)}...
+                                                                                    </span>
+                                                                                </div>
+                                                                                <FaChevronRight className="text-slate-300 dark:text-slate-600 text-xs group-hover:text-indigo-500 transition-colors" />
+                                                                            </button>
+                                                                        ))}
+                                                                    </div>
+                                                                </motion.div>
+                                                            )}
+                                                        </AnimatePresence>
                                                     </motion.div>
                                                 );
                                             })}

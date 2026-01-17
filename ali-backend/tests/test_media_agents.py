@@ -183,7 +183,7 @@ class TestAudioAgent:
         
         # Mock response with inline_data containing audio bytes
         mock_inline_data = MagicMock()
-        mock_inline_data.data = b"fake_audio_bytes"
+        mock_inline_data.data = b"x" * 200  # Must be >100 bytes for sanity check
         
         mock_part = MagicMock()
         mock_part.inline_data = mock_inline_data
@@ -225,7 +225,7 @@ class TestAudioAgent:
         mock_client = mock_genai.return_value
         
         mock_inline_data = MagicMock()
-        mock_inline_data.data = b"fake_audio_bytes"
+        mock_inline_data.data = b"x" * 200  # Must be >100 bytes for sanity check
         
         mock_part = MagicMock()
         mock_part.inline_data = mock_inline_data
