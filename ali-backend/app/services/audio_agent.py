@@ -148,31 +148,13 @@ class AudioAgent:
             # The audio_encoding param does NOT exist in GenerateContentConfig.
             # HTML5 <audio> elements support WAV playback natively.
             
-            # Safety settings to prevent false positives on benign educational content
-            # Using BLOCK_ONLY_HIGH to only block clearly harmful content
-            safety_settings = [
-                types.SafetySetting(
-                    category="HARM_CATEGORY_HATE_SPEECH",
-                    threshold="BLOCK_ONLY_HIGH"
-                ),
-                types.SafetySetting(
-                    category="HARM_CATEGORY_DANGEROUS_CONTENT",
-                    threshold="BLOCK_ONLY_HIGH"
-                ),
-                types.SafetySetting(
-                    category="HARM_CATEGORY_HARASSMENT",
-                    threshold="BLOCK_ONLY_HIGH"
-                ),
-                types.SafetySetting(
-                    category="HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                    threshold="BLOCK_ONLY_HIGH"
-                )
-            ]
+            # NOTE: Custom safety_settings removed (2026-01-17)
+            # Adjusting safety filters requires monthly invoiced billing.
+            # Using default safety settings which work for educational content.
             
             generation_config = types.GenerateContentConfig(
                 response_modalities=["AUDIO"],
-                speech_config=speech_config,
-                safety_settings=safety_settings
+                speech_config=speech_config
             )
             
             logger.info(f"   📤 Sending TTS request...")

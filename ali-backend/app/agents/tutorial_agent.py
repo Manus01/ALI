@@ -20,18 +20,10 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_resul
 # Configure Logger
 logger = logging.getLogger("ali_platform.agents.tutorial_agent")
 
-# Safety settings to prevent false positives on benign marketing/education content
-try:
-    from vertexai.generative_models import HarmCategory, HarmBlockThreshold
-    SAFETY_SETTINGS = {
-        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
-        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_ONLY_HIGH,
-        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
-        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
-    }
-except ImportError:
-    logger.warning("⚠️ HarmCategory/HarmBlockThreshold not available. Safety settings disabled.")
-    SAFETY_SETTINGS = None
+# NOTE: Custom safety_settings removed (2026-01-17)
+# Adjusting safety filters requires monthly invoiced billing.
+# Using default safety settings which work for educational content.
+# See: https://cloud.google.com/billing/docs/how-to/invoiced-billing
 
 def extract_json_safe(text: str) -> Dict[str, Any]:
     """
@@ -418,7 +410,7 @@ def generate_curriculum_blueprint(topic, profile, campaign_context, struggles, s
     max_retries = 3
     for attempt in range(max_retries):
         try:
-            response = model.generate_content(prompt, safety_settings=SAFETY_SETTINGS)
+            response = model.generate_content(prompt)
             raw_data = extract_json_safe(response.text)
             
             # Use flexible parser to normalize the response
@@ -461,7 +453,7 @@ def write_section_narrative(section_meta, topic, metaphor, profile, struggle_top
     3. **DO NOT** use H1 (#) headers. Use H2 (##) or H3 (###) only.
     4. Write approx 300 words of deep, high-value content.
     """
-    response = model.generate_content(prompt, safety_settings=SAFETY_SETTINGS)
+    response = model.generate_content(prompt)
     return response.text.strip().strip('"')
 
 # --- 3. THE DESIGNER (Pass 2: Assets & Quiz) ---
@@ -515,7 +507,7 @@ def design_section_assets(section_text, section_meta, metaphor, struggle_topics:
     }}
     """
     try:
-        response = model.generate_content(prompt, safety_settings=SAFETY_SETTINGS)
+        response = model.generate_content(prompt)
         data = extract_json_safe(response.text)
         data['assets'] = validate_quiz_data(data.get('assets', []))
         return data
