@@ -5,6 +5,7 @@ import logging
 import uuid
 import urllib.parse
 import re
+import struct
 from typing import Optional, Any, Union
 from google import genai
 from google.genai import types
@@ -85,6 +86,56 @@ class AudioAgent:
         except Exception as e:
             logger.error(f"❌ Upload Failed: {e}")
             return {"url": "", "gcs_object_key": ""}
+
+    def _add_wav_header(self, pcm_data: bytes, sample_rate: int = 24000, 
+                        bits_per_sample: int = 16, num_channels: int = 1) -> bytes:
+        """
+        Adds WAV headers to raw L16 PCM audio data.
+        
+        Gemini TTS outputs raw PCM (audio/L16) without headers.
+        Browsers require proper WAV container format to play audio.
+        
+        Args:
+            pcm_data: Raw PCM audio bytes
+            sample_rate: Sample rate in Hz (Gemini TTS uses 24000Hz)
+            bits_per_sample: Bits per sample (16 for L16)
+            num_channels: Number of audio channels (1 for mono)
+        
+        Returns:
+            Complete WAV file bytes with proper headers
+        """
+        # WAV file structure:
+        # - RIFF header (12 bytes)
+        # - fmt subchunk (24 bytes for PCM)
+        # - data subchunk (8 bytes header + audio data)
+        
+        data_size = len(pcm_data)
+        byte_rate = sample_rate * num_channels * bits_per_sample // 8
+        block_align = num_channels * bits_per_sample // 8
+        file_size = 36 + data_size  # Total file size minus 8 bytes for RIFF header
+        
+        # Build WAV header
+        wav_header = struct.pack(
+            '<4sI4s'       # RIFF chunk descriptor
+            '4sIHHIIHH'    # fmt subchunk  
+            '4sI',         # data subchunk header
+            b'RIFF',       # ChunkID
+            file_size,     # ChunkSize (file size - 8)
+            b'WAVE',       # Format
+            b'fmt ',       # Subchunk1ID
+            16,            # Subchunk1Size (16 for PCM)
+            1,             # AudioFormat (1 = PCM)
+            num_channels,  # NumChannels
+            sample_rate,   # SampleRate
+            byte_rate,     # ByteRate
+            block_align,   # BlockAlign
+            bits_per_sample,  # BitsPerSample
+            b'data',       # Subchunk2ID
+            data_size      # Subchunk2Size
+        )
+        
+        logger.info(f"   📦 WAV header added: {len(wav_header)} bytes header + {data_size} bytes audio")
+        return wav_header + pcm_data
 
     @retry(
         wait=wait_exponential(multiplier=1, min=2, max=60),
@@ -273,23 +324,40 @@ class AudioAgent:
 
             if audio_bytes and len(audio_bytes) > 100:  # Sanity check: audio should be >100 bytes
                 # Determine file extension from mime_type
-                # Gemini TTS outputs PCM/WAV by default
+                # Gemini TTS outputs raw L16 PCM by default (NOT WAV with headers)
                 ext = "wav"
                 content_type = "audio/wav"
+                needs_wav_header = True  # Default: assume raw PCM needs headers
                 
                 if mime_type:
                     if "mp3" in mime_type or "mpeg" in mime_type:
                         ext = "mp3"
                         content_type = "audio/mpeg"
+                        needs_wav_header = False
                     elif "ogg" in mime_type:
                         ext = "ogg"
                         content_type = "audio/ogg"
-                    elif "wav" in mime_type or "L16" in mime_type:
-                        ext = "wav"
-                        content_type = "audio/wav"
+                        needs_wav_header = False
+                    elif "wav" in mime_type:
+                        # If it's already a proper WAV file (has RIFF header), skip
+                        if audio_bytes[:4] == b'RIFF':
+                            logger.info("   🎵 Audio already has WAV header, skipping header addition")
+                            needs_wav_header = False
+                        else:
+                            # Raw WAV/PCM without headers
+                            needs_wav_header = True
+                    elif "L16" in mime_type or "pcm" in mime_type.lower():
+                        # Raw L16 PCM - definitely needs headers
+                        needs_wav_header = True
                 
-                logger.info(f"   🎵 Audio generation successful! ({len(audio_bytes)} bytes, {ext})")
-                return self._upload_bytes(audio_bytes, folder=folder, extension=ext, content_type=content_type)
+                # Add WAV headers if needed for browser compatibility
+                final_audio = audio_bytes
+                if needs_wav_header:
+                    logger.info("   🔧 Adding WAV headers to raw PCM data for browser compatibility...")
+                    final_audio = self._add_wav_header(audio_bytes)
+                
+                logger.info(f"   🎵 Audio generation successful! ({len(final_audio)} bytes, {ext})")
+                return self._upload_bytes(final_audio, folder=folder, extension=ext, content_type=content_type)
 
             logger.error(f"❌ Audio Generation failed: No valid audio bytes returned.")
             logger.error(f"   audio_bytes is None: {audio_bytes is None}")
