@@ -48,7 +48,7 @@ class AudioAgent:
         except Exception as e:
             logger.error(f"❌ AudioAgent Client Init Failed: {e}")
 
-    def _upload_bytes(self, data: bytes, folder: str = "general", extension: str = "wav", content_type: str = "audio/wav") -> dict:
+    def _upload_bytes(self, data: bytes, folder: str = "general", extension: str = "mp3", content_type: str = "audio/mpeg") -> dict:
         """Uploads raw bytes to GCS and returns a persistent Firebase Download URL."""
         if not self.storage_client: return {"url": "", "gcs_object_key": ""}
         try:
@@ -66,6 +66,9 @@ class AudioAgent:
             blob.upload_from_string(data, content_type=content_type)
             blob.metadata = metadata
             blob.patch()
+            
+            # Ensure public access for browser playback
+            blob.make_public()
             
             logger.info(f"   ✅ Audio Uploaded (Persistent): {filename} ({len(data)} bytes)")
             
@@ -123,9 +126,11 @@ class AudioAgent:
                 )
             )
             
+            # Use MP3 encoding for better browser compatibility and smaller file size
             generation_config = types.GenerateContentConfig(
                 response_modalities=["AUDIO"],
-                speech_config=speech_config
+                speech_config=speech_config,
+                audio_encoding="MP3"  # Explicitly request MP3 output format
             )
             
             logger.info(f"   📤 Sending TTS request...")
@@ -245,9 +250,9 @@ class AudioAgent:
                 logger.warning(f"⚠️ Byte extraction error: {e}", exc_info=True)
 
             if audio_bytes and len(audio_bytes) > 100:  # Sanity check: audio should be >100 bytes
-                # Determine file extension from mime_type
-                ext = "wav"
-                content_type = "audio/wav"
+                # Determine file extension from mime_type (default to MP3 for browser compatibility)
+                ext = "mp3"
+                content_type = "audio/mpeg"
                 if mime_type:
                     if "mp3" in mime_type or "mpeg" in mime_type:
                         ext = "mp3"
@@ -255,7 +260,8 @@ class AudioAgent:
                     elif "ogg" in mime_type:
                         ext = "ogg"
                         content_type = "audio/ogg"
-                    elif "wav" in mime_type:
+                    elif "wav" in mime_type or "L16" in mime_type:
+                        # Keep WAV only if explicitly returned by the API
                         ext = "wav"
                         content_type = "audio/wav"
                 

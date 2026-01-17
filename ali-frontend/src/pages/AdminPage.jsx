@@ -15,17 +15,19 @@ const CHANNEL_ICONS = {
     tiktok: <FaTiktok className="text-black" />
 };
 
-// Tab configuration for Orchestration Hub
-const ORCHESTRATION_TABS = [
-    { id: 'tutorials', label: 'Tutorial Approvals', icon: <FaPlay /> },
-    { id: 'actions', label: 'Action Center', icon: <FaLightbulb /> },
-    { id: 'alerts', label: 'Research Alerts', icon: <FaBell /> }
+// Tab configuration for Admin Hub - Consolidated 5 Tabs
+const ADMIN_TABS = [
+    { id: 'approvals', label: 'Approvals', icon: <FaPlay /> },
+    { id: 'tutorials', label: 'Tutorials', icon: <FaDatabase /> },
+    { id: 'users', label: 'Users', icon: <FaUserCog /> },
+    { id: 'integrations', label: 'Integrations', icon: <FaLink /> },
+    { id: 'system', label: 'System', icon: <FaExclamationTriangle /> }
 ];
 
 export default function AdminPage() {
     const { currentUser } = useAuth();
     const [isAdmin, setIsAdmin] = useState(false);
-    const [activeTab, setActiveTab] = useState('tutorials'); // Orchestration Hub tab state
+    const [activeTab, setActiveTab] = useState('approvals'); // Default to approvals tab
 
     // Orchestration Hub data states
     const [tutorialRequests, setTutorialRequests] = useState([]);
@@ -394,47 +396,47 @@ export default function AdminPage() {
     };
 
     return (
-        <div className="p-8 max-w-7xl mx-auto animate-fade-in text-slate-800 pb-20">
-            <header className="mb-10 flex justify-between items-center">
+        <div className="p-4 md:p-8 max-w-7xl mx-auto animate-fade-in text-slate-800 pb-20">
+            <header className="mb-6 md:mb-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                 <div>
-                    <h1 className="text-3xl font-black flex items-center gap-3">
-                        <FaThList className="text-indigo-600" /> ALI Orchestration Hub
+                    <h1 className="text-xl md:text-3xl font-black flex items-center gap-3">
+                        <FaThList className="text-indigo-600" /> ALI Admin Hub
                     </h1>
                     <p className="text-slate-500 text-xs font-bold uppercase tracking-widest mt-1">Unified Governance Center</p>
                 </div>
-                <div className="flex gap-4 items-center">
-                    {actionMsg && <span className="text-green-600 font-bold text-sm">{actionMsg}</span>}
-                    <button onClick={handleRunJob} disabled={loadingJob} className="bg-indigo-50 text-indigo-700 px-6 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2 hover:bg-indigo-100 transition-all shadow-sm">
-                        {loadingJob ? <FaSpinner className="animate-spin" /> : <FaPlay />} Run Performance Log
+                <div className="flex gap-2 md:gap-4 items-center flex-wrap">
+                    {actionMsg && <span className="text-green-600 font-bold text-xs md:text-sm">{actionMsg}</span>}
+                    <button onClick={handleRunJob} disabled={loadingJob} className="bg-indigo-50 text-indigo-700 px-4 md:px-6 py-2 md:py-2.5 rounded-xl font-bold text-xs md:text-sm flex items-center gap-2 hover:bg-indigo-100 transition-all shadow-sm">
+                        {loadingJob ? <FaSpinner className="animate-spin" /> : <FaPlay />} <span className="hidden sm:inline">Run</span> Log
                     </button>
                 </div>
             </header>
 
-            {/* ORCHESTRATION HUB TABS */}
-            <div className="mb-10 bg-white rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
-                {/* Tab Navigation */}
-                <div className="flex border-b border-slate-100">
-                    {ORCHESTRATION_TABS.map(tab => (
+            {/* ADMIN HUB TABS - Responsive */}
+            <div className="mb-6 md:mb-10 bg-white rounded-2xl md:rounded-[2.5rem] border border-slate-100 shadow-sm overflow-hidden">
+                {/* Tab Navigation - Scrollable on mobile */}
+                <div className="flex border-b border-slate-100 overflow-x-auto">
+                    {ADMIN_TABS.map(tab => (
                         <button
                             key={tab.id}
                             onClick={() => setActiveTab(tab.id)}
-                            className={`flex-1 py-4 px-6 text-sm font-bold flex items-center justify-center gap-2 transition-all ${activeTab === tab.id
+                            className={`flex-shrink-0 md:flex-1 py-3 md:py-4 px-4 md:px-6 text-xs md:text-sm font-bold flex items-center justify-center gap-2 transition-all whitespace-nowrap ${activeTab === tab.id
                                 ? 'bg-indigo-600 text-white'
                                 : 'text-slate-500 hover:bg-slate-50'
                                 }`}
                         >
-                            {tab.icon} {tab.label}
+                            {tab.icon} <span className="hidden sm:inline">{tab.label}</span>
                         </button>
                     ))}
                 </div>
 
-                {/* Tab Content */}
-                <div className="p-8">
-                    {/* TAB 1: Tutorial Approvals */}
-                    {activeTab === 'tutorials' && (
+                {/* Tab Content - Responsive padding */}
+                <div className="p-4 md:p-8">
+                    {/* TAB 1: Approvals (Tutorial Requests + Action Center + Alerts) */}
+                    {activeTab === 'approvals' && (
                         <div>
-                            <div className="flex justify-between items-center mb-6">
-                                <h3 className="text-lg font-black text-slate-800">Tutorial Generation Requests</h3>
+                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-6">
+                                <h3 className="text-base md:text-lg font-black text-slate-800">Tutorial Generation Requests</h3>
                                 <button onClick={fetchTutorialRequests} className="text-xs font-bold text-indigo-600 hover:bg-indigo-50 px-3 py-2 rounded-xl flex items-center gap-1">
                                     {loadingRequests ? <FaSpinner className="animate-spin" /> : <FaSync />} Refresh
                                 </button>
@@ -501,11 +503,11 @@ export default function AdminPage() {
                         </div>
                     )}
 
-                    {/* TAB 2: Action Center */}
-                    {activeTab === 'actions' && (
-                        <div>
-                            <div className="flex justify-between items-center mb-6">
-                                <h3 className="text-lg font-black text-slate-800">Next Best Action Recommendations</h3>
+                    {/* If inside approvals tab, also show Action Center */}
+                    {activeTab === 'approvals' && (
+                        <div className="border-t border-slate-100 pt-6 mt-6">
+                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-6">
+                                <h3 className="text-base md:text-lg font-black text-slate-800">Next Best Action Recommendations</h3>
                                 <button onClick={fetchRecommendations} className="text-xs font-bold text-indigo-600 hover:bg-indigo-50 px-3 py-2 rounded-xl flex items-center gap-1">
                                     {loadingRecommendations ? <FaSpinner className="animate-spin" /> : <FaSync />} Refresh
                                 </button>
@@ -544,11 +546,11 @@ export default function AdminPage() {
                         </div>
                     )}
 
-                    {/* TAB 3: Research Alerts */}
-                    {activeTab === 'alerts' && (
-                        <div>
-                            <div className="flex justify-between items-center mb-6">
-                                <h3 className="text-lg font-black text-slate-800">Web Engine Monitoring Alerts</h3>
+                    {/* If inside approvals tab, also show Research Alerts */}
+                    {activeTab === 'approvals' && (
+                        <div className="border-t border-slate-100 pt-6 mt-6">
+                            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-6">
+                                <h3 className="text-base md:text-lg font-black text-slate-800">Web Engine Monitoring Alerts</h3>
                                 <button onClick={fetchResearchAlerts} className="text-xs font-bold text-indigo-600 hover:bg-indigo-50 px-3 py-2 rounded-xl flex items-center gap-1">
                                     {loadingAlerts ? <FaSpinner className="animate-spin" /> : <FaSync />} Refresh
                                 </button>

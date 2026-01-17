@@ -15,6 +15,15 @@ from app.core.security import db
 from firebase_admin import firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
 
+# GoogleSearchRetrieval import with SDK version fallback
+try:
+    from vertexai.generative_models import GoogleSearchRetrieval
+except ImportError:
+    try:
+        from vertexai.preview.generative_models import GoogleSearchRetrieval
+    except ImportError:
+        GoogleSearchRetrieval = None  # Fallback: Web search disabled
+
 # Configure Logger
 logger = logging.getLogger("ali_platform.agents.troubleshooting_agent")
 
@@ -34,21 +43,16 @@ class TroubleshootingAgent:
             self.logging_client = None
 
         # Tools: Google Search Grounding
-        try:
-            from vertexai.generative_models import GoogleSearchRetrieval
-            # Ensure we are not passing unexpected args if SDK differs, but typically it takes no required args or 'disable_attribution'
-            gsr = GoogleSearchRetrieval(disable_attribution=False)
-            self.tools = [Tool.from_google_search_retrieval(gsr)]
-            logger.info("✅ Google Search Grounding Configured")
-        except ImportError:
-            # Fallback for older SDKs or Preview
+        self.search_tool = None
+        if GoogleSearchRetrieval is not None:
             try:
-                from vertexai.preview.generative_models import GoogleSearchRetrieval
                 gsr = GoogleSearchRetrieval(disable_attribution=False)
-                self.tools = [Tool.from_google_search_retrieval(gsr)]
-            except:
-                logger.debug("ℹ️ Google Search Retrieval tool not available. Web research disabled (non-critical).")
-                self.tools = []
+                self.search_tool = Tool.from_google_search_retrieval(gsr)
+                logger.info("✅ Google Search Grounding Configured")
+            except Exception as e:
+                logger.warning(f"⚠️ Google Search Grounding init failed: {e}. Web research disabled.")
+        else:
+            logger.warning("⚠️ GoogleSearchRetrieval unavailable due to SDK version. Web research disabled.")
         
     def fetch_combined_telemetry(self, hours: int = 1, limit: int = 20) -> List[Any]:
         """ 
@@ -206,14 +210,8 @@ class TroubleshootingAgent:
         model = get_model(intent='complex')
         
         # We create the tool for this specific call to ensure clean state
-        try:
-            from vertexai.generative_models import GoogleSearchRetrieval
-            gsr = GoogleSearchRetrieval(disable_attribution=False)
-            search_tool = Tool.from_google_search_retrieval(gsr)
-        except Exception as e:
-             logger.warning(f"Google Search Tool Init Failed: {e}")
-             # Fallback to previously initialized tool or empty if unavailable
-             search_tool = self.tools[0] if self.tools else None
+        # Use pre-initialized search tool from __init__
+        search_tool = self.search_tool
         
         prompt = f"""
         You are a **Principal Debugging Engineer** at a tech company, specializing in both Google Cloud infrastructure (Cloud Run, Firestore, Vertex AI) and React/Python full-stack development.
@@ -244,11 +242,16 @@ class TroubleshootingAgent:
         """
         
         try:
-            # Generate with Search Grounding
-            response = model.generate_content(
-                prompt,
-                tools=[search_tool]
-            )
+            # Generate with Search Grounding (if available)
+            if search_tool:
+                response = model.generate_content(
+                    prompt,
+                    tools=[search_tool]
+                )
+            else:
+                # Fallback: Generate without web search
+                logger.debug("ℹ️ Generating analysis without web search grounding.")
+                response = model.generate_content(prompt)
             
             # Parsing logic (using our standard helper if available, or local logic)
             text = response.text
