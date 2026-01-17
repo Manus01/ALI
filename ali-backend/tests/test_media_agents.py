@@ -402,8 +402,84 @@ class TestFabricateBlock:
         
         assert result["type"] == "placeholder"
         assert result["status"] == "failed"
-        assert "error" in result
+        # After retry: exception is caught by wrapper, returns placeholder with 'info' or 'error'
+        assert "error" in result or "info" in result
+
+
+class TestOrchestrationRetry:
+    """Tests for the orchestration-level retry mechanism in tutorial_agent"""
+    
+    def test_is_transient_failure_detects_none(self):
+        """Test that None results are marked as transient failures"""
+        from app.agents.tutorial_agent import _is_transient_failure
+        
+        assert _is_transient_failure(None) is True
+    
+    def test_is_transient_failure_detects_timeout(self):
+        """Test that timeout error dicts are marked as transient failures"""
+        from app.agents.tutorial_agent import _is_transient_failure
+        
+        assert _is_transient_failure({"error": "timeout"}) is True
+        assert _is_transient_failure({"error": "quota_exhausted"}) is True
+        assert _is_transient_failure({"error": "max_retries"}) is True
+        assert _is_transient_failure({"error": "generation_failed"}) is True
+    
+    def test_is_transient_failure_ignores_content_policy(self):
+        """Test that content_policy errors are NOT retried"""
+        from app.agents.tutorial_agent import _is_transient_failure
+        
+        assert _is_transient_failure({"error": "content_policy"}) is False
+        assert _is_transient_failure({"error": "validation"}) is False
+    
+    def test_is_transient_failure_success_url(self):
+        """Test that success results with URL are not retried"""
+        from app.agents.tutorial_agent import _is_transient_failure
+        
+        assert _is_transient_failure({"url": "https://example.com/image.png"}) is False
+    
+    def test_fabricate_block_retries_on_transient_failure(self):
+        """Test that fabricate_block retries on transient image failures"""
+        from app.agents.tutorial_agent import fabricate_block
+        
+        mock_image_agent = MagicMock()
+        mock_audio_agent = MagicMock()
+        
+        # Simulate transient failure then success
+        mock_image_agent.generate_image.side_effect = [
+            None,  # First call fails
+            {"url": "https://example.com/image.png", "gcs_object_key": "test.png"}  # Retry succeeds
+        ]
+        
+        block = {"type": "image_diagram", "visual_prompt": "Test diagram"}
+        result = fabricate_block(block, "Test Topic", None, mock_image_agent, mock_audio_agent)
+        
+        # Should have called generate_image twice (initial + 1 retry)
+        assert mock_image_agent.generate_image.call_count == 2
+        assert result["type"] == "image"
+        assert result["url"] == "https://example.com/image.png"
+    
+    def test_fabricate_block_audio_retries_on_transient_failure(self):
+        """Test that fabricate_block retries on transient audio failures"""
+        from app.agents.tutorial_agent import fabricate_block
+        
+        mock_image_agent = MagicMock()
+        mock_audio_agent = MagicMock()
+        
+        # Simulate transient failure then success
+        mock_audio_agent.generate_audio.side_effect = [
+            None,  # First call fails
+            {"url": "https://example.com/audio.wav", "gcs_object_key": "test.wav"}  # Retry succeeds
+        ]
+        
+        block = {"type": "audio_note", "script": "Test script"}
+        result = fabricate_block(block, "Test Topic", None, mock_image_agent, mock_audio_agent)
+        
+        # Should have called generate_audio twice (initial + 1 retry)
+        assert mock_audio_agent.generate_audio.call_count == 2
+        assert result["type"] == "audio"
+        assert result["url"] == "https://example.com/audio.wav"
 
 
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
+

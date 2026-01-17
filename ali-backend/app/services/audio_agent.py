@@ -9,6 +9,7 @@ from typing import Optional, Any, Union
 from google import genai
 from google.genai import types
 from google.cloud import storage
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 # Configure Logger
 logger = logging.getLogger("ali_platform.services.audio_agent")
@@ -85,6 +86,22 @@ class AudioAgent:
             logger.error(f"❌ Upload Failed: {e}")
             return {"url": "", "gcs_object_key": ""}
 
+    @retry(
+        wait=wait_exponential(multiplier=1, min=2, max=60),
+        stop=stop_after_attempt(3),
+        retry=retry_if_exception_type(Exception),
+        before_sleep=lambda retry_state: logger.warning(
+            f"⚠️ TTS Retry: Attempt {retry_state.attempt_number} failed, retrying..."
+        )
+    )
+    def _generate_tts_with_retry(self, clean_text: str, generation_config):
+        """Internal method with retry logic for TTS API calls."""
+        return self.client.models.generate_content(
+            model=TTS_MODEL,
+            contents=clean_text,
+            config=generation_config
+        )
+
     def generate_audio(self, text: str, folder: str = "general") -> Optional[Union[str, dict]]:
         """
         Generates audio using Gemini 2.5 TTS Preview model.
@@ -131,18 +148,37 @@ class AudioAgent:
             # The audio_encoding param does NOT exist in GenerateContentConfig.
             # HTML5 <audio> elements support WAV playback natively.
             
+            # Safety settings to prevent false positives on benign educational content
+            # Using BLOCK_ONLY_HIGH to only block clearly harmful content
+            safety_settings = [
+                types.SafetySetting(
+                    category="HARM_CATEGORY_HATE_SPEECH",
+                    threshold="BLOCK_ONLY_HIGH"
+                ),
+                types.SafetySetting(
+                    category="HARM_CATEGORY_DANGEROUS_CONTENT",
+                    threshold="BLOCK_ONLY_HIGH"
+                ),
+                types.SafetySetting(
+                    category="HARM_CATEGORY_HARASSMENT",
+                    threshold="BLOCK_ONLY_HIGH"
+                ),
+                types.SafetySetting(
+                    category="HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                    threshold="BLOCK_ONLY_HIGH"
+                )
+            ]
+            
             generation_config = types.GenerateContentConfig(
                 response_modalities=["AUDIO"],
-                speech_config=speech_config
+                speech_config=speech_config,
+                safety_settings=safety_settings
             )
             
             logger.info(f"   📤 Sending TTS request...")
             
-            response = self.client.models.generate_content(
-                model=TTS_MODEL,
-                contents=clean_text,
-                config=generation_config
-            )
+            # Use retry-wrapped internal method for resilience against transient failures
+            response = self._generate_tts_with_retry(clean_text, generation_config)
             
             logger.info(f"   ✅ TTS generation succeeded.")
             

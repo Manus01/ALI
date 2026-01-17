@@ -1,11 +1,40 @@
 import json
 import logging
-from typing import Optional
+import re
+from typing import Optional, Dict, Any, List
 from .base_agent import BaseAgent
 from app.services.llm_factory import get_model
 from app.services.knowledge_service import KnowledgeService
 
 logger = logging.getLogger(__name__)
+
+
+def extract_json_safe(text: str) -> Dict[str, Any]:
+    """
+    Robustly extracts JSON from an LLM response string.
+    Handles markdown code blocks (```json ... ```) or raw JSON.
+    """
+    try:
+        # 1. Try cleaning markdown syntax first
+        clean_text = text.replace("```json", "").replace("```", "").strip()
+        return json.loads(clean_text)
+    except json.JSONDecodeError:
+        # 2. Fallback: Use Regex to find the first JSON object '{...}'
+        try:
+            match = re.search(r'(\{.*\})', text, re.DOTALL)
+            if match:
+                return json.loads(match.group(1))
+        except:
+            pass
+        # 3. Try finding JSON array '[...]'
+        try:
+            match = re.search(r'(\[.*\])', text, re.DOTALL)
+            if match:
+                return json.loads(match.group(1))
+        except:
+            pass
+        # 4. Final Fallback: Raise error to be caught by caller
+        raise ValueError(f"Failed to parse JSON from response: {text[:100]}...")
 
 class CampaignAgent(BaseAgent):
     def __init__(self):
@@ -54,9 +83,7 @@ class CampaignAgent(BaseAgent):
         
         try:
             response = await self.model.generate_content_async(prompt)
-            # Cleanup JSON formatting from AI response
-            raw_text = response.text.strip().replace('```json', '').replace('```', '')
-            return json.loads(raw_text)
+            return extract_json_safe(response.text)
         except Exception as e:
             self.handle_error(e)
 
@@ -207,8 +234,7 @@ class CampaignAgent(BaseAgent):
         
         try:
             response = await self.model.generate_content_async(prompt)
-            raw_text = response.text.strip().replace('```json', '').replace('```', '')
-            return json.loads(raw_text)
+            return extract_json_safe(response.text)
         except Exception as e:
             self.handle_error(e)
 
@@ -245,8 +271,7 @@ class CampaignAgent(BaseAgent):
 
         try:
             response = await self.model.generate_content_async(prompt)
-            raw_text = response.text.strip().replace('```json', '').replace('```', '')
-            return json.loads(raw_text)
+            return extract_json_safe(response.text)
         except Exception as e:
             self.handle_error(e)
             return {

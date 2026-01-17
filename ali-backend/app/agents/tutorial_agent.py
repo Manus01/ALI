@@ -15,9 +15,23 @@ from app.services.metricool_client import MetricoolClient
 from concurrent.futures import ThreadPoolExecutor
 from app.types.tutorial_lifecycle import TutorialStatus
 from app.services import research_service
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_result
 
 # Configure Logger
 logger = logging.getLogger("ali_platform.agents.tutorial_agent")
+
+# Safety settings to prevent false positives on benign marketing/education content
+try:
+    from vertexai.generative_models import HarmCategory, HarmBlockThreshold
+    SAFETY_SETTINGS = {
+        HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+        HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+        HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+        HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
+    }
+except ImportError:
+    logger.warning("⚠️ HarmCategory/HarmBlockThreshold not available. Safety settings disabled.")
+    SAFETY_SETTINGS = None
 
 def extract_json_safe(text: str) -> Dict[str, Any]:
     """
@@ -404,7 +418,7 @@ def generate_curriculum_blueprint(topic, profile, campaign_context, struggles, s
     max_retries = 3
     for attempt in range(max_retries):
         try:
-            response = model.generate_content(prompt)
+            response = model.generate_content(prompt, safety_settings=SAFETY_SETTINGS)
             raw_data = extract_json_safe(response.text)
             
             # Use flexible parser to normalize the response
@@ -447,7 +461,7 @@ def write_section_narrative(section_meta, topic, metaphor, profile, struggle_top
     3. **DO NOT** use H1 (#) headers. Use H2 (##) or H3 (###) only.
     4. Write approx 300 words of deep, high-value content.
     """
-    response = model.generate_content(prompt)
+    response = model.generate_content(prompt, safety_settings=SAFETY_SETTINGS)
     return response.text.strip().strip('"')
 
 # --- 3. THE DESIGNER (Pass 2: Assets & Quiz) ---
@@ -501,7 +515,7 @@ def design_section_assets(section_text, section_meta, metaphor, struggle_topics:
     }}
     """
     try:
-        response = model.generate_content(prompt)
+        response = model.generate_content(prompt, safety_settings=SAFETY_SETTINGS)
         data = extract_json_safe(response.text)
         data['assets'] = validate_quiz_data(data.get('assets', []))
         return data
@@ -614,6 +628,19 @@ def generate_tutorial(
         # PHASE 1: BLUEPRINT
         blueprint = generate_curriculum_blueprint(topic, profile, campaign_context, struggles, struggle_topics, connected_channels)
         metaphor = blueprint.get('pedagogical_metaphor', 'Abstract Concept')
+        
+        # CONTENT VALIDATION: Detect fallback/placeholder content before wasting resources
+        blueprint_title_lower = blueprint.get('title', '').lower()
+        topic_words = [w.lower() for w in topic.split()[:3] if len(w) > 2]
+        known_fallback_terms = ['fishing', 'gardening', 'cooking', 'hiking', 'camping', 'knitting']
+        
+        is_fallback = any(term in blueprint_title_lower for term in known_fallback_terms)
+        topic_match = any(word in blueprint_title_lower for word in topic_words)
+        
+        if is_fallback and not topic_match:
+            error_msg = f"Content generation failed: Blueprint title '{blueprint.get('title')}' does not match requested topic '{topic}'. Possible fallback/placeholder content detected."
+            logger.error(f"❌ {error_msg}")
+            raise ValueError(error_msg)
         
         if progress_callback:
             progress_callback(f"Step 2/5: Blueprint complete! Found {len(blueprint.get('sections', []))} sections to generate...")
@@ -1053,8 +1080,62 @@ def generate_remedial_content(
             time.sleep(1)
 
 
+# --- ORCHESTRATION-LEVEL RETRY HELPERS ---
+def _is_transient_failure(result):
+    """
+    Return True if result indicates a transient failure worth retrying.
+    This allows tenacity to retry based on return values, not just exceptions.
+    """
+    if result is None:
+        return True
+    if isinstance(result, dict):
+        error = result.get("error")
+        # Retry on transient errors: timeout, quota, max_retries
+        if error in ["timeout", "max_retries", "quota_exhausted", "generation_failed"]:
+            return True
+        # Don't retry on permanent errors: content_policy, validation
+        if error in ["content_policy", "validation"]:
+            return False
+        # If it's a success dict (has url), don't retry
+        if result.get("url"):
+            return False
+    return False
+
+
+def _call_with_orchestration_retry(agent_call, block_type: str, max_attempts: int = 3):
+    """
+    Wrapper that calls media agent with orchestration-level retry.
+    Uses tenacity for exponential backoff on transient failures.
+    
+    Args:
+        agent_call: A callable (lambda) that invokes the agent method
+        block_type: Type of block for logging (e.g., "audio", "image")
+        max_attempts: Maximum retry attempts (default 3)
+    
+    Returns:
+        The result from agent_call, after retries if needed
+    """
+    @retry(
+        retry=retry_if_result(_is_transient_failure),
+        stop=stop_after_attempt(max_attempts),
+        wait=wait_exponential(multiplier=1, min=2, max=30),
+        before_sleep=lambda rs: logger.warning(
+            f"⚠️ Orchestration Retry: Attempt {rs.attempt_number} failed for {block_type}, retrying..."
+        ),
+        reraise=True
+    )
+    def _inner():
+        return agent_call()
+    
+    try:
+        return _inner()
+    except Exception as e:
+        logger.error(f"❌ All orchestration retries exhausted for {block_type}: {e}")
+        return None
+
+
 def fabricate_block(block, topic, video_agent, image_agent, audio_agent, progress_callback=None):
-    """ Helper to call Creative Agents safely. Handles Fallbacks and Alerts. """
+    """ Helper to call Creative Agents safely. Handles Fallbacks and Alerts with Retry. """
     try:
         if block["type"] == "video_clip":
             p = block.get("visual_prompt", f"Cinematic {topic}")
@@ -1062,8 +1143,11 @@ def fabricate_block(block, topic, video_agent, image_agent, audio_agent, progres
             # Legacy support: Redirect video requests to Image Agent
             logger.info(f"      🎥 VEO Request Redirected to Image Agent: {p}")
             
-            # Use Image Agent instead
-            result = image_agent.generate_image(f"Cinematic photorealistic image of {p}", folder="tutorials")
+            # Use Image Agent with orchestration-level retry
+            result = _call_with_orchestration_retry(
+                lambda: image_agent.generate_image(f"Cinematic photorealistic image of {p}", folder="tutorials"),
+                block_type="video->image fallback"
+            )
             
             url = result
             gcs_key = None
@@ -1080,7 +1164,7 @@ def fabricate_block(block, topic, video_agent, image_agent, audio_agent, progres
                      "original_type": "video",
                      "prompt": p,
                      "status": "failed",
-                     "info": "Video generation disabled. Image fallback failed."
+                     "info": "Video generation disabled. Image fallback failed after retries."
                  }
 
             # Original Video Logic Removed
@@ -1098,7 +1182,10 @@ def fabricate_block(block, topic, video_agent, image_agent, audio_agent, progres
             # Fallback 1: Try Image if Video fails
             if not url or not str(url).startswith("http"):
                 logger.warning(f"      ⚠️ VEO Failed. Falling back to Image Agent for: {p}")
-                result = image_agent.generate_image(f"Cinematic photorealistic image of {p}", folder="tutorials")
+                result = _call_with_orchestration_retry(
+                    lambda: image_agent.generate_image(f"Cinematic photorealistic image of {p}", folder="tutorials"),
+                    block_type="image fallback"
+                )
                 
                 url = result
                 gcs_key = None
@@ -1118,7 +1205,7 @@ def fabricate_block(block, topic, video_agent, image_agent, audio_agent, progres
                      "original_type": "video",
                      "prompt": p, 
                      "status": "failed",
-                     "info": "Generation failed. Admin regeneration required." 
+                     "info": "Generation failed after retries. Admin regeneration required." 
                  }
             
             logger.info(f"      ✅ Video Created: {url[:30]}...")
@@ -1127,8 +1214,11 @@ def fabricate_block(block, topic, video_agent, image_agent, audio_agent, progres
         elif block["type"] == "image_diagram":
             p = block.get("visual_prompt", f"Diagram of {topic}")
             
-            # Use Image Agent
-            result = image_agent.generate_image(p, folder="tutorials")
+            # Use Image Agent with orchestration-level retry
+            result = _call_with_orchestration_retry(
+                lambda: image_agent.generate_image(p, folder="tutorials"),
+                block_type="image_diagram"
+            )
             
             url = result
             gcs_key = None
@@ -1140,13 +1230,13 @@ def fabricate_block(block, topic, video_agent, image_agent, audio_agent, progres
                 logger.info(f"      ✅ Image Created")
                 return { "type": "image", "url": url, "prompt": p, "gcs_object_key": gcs_key }
             
-            logger.warning("      ⚠️ Image generation failed, recording alert.")
+            logger.warning("      ⚠️ Image generation failed after retries, recording alert.")
             return {
                 "type": "placeholder",
                 "original_type": "image",
                 "prompt": p,
                 "status": "failed",
-                "info": "Image generation failed."
+                "info": "Image generation failed after retries."
             }
         
         elif block["type"] == "audio_note":
@@ -1154,8 +1244,11 @@ def fabricate_block(block, topic, video_agent, image_agent, audio_agent, progres
             if not s: s = f"Let's focus on {topic}."
             logger.info(f"      🎙️ TTS Generating...")
             
-            # Use Audio Agent (Persistent)
-            result = audio_agent.generate_audio(s, folder="tutorials")
+            # Use Audio Agent with orchestration-level retry
+            result = _call_with_orchestration_retry(
+                lambda: audio_agent.generate_audio(s, folder="tutorials"),
+                block_type="audio_note"
+            )
             
             url = result
             gcs_key = None
@@ -1165,13 +1258,13 @@ def fabricate_block(block, topic, video_agent, image_agent, audio_agent, progres
             
             # Alert on Audio Fail
             if not url or not str(url).startswith("http"):
-                logger.error("      ❌ TTS Failed.")
+                logger.error("      ❌ TTS Failed after retries.")
                 return {
                     "type": "placeholder",
                     "original_type": "audio",
                     "script": s,
                     "status": "failed",
-                    "info": "Audio generation failed."
+                    "info": "Audio generation failed after retries."
                 }
                 
             logger.info(f"      ✅ Audio Created")
@@ -1188,3 +1281,4 @@ def fabricate_block(block, topic, video_agent, image_agent, audio_agent, progres
              "status": "failed",
              "error": str(e)
         }
+
