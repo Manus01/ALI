@@ -84,3 +84,96 @@ class WebSearchClient:
         except Exception:
             logger.debug("Domain extraction failed")
             return "Web Result"
+
+    # Social media platform configurations for site-specific searches
+    SOCIAL_PLATFORMS = {
+        "linkedin": {
+            "site": "linkedin.com",
+            "name": "LinkedIn",
+            "icon": "💼"
+        },
+        "facebook": {
+            "site": "facebook.com",
+            "name": "Facebook", 
+            "icon": "👥"
+        },
+        "twitter": {
+            "site": "twitter.com OR site:x.com",
+            "name": "X (Twitter)",
+            "icon": "🐦"
+        },
+        "instagram": {
+            "site": "instagram.com",
+            "name": "Instagram",
+            "icon": "📸"
+        },
+        "tiktok": {
+            "site": "tiktok.com",
+            "name": "TikTok",
+            "icon": "🎵"
+        }
+    }
+
+    async def search_social_mentions(
+        self,
+        brand_name: str,
+        platforms: Optional[List[str]] = None,
+        max_results_per_platform: int = 10
+    ) -> List[Dict[str, Any]]:
+        """
+        Search for brand mentions on social media platforms using site-specific queries.
+        
+        Args:
+            brand_name: The brand to search for
+            platforms: List of platform IDs (linkedin, facebook, twitter, instagram, tiktok)
+                      If None, searches all platforms
+            max_results_per_platform: Max results per platform
+            
+        Returns:
+            List of mentions with platform attribution
+        """
+        if platforms is None:
+            platforms = list(self.SOCIAL_PLATFORMS.keys())
+        
+        all_results = []
+        
+        for platform_id in platforms:
+            if platform_id not in self.SOCIAL_PLATFORMS:
+                logger.warning(f"Unknown platform: {platform_id}")
+                continue
+                
+            platform = self.SOCIAL_PLATFORMS[platform_id]
+            
+            try:
+                # Build site-specific query
+                query = f'"{brand_name}" site:{platform["site"]}'
+                
+                logger.info(f"🔍 Searching {platform['name']} for: {brand_name}")
+                
+                ddg_results = self.ddgs.text(query, max_results=max_results_per_platform)
+                
+                for r in ddg_results:
+                    all_results.append({
+                        "id": r.get('href'),
+                        "title": r.get('title'),
+                        "source": "social_search",
+                        "source_type": platform_id,
+                        "source_name": platform["name"],
+                        "source_icon": platform["icon"],
+                        "content": r.get('body', ''),
+                        "description": r.get('body', ''),
+                        "url": r.get('href'),
+                        "published_at": datetime.utcnow().isoformat(),
+                        "is_social_result": True,
+                        "platform": platform_id
+                    })
+                
+                logger.info(f"✅ Found {len(ddg_results)} results on {platform['name']}")
+                
+            except Exception as e:
+                logger.error(f"❌ {platform['name']} search failed: {e}")
+                continue
+        
+        logger.info(f"📊 Total social mentions found: {len(all_results)}")
+        return all_results
+

@@ -1813,8 +1813,17 @@ async def get_scan_status(
 async def get_supported_sources():
     """
     Get list of all sources the system can search for mentions.
-    Use this to display supported platforms in the frontend.
+    Dynamically checks which sources are configured and active.
     """
+    import os
+    
+    # Check which services are configured
+    has_apify = bool(os.getenv("APIFY_API_TOKEN"))
+    has_youtube = bool(os.getenv("YOUTUBE_API_KEY"))
+    
+    # Web search is always available (uses DuckDuckGo, no API key needed)
+    web_search_active = True
+    
     return {
         "status": "success",
         "mention_sources": [
@@ -1823,62 +1832,70 @@ async def get_supported_sources():
                 "name": "News Articles",
                 "description": "Major news outlets and publications worldwide",
                 "icon": "📰",
-                "active": True
+                "active": True,
+                "provider": "newsapi"
             },
             {
                 "id": "web",
                 "name": "Web Search",
-                "description": "Google Search results, blogs, and online mentions",
+                "description": "Blogs, forums, and online mentions via DuckDuckGo",
                 "icon": "🌐",
-                "active": True
+                "active": True,
+                "provider": "duckduckgo"
             },
             {
                 "id": "linkedin",
                 "name": "LinkedIn",
                 "description": "Professional network posts and mentions",
                 "icon": "💼",
-                "active": False,
-                "coming_soon": True
+                "active": web_search_active or has_apify,
+                "provider": "apify" if has_apify else "web_search",
+                "note": "Via site-specific search" if not has_apify else "Via Apify"
             },
             {
                 "id": "twitter",
                 "name": "X (Twitter)",
                 "description": "Tweets and social conversations",
                 "icon": "🐦",
-                "active": False,
-                "coming_soon": True
+                "active": web_search_active or has_apify,
+                "provider": "apify" if has_apify else "web_search",
+                "note": "Via site-specific search" if not has_apify else "Via Apify"
             },
             {
                 "id": "facebook",
                 "name": "Facebook",
                 "description": "Public posts and pages",
                 "icon": "👥",
-                "active": False,
-                "coming_soon": True
+                "active": web_search_active or has_apify,
+                "provider": "apify" if has_apify else "web_search",
+                "note": "Via site-specific search" if not has_apify else "Via Apify"
             },
             {
                 "id": "instagram",
                 "name": "Instagram",
                 "description": "Posts, stories, and comments",
                 "icon": "📸",
-                "active": False,
-                "coming_soon": True
+                "active": web_search_active or has_apify,
+                "provider": "apify" if has_apify else "web_search",
+                "note": "Via site-specific search" if not has_apify else "Via Apify"
             },
             {
                 "id": "tiktok",
                 "name": "TikTok",
                 "description": "Video content and comments",
                 "icon": "🎵",
-                "active": False,
-                "coming_soon": True
+                "active": web_search_active or has_apify,
+                "provider": "apify" if has_apify else "web_search",
+                "note": "Via site-specific search" if not has_apify else "Via Apify"
             },
             {
                 "id": "youtube",
                 "name": "YouTube",
                 "description": "Video mentions and comments",
                 "icon": "▶️",
-                "active": False,
-                "coming_soon": True
+                "active": has_youtube or web_search_active,
+                "provider": "youtube_api" if has_youtube else "web_search",
+                "note": "Official API" if has_youtube else "Via site-specific search"
             }
         ],
         "reporting_platforms": [
@@ -1904,6 +1921,12 @@ async def get_supported_sources():
         "data_retention": {
             "raw_data": "2 years (GDPR)",
             "patterns": "Indefinite (anonymized)"
+        },
+        "configured_services": {
+            "apify": has_apify,
+            "youtube_api": has_youtube,
+            "web_search": True,
+            "news_api": True
         }
     }
 

@@ -389,6 +389,9 @@ export default function BrandMonitoringDashboard() {
                                     </div>
                                 </div>
                                 <p className="text-xs md:text-sm text-slate-400 hidden sm:block">{source.description}</p>
+                                {source.note && (
+                                    <p className="text-xs text-blue-400/70 mt-1 hidden sm:block">{source.note}</p>
+                                )}
                             </div>
                         ))}
                     </div>
