@@ -94,6 +94,7 @@ saga_map = safe_import_router("saga_map")
 creatives = safe_import_router("creatives")
 ai_web = safe_import_router("ai_web")
 competitors = safe_import_router("competitors")
+execution = safe_import_router("execution")
 
 logger.info("✅ Router imports processed.")
 
@@ -236,6 +237,7 @@ routers_map = [
     ("/api/creatives", (creatives, ["Creatives"])),
     ("/api/ai/web", (ai_web, ["AI Web"])),
     ("/api", (competitors, ["Competitors"])),  # Market Radar
+    ("/api", (execution, ["Execution"])),  # Marketing action execution
 ]
 
 for prefix, (module, tags) in routers_map:

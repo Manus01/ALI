@@ -199,8 +199,8 @@ function formatEvidenceReportAsText(report: EvidenceReportResponse): string {
 // EVIDENCE PACKAGE EXPORT (ZIP)
 // =============================================================================
 
-import { auth } from '../../../firebase';
-import { API_URL } from '../../../api_config';
+import { auth } from '../../../../firebase';
+import { API_URL } from '../../../../api_config';
 
 /**
  * Download evidence package as ZIP from backend.
