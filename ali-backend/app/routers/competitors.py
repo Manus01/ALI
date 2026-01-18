@@ -11,8 +11,7 @@ from collections import defaultdict
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from app.services.auth import verify_token
-from app.services.firestore_service import get_firestore_client
+from app.core.security import verify_token, db
 from app.services.bigquery_service import get_bigquery_service
 from app.types.competitor_models import (
     Competitor,
@@ -81,7 +80,6 @@ async def list_competitors(
     Get list of tracked competitors.
     """
     try:
-        db = get_firestore_client()
         user_id = user.get("uid")
         
         query = db.collection("competitors").where("user_id", "==", user_id)
@@ -114,7 +112,6 @@ async def create_competitor(
     Add a new competitor to track.
     """
     try:
-        db = get_firestore_client()
         user_id = user.get("uid")
         
         # Check for duplicates
@@ -168,7 +165,6 @@ async def get_competitor(
     Get a single competitor by ID.
     """
     try:
-        db = get_firestore_client()
         user_id = user.get("uid")
         
         doc = db.collection("competitors").document(competitor_id).get()
@@ -217,7 +213,6 @@ async def update_competitor(
     Update a competitor.
     """
     try:
-        db = get_firestore_client()
         user_id = user.get("uid")
         
         doc_ref = db.collection("competitors").document(competitor_id)
@@ -272,7 +267,6 @@ async def delete_competitor(
     Remove a competitor from tracking (soft delete).
     """
     try:
-        db = get_firestore_client()
         user_id = user.get("uid")
         
         doc_ref = db.collection("competitors").document(competitor_id)
@@ -321,7 +315,6 @@ async def list_competitor_events(
     List competitor events with optional filters.
     """
     try:
-        db = get_firestore_client()
         user_id = user.get("uid")
         
         # Build query
@@ -390,7 +383,6 @@ async def get_competitor_event(
     Get a single competitor event by ID.
     """
     try:
-        db = get_firestore_client()
         user_id = user.get("uid")
         
         doc = db.collection("competitor_events").document(event_id).get()
@@ -429,7 +421,6 @@ async def list_theme_clusters(
     Clusters group related events by theme and provide actionable insights.
     """
     try:
-        db = get_firestore_client()
         user_id = user.get("uid")
         
         # Parse time range
@@ -484,7 +475,6 @@ async def get_theme_cluster(
     Get a single theme cluster with optionally embedded events.
     """
     try:
-        db = get_firestore_client()
         user_id = user.get("uid")
         
         doc = db.collection("theme_clusters").document(cluster_id).get()
@@ -532,7 +522,6 @@ async def generate_weekly_digest(
     Manual trigger only - produces a summary report with top clusters and notable events.
     """
     try:
-        db = get_firestore_client()
         user_id = user.get("uid")
         
         # Parse time range
@@ -632,7 +621,6 @@ async def export_digest(
     Export a digest as HTML (or PDF if available).
     """
     try:
-        db = get_firestore_client()
         user_id = user.get("uid")
         
         doc = db.collection("weekly_digests").document(digest_id).get()
@@ -679,7 +667,6 @@ async def trigger_competitor_scan(
     Queues a background job to fetch latest news/events for specified competitors.
     """
     try:
-        db = get_firestore_client()
         user_id = user.get("uid")
         
         job_id = str(uuid.uuid4())
