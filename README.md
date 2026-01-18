@@ -1,59 +1,91 @@
 # ALI (Agentic Learning Intelligence) Platform
 
 ## Overview
-ALI is a unified **Campaign Intelligence Engine** designed to orchestrate complex marketing workflows using advanced AI agents. The platform combines a high-performance **FastAPI** backend with a responsive **React** frontend to deliver brand analysis, campaign generation, and automated asset recycling.
+ALI is a unified **Campaign Intelligence Engine** designed to orchestrate complex marketing workflows using advanced AI agents. The platform combines a high-performance **FastAPI** backend with a responsive **React** frontend to deliver brand analysis, campaign generation, tutorial creation, and brand monitoring.
 
 ## Key Features
-- **Brand DNA Analysis**: Automated extraction of brand identity and values.
-- **Campaign Orchestration**: Multi-agent system (`CampaignAgent`, `OrchestratorAgent`) for strategic planning.
-- **Asset Recycling**: Intelligent transformation of existing assets into new formats.
-- **Real-time Dashboard**: Interactive UI for managing campaigns and viewing results.
+- **Brand DNA Analysis**: AI extraction of brand identity, voice, and values
+- **Campaign Orchestration**: Multi-agent system for strategic campaign planning
+- **Tutorial Engine**: 4C/ID-based gamified tutorials with media generation
+- **Brand Monitoring**: Real-time threat detection, competitive intelligence
+- **Market Radar**: Market trend analysis and opportunity detection
 
 ## Quick Start
 
 ### Prerequisites
-- Docker & Docker Compose (Recommended)
-- OR Python 3.10+ and Node.js 18+
+- Python 3.10+
+- Node.js 18+
+- GCP Service Account
 
-### Running with Docker
-*(If docker-compose is available)*
+### Backend
 ```bash
-docker-compose up --build
+cd ali-backend
+pip install -r requirements.txt
+uvicorn app.main:app --reload
 ```
 
-### Manual Setup
-1. **Backend**:
-   ```bash
-   cd ali-backend
-   pip install -r requirements.txt
-   uvicorn app.main:app --reload
-   ```
-2. **Frontend**:
-   ```bash
-   cd ali-frontend
-   npm install
-   npm run dev
-   ```
+### Frontend
+```bash
+cd ali-frontend
+npm install
+npm run dev
+```
 
 ## Documentation
-Detailed technical documentation is available in the [docs](docs/) directory:
 
-- [Backend Documentation](docs/backend.md): API architecture, services, and agent logic.
-- [Frontend Documentation](docs/frontend.md): React setup, component structure, and build tools.
-- [Deployment Guide](docs/deployment.md): Cloud Run deployment and CI/CD.
+### Core Documentation
+| Document | Description |
+|----------|-------------|
+| [Backend Overview](docs/backend.md) | API architecture, agents, services |
+| [Frontend Overview](docs/frontend.md) | React setup, components, pages |
+| [Deployment Guide](docs/deployment.md) | Cloud Run deployment, CI/CD |
+
+### Backend Subsystems
+| Document | Description |
+|----------|-------------|
+| [Architecture](ali-backend/docs/architecture.md) | System design, retry mechanisms |
+| [Brand Monitoring](ali-backend/docs/brand_monitoring.md) | Monitoring agents and API |
+| [GCP Scheduler](ali-backend/docs/gcp_scheduler_setup.md) | Cloud Scheduler configuration |
+
+### Frontend Guides
+| Document | Description |
+|----------|-------------|
+| [API Client](ali-frontend/docs/api-client.md) | Type-safe HTTP client usage |
+| [Endpoint Integration](ali-frontend/docs/integrate-endpoint-checklist.md) | Adding new endpoints |
+| [Market Radar](ali-frontend/docs/market-radar.md) | Market intelligence UI |
+
+### Tools
+| Document | Description |
+|----------|-------------|
+| [Evidence Verifier](tools/README.md) | Offline evidence package validation |
 
 ## Architecture
 ```mermaid
 graph TD
     User[Web User] -->|HTTPS| Frontend[React Frontend]
-    Frontend -->|JSON/REST| Backend[FastAPI Backend]
-    Backend -->|Auth/Data| Firestore[(Google Firestore)]
-    Backend -->|GenAI| VertexAI[Google Vertex AI]
-    Backend -->|Async Tasks| Agents[AI Agents]
+    Frontend -->|apiClient| Backend[FastAPI Backend]
+    Backend -->|Auth/Data| Firestore[(Firestore)]
+    Backend -->|GenAI| VertexAI[Vertex AI]
+    Backend -->|TTS| Gemini[Gemini TTS]
+    Backend -->|Images| Imagen[Imagen 4.0]
+    Backend -->|Tasks| Agents[AI Agents]
+    Scheduler[Cloud Scheduler] -->|OIDC| Backend
 ```
 
 ## Repository Structure
-- `ali-backend/`: Python/FastAPI server code.
-- `ali-frontend/`: React/Vite application code.
-- `docs/`: Detailed project documentation.
-- `cloudbuild.yaml`: Google Cloud Build configuration.
+```
+ALI/
+├── ali-backend/          # FastAPI server
+│   ├── app/agents/       # AI agents
+│   ├── app/services/     # Business services
+│   └── docs/             # Backend docs
+├── ali-frontend/         # React application
+│   ├── src/lib/          # Core libraries
+│   └── docs/             # Frontend docs
+├── docs/                 # Project documentation
+├── tools/                # CLI tools
+└── cloudbuild.yaml       # CI/CD config
+```
+
+## License
+Proprietary - All rights reserved.

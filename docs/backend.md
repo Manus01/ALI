@@ -5,74 +5,83 @@ The ALI Backend is a high-performance, asynchronous web service built with **Fas
 
 ## Tech Stack
 - **Framework**: FastAPI (Python 3.10+)
-- **Database**: Google Cloud Firestore (via `firebase-admin` and `google-cloud-firestore`)
-- **AI/ML**: Google Vertex AI, LangChain, LangGraph
-- **Asynchronous Processing**: Python `asyncio`, FastAPI BackgroundTasks
+- **Database**: Google Cloud Firestore
+- **AI/ML**: Google Vertex AI (Gemini 2.5, Imagen 4.0), LangChain
+- **Media**: Gemini TTS, Imagen image generation
+- **Asynchronous**: Python `asyncio`, tenacity retry
 - **Server**: Uvicorn (ASGI)
 
 ## Directory Structure
 ```
 ali-backend/
 ├── app/
-│   ├── agents/           # AI Logic & Agent definitions (BrandAgent, CampaignAgent, etc.)
-│   ├── core/             # Core configurations (security, database singleton)
-│   ├── routers/          # API Route controllers
-│   ├── services/         # Business logic & helper services
-│   └── main.py           # Application entrypoint & configuration
-├── data/                 # Local data storage (if applicable)
+│   ├── agents/           # AI agents (Tutorial, Campaign, Brand Monitoring)
+│   ├── core/             # Core configurations (security, database)
+│   ├── routers/          # API endpoints
+│   ├── services/         # Business logic (audio, image, BigQuery)
+│   ├── middleware/       # Observability and request handling
+│   ├── types/            # Pydantic models
+│   └── utils/            # Utilities (zip_builder, etc.)
+├── docs/                 # Backend-specific documentation
+├── tests/                # Unit tests
 ├── Dockerfile            # Container configuration
 └── requirements.txt      # Python dependencies
 ```
 
-## Setup & Installation
+## Key Agents
+
+| Agent | Purpose |
+|-------|---------|
+| `tutorial_agent.py` | Generates 4C/ID tutorials with media assets |
+| `campaign_agent.py` | Creates multi-channel marketing campaigns |
+| `troubleshooting_agent.py` | Autonomous error diagnosis |
+| `competitor_agent.py` | Competitive intelligence |
+| `protection_agent.py` | Brand threat detection |
+| `radar_agent.py` | Market intelligence |
+
+## Key Services
+
+| Service | Purpose |
+|---------|---------|
+| `audio_agent.py` | Gemini TTS with WAV header generation |
+| `image_agent.py` | Imagen 4.0 with retry logic |
+| `brand_monitoring_scanner.py` | Brand scan orchestration |
+| `adaptive_scan_service.py` | Dynamic scan scheduling |
+| `bigquery_service.py` | Analytics and logging |
+
+## Setup & Running
 
 ### Prerequisites
-- Python 3.10 or higher
-- Google Cloud Service Account credentials (JSON)
-- `.env` file configured
+- Python 3.10+
+- GCP Service Account credentials
 
 ### Installation
-1. Navigate to the backend directory:
-   ```bash
-   cd ali-backend
-   ```
-2. Create virtual environment:
-   ```bash
-   python -m venv venv
-   source venv/bin/activate  # Windows: venv\Scripts\activate
-   ```
-3. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+```bash
+cd ali-backend
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+```
 
 ### Configuration
-Create a `.env` file in `ali-backend/` with the following variables (example):
+Create `.env` in `ali-backend/`:
 ```env
 GOOGLE_APPLICATION_CREDENTIALS="path/to/service-account.json"
 PROJECT_ID="your-gcp-project-id"
-MAX_REQUEST_SIZE_BYTES=5242880 # 5MB
+GCS_BUCKET_NAME="your-bucket.appspot.com"
+TTS_MODEL="gemini-2.5-flash-preview-tts"
 ```
 
 ### Running Locally
 ```bash
 uvicorn app.main:app --reload
 ```
-The API will be available at `http://localhost:8000`.
-Docs available at `http://localhost:8000/docs`.
+- API: `http://localhost:8000`
+- Docs: `http://localhost:8000/docs`
 
-## Architecture Highlights
+## Additional Documentation
 
-### Router Management
-The application uses a dynamic `safe_import_router` pattern in `app/main.py` to robustly load API modules. This ensures the application can start even if non-critical modules fail to load.
-
-### AI Agents
-ALI uses a specialized agentic architecture:
-- **BrandAgent**: Analyzes brand DNA from generic inputs.
-- **CampaignAgent**: Generates strategic campaign initiatives.
-- **OrchestratorAgent**: Manages complex, multi-step workflows.
-
-### Security
-- **CORS**: Configured for specific frontend origins.
-- **Security Headers**: Custom middleware adds `Content-Security-Policy`, `X-Content-Type-Options`, and secure Cache-Control directives.
-- **Request Size Limiting**: Middleware rejects requests larger than 5MB to prevent DoS.
+See `ali-backend/docs/` for detailed guides:
+- [Architecture Overview](ali-backend/docs/architecture.md)
+- [Brand Monitoring System](ali-backend/docs/brand_monitoring.md)
+- [GCP Scheduler Setup](ali-backend/docs/gcp_scheduler_setup.md)
