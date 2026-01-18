@@ -6,10 +6,17 @@ platform reporting guidance, and legal evidence reports.
 import json
 import logging
 import hashlib
+import uuid
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from .base_agent import BaseAgent
 from app.services.llm_factory import get_model
+from app.types.evidence_models import (
+    EvidenceSource, EvidenceItem, EvidenceReport, EvidenceExportBundle,
+    CollectionMethod, EvidenceType,
+    compute_source_hash, compute_item_hash, compute_report_hash,
+    verify_chain_integrity, redact_pii
+)
 
 logger = logging.getLogger(__name__)
 
@@ -315,41 +322,130 @@ class ProtectionAgent(BaseAgent):
         self,
         mentions: List[Dict[str, Any]],
         brand_name: str,
-        report_purpose: str = "legal"  # "legal", "police", "platform"
+        report_purpose: str = "legal",  # "legal", "police", "platform"
+        user_id: str = ""
     ) -> Dict[str, Any]:
         """
-        Generate a formal evidence report suitable for legal or police filing.
+        Generate a formal evidence report with tamper-evident hash chain.
         
-        Includes:
-        - Executive summary
-        - Timeline of incidents
-        - Evidence table with URLs and timestamps
-        - Impact assessment
-        - Recommended actions
-        - Legal disclaimer
+        This enhanced version provides:
+        - Full source traceability for every claim
+        - SHA-256 hash chain (source -> item -> report)
+        - PII redaction for privacy compliance
+        - Chain integrity verification
+        
+        Args:
+            mentions: List of mention dictionaries to include as evidence
+            brand_name: The brand/entity subject of the report
+            report_purpose: "legal", "police", or "platform"
+            user_id: The user generating the report (for audit trail)
+        
+        Returns:
+            Complete EvidenceReport as dictionary with chain_valid status
         """
-        self.log_task(f"Generating {report_purpose} evidence report for {len(mentions)} items")
+        self.log_task(f"Generating {report_purpose} evidence report for {len(mentions)} items with evidence chain")
         
         # Generate unique report ID
-        report_id = hashlib.sha256(
-            f"{brand_name}-{datetime.utcnow().isoformat()}".encode()
-        ).hexdigest()[:12].upper()
+        report_id = f"RPT-{hashlib.sha256(f'{brand_name}-{datetime.utcnow().isoformat()}'.encode()).hexdigest()[:10].upper()}"
+        now = datetime.utcnow()
         
-        # Prepare evidence items
+        # Build evidence items with sources
         evidence_items = []
+        legacy_evidence_items = []  # For backward compatibility
+        
         for i, mention in enumerate(mentions):
-            evidence_items.append({
+            item_id = str(uuid.uuid4())
+            
+            # Create source from the mention
+            collected_at = now.isoformat()
+            raw_snippet = mention.get('content_snippet', '') or mention.get('description', '') or ''
+            url = mention.get('url', '')
+            
+            # Check for and fetch deepfake analysis if linked
+            deepfake_analysis_id = mention.get('deepfake_analysis_id')
+            deepfake_analysis = None
+            
+            if deepfake_analysis_id and user_id:
+                try:
+                    deepfake_analysis = await self._fetch_deepfake_summary(user_id, deepfake_analysis_id)
+                except Exception as e:
+                    logger.warning(f"Failed to fetch deepfake analysis {deepfake_analysis_id}: {e}")
+            
+            # Compute source hash (includes stable deepfake fields if present)
+            source_hash = compute_source_hash(
+                raw_snippet, url, collected_at,
+                deepfake_summary=deepfake_analysis
+            )
+            
+            # Create the evidence source
+            source = {
+                "id": str(uuid.uuid4()),
+                "item_id": item_id,
+                "platform": mention.get('source_platform', mention.get('source_type', 'web')),
+                "url": url,
+                "collected_at": collected_at,
+                "raw_snippet": raw_snippet[:500] if raw_snippet else "",
+                "redacted_snippet": redact_pii(raw_snippet[:500]) if raw_snippet else "",
+                "media_refs": [],
+                "screenshot_ref": None,
+                "method": "automated_scan",
+                "source_hash": source_hash,
+                "deepfake_analysis_id": deepfake_analysis_id,
+                "deepfake_analysis": deepfake_analysis
+            }
+            
+            # Determine evidence type from mention characteristics
+            sentiment = mention.get('sentiment', 'neutral')
+            severity = mention.get('severity', 5)
+            title_lower = mention.get('title', '').lower()
+            
+            if 'deepfake' in title_lower or 'fake video' in title_lower:
+                evidence_type = "deepfake"
+            elif 'impersona' in title_lower:
+                evidence_type = "impersonation"
+            elif severity >= 7 and sentiment == 'negative':
+                evidence_type = "defamation"
+            elif sentiment == 'negative':
+                evidence_type = "violation"
+            else:
+                evidence_type = "mention"
+            
+            # Build claim text
+            claim_text = mention.get('ai_summary', '') or mention.get('title', '') or f"Evidence item #{i+1}"
+            
+            # Compute item hash
+            source_hashes = [source_hash]
+            item_hash = compute_item_hash(claim_text, source_hashes)
+            
+            # Create evidence item
+            evidence_item = {
+                "id": item_id,
+                "report_id": report_id,
+                "type": evidence_type,
+                "claim_text": claim_text,
+                "severity": severity if isinstance(severity, int) else 5,
+                "sources": [source],
+                "item_hash": item_hash
+            }
+            evidence_items.append(evidence_item)
+            
+            # Legacy format for backward compatibility
+            legacy_evidence_items.append({
                 "exhibit_number": f"EX-{i+1:03d}",
                 "title": mention.get('title', 'Untitled'),
-                "url": mention.get('url', 'N/A'),
+                "url": url,
                 "source": mention.get('source_type', 'Unknown'),
                 "platform": mention.get('source_platform', 'Unknown'),
                 "published_date": mention.get('published_at', 'Unknown'),
-                "captured_date": datetime.utcnow().isoformat(),
-                "sentiment": mention.get('sentiment', 'Unknown'),
-                "severity": mention.get('severity', 'N/A'),
-                "content_excerpt": (mention.get('content_snippet', '')[:300] + '...') if mention.get('content_snippet') else 'N/A'
+                "captured_date": collected_at,
+                "sentiment": sentiment,
+                "severity": severity,
+                "content_excerpt": (raw_snippet[:300] + '...') if raw_snippet else 'N/A'
             })
+        
+        # Compute report hash from all item hashes
+        item_hashes = [item['item_hash'] for item in evidence_items]
+        report_hash = compute_report_hash(item_hashes)
         
         # Use AI to generate analysis
         prompt = f"""Generate a professional evidence report summary for potential legal/police filing.
@@ -359,7 +455,7 @@ EVIDENCE COUNT: {len(mentions)} documented incidents
 PURPOSE: {report_purpose} filing
 
 KEY INCIDENTS:
-{json.dumps(evidence_items[:5], indent=2)}
+{json.dumps(legacy_evidence_items[:5], indent=2)}
 
 Generate:
 1. Executive summary (2-3 sentences)
@@ -389,23 +485,60 @@ Return ONLY valid JSON:
                 "recommended_actions": ["Consult legal professional", "File platform reports"]
             }
         
-        # Build complete report
-        report = {
-            "report_id": report_id,
-            "report_type": report_purpose,
-            "generated_at": datetime.utcnow().isoformat(),
-            "subject": brand_name,
-            "total_incidents": len(mentions),
-            "analysis": analysis,
-            "evidence_items": evidence_items,
-            "legal_disclaimer": """
-IMPORTANT DISCLAIMER:
+        # Legal disclaimer
+        legal_disclaimer = """IMPORTANT DISCLAIMER:
 This report is generated for informational purposes only and does not constitute 
 legal advice. The information contained herein should be verified independently. 
 Before taking any legal action, please consult with a qualified attorney in your 
 jurisdiction. The timestamps and URLs provided should be verified, and original 
 copies of all evidence should be preserved through proper forensic methods.
-            """.strip(),
+
+CHAIN OF CUSTODY:
+This report includes cryptographic hashes (SHA-256) that enable verification of 
+data integrity. Any modification to the source data, claims, or report will 
+invalidate the corresponding hashes, allowing detection of tampering."""
+
+        # Build complete report structure
+        report = {
+            # Core identification
+            "id": report_id,
+            "report_id": report_id,  # Alias for backward compatibility
+            "created_at": now.isoformat(),
+            "brand_id": user_id,
+            "time_range": {
+                "start": (now.replace(day=1)).isoformat(),
+                "end": now.isoformat()
+            },
+            "version": 1,
+            "generated_by": "ali_protection_agent",
+            "report_purpose": report_purpose,
+            "report_type": report_purpose,  # Alias for backward compatibility
+            
+            # AI-generated summaries
+            "executive_summary": analysis.get("executive_summary", ""),
+            "pattern_analysis": analysis.get("pattern_analysis", ""),
+            "potential_legal_violations": analysis.get("potential_violations", []),
+            "recommended_next_steps": analysis.get("recommended_actions", []),
+            
+            # Subject and counts
+            "subject": brand_name,
+            "total_incidents": len(mentions),
+            
+            # Evidence chain (NEW)
+            "items": evidence_items,
+            
+            # Integrity (NEW)
+            "report_hash": report_hash,
+            "hash_algorithm": "SHA-256",
+            
+            # Legacy format for backward compatibility
+            "analysis": analysis,
+            "evidence_items": legacy_evidence_items,
+            
+            # Legal
+            "legal_disclaimer": legal_disclaimer,
+            
+            # Next steps by purpose
             "next_steps": {
                 "for_police": [
                     "Print this report and bring to your local police station",
@@ -424,7 +557,74 @@ copies of all evidence should be preserved through proper forensic methods.
                     "Submit reports to each platform individually",
                     "Follow up if content is not removed within their stated timeframe"
                 ]
-            }
+            },
+            
+            # Export tracking
+            "export_history": []
         }
         
+        # Verify chain integrity before returning
+        verification = verify_chain_integrity(report)
+        report["chain_valid"] = verification["valid"]
+        report["chain_verified_at"] = verification["verified_at"]
+        
+        if not verification["valid"]:
+            logger.warning(f"⚠️ Chain integrity issues: {verification['errors']}")
+        else:
+            logger.info(f"✅ Evidence chain verified for report {report_id}")
+        
         return report
+
+    async def _fetch_deepfake_summary(self, user_id: str, job_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Fetch deepfake analysis and extract stable summary fields for embedding.
+        
+        Only returns data for completed analyses to ensure hash stability.
+        
+        Args:
+            user_id: The user ID who owns the analysis
+            job_id: The deepfake job ID (e.g., DFA-XXXXXX)
+        
+        Returns:
+            Dict with stable fields if completed, None otherwise
+        """
+        try:
+            from firebase_admin import firestore
+            db = firestore.client()
+            
+            job_ref = db.collection('users').document(user_id).collection('deepfake_jobs').document(job_id)
+            doc = job_ref.get()
+            
+            if not doc.exists:
+                logger.debug(f"Deepfake job {job_id} not found for user {user_id}")
+                return None
+            
+            job = doc.to_dict()
+            
+            # Only include completed analyses to ensure hash stability
+            if job.get('status') != 'completed':
+                logger.debug(f"Deepfake job {job_id} not completed (status: {job.get('status')})")
+                return None
+            
+            # Extract top 2 signals for display (more can be viewed in full analysis)
+            signals = job.get('signals', [])[:2]
+            
+            # Build stable summary
+            completed_at = job.get('completed_at')
+            if hasattr(completed_at, 'isoformat'):
+                completed_at = completed_at.isoformat()
+            
+            return {
+                "id": job_id,
+                "verdict": job.get('verdict'),
+                "verdict_label": job.get('verdict_label'),
+                "confidence": job.get('confidence'),
+                "completed_at": completed_at,
+                "signals": signals,
+                "user_explanation": job.get('user_explanation')
+            }
+            
+        except Exception as e:
+            logger.error(f"Error fetching deepfake summary {job_id}: {e}")
+            return None
+

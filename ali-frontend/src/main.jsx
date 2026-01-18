@@ -2,7 +2,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
-import './api/axiosInterceptor'
+// Note: apiClient from lib/api-client is initialized on first use - no side-effect import needed
 
 import Logger from './services/Logger'
 import ErrorBoundary from './components/ErrorBoundary.jsx'

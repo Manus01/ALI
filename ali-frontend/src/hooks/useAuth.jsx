@@ -1,7 +1,7 @@
 ﻿import React, { useContext, useState, useEffect, createContext } from 'react';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { auth } from '../firebase';
-import api from '../api/axiosInterceptor';
+import { apiClient } from '../lib/api-client';
 
 const AuthContext = createContext();
 
@@ -16,11 +16,11 @@ export function AuthProvider({ children }) {
 
     const refreshProfile = async () => {
         if (!currentUser) return;
-        try {
-            const resp = await api.get('/api/auth/me');
-            setUserProfile(resp.data);
-        } catch (e) {
-            console.error('Failed to refresh profile', e);
+        const result = await apiClient.get('/auth/me');
+        if (result.ok) {
+            setUserProfile(result.data);
+        } else {
+            console.error('Failed to refresh profile', result.error.message);
         }
     };
 
@@ -44,16 +44,15 @@ export function AuthProvider({ children }) {
                 return;
             }
 
-            try {
-                const resp = await api.get('/api/auth/me');
+            const result = await apiClient.get('/auth/me');
 
-                if (mounted) {
-                    setUserProfile(resp.data);
+            if (mounted) {
+                if (result.ok) {
+                    setUserProfile(result.data);
+                } else {
+                    console.error('Failed to load user profile', result.error.message);
                 }
-            } catch (e) {
-                console.error('Failed to load user profile', e);
-            } finally {
-                if (mounted) setLoading(false);
+                setLoading(false);
             }
         }
 
@@ -65,10 +64,9 @@ export function AuthProvider({ children }) {
     const logout = async () => {
         try {
             if (currentUser) {
-                try {
-                    await api.post('/api/auth/logout', {});
-                } catch (backendError) {
-                    console.warn("Backend logout warning:", backendError.message);
+                const result = await apiClient.post('/auth/logout', { body: {} });
+                if (!result.ok) {
+                    console.warn("Backend logout warning:", result.error.message);
                 }
             }
             await signOut(auth);

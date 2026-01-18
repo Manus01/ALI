@@ -168,6 +168,121 @@ ANONYMIZED_PATTERNS_SCHEMA = [
     bigquery.SchemaField("updated_at", "TIMESTAMP", mode="REQUIRED"),
 ]
 
+# --- ADAPTIVE SCANNING SCHEMA ---
+
+SCAN_LOGS_SCHEMA = [
+    bigquery.SchemaField("log_id", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("brand_id", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("user_id", "STRING", mode="REQUIRED"),
+    
+    # Job metadata
+    bigquery.SchemaField("job_id", "STRING"),
+    bigquery.SchemaField("trigger_reason", "STRING"),  # "adaptive_critical", "manual", etc.
+    bigquery.SchemaField("threat_score_at_schedule", "INTEGER"),
+    bigquery.SchemaField("policy_mode", "STRING"),  # "adaptive" or "fixed"
+    
+    # Execution metrics
+    bigquery.SchemaField("started_at", "TIMESTAMP", mode="REQUIRED"),
+    bigquery.SchemaField("completed_at", "TIMESTAMP"),
+    bigquery.SchemaField("duration_ms", "INTEGER"),
+    bigquery.SchemaField("status", "STRING"),  # "success" or "failed"
+    bigquery.SchemaField("error_message", "STRING"),
+    
+    # Results
+    bigquery.SchemaField("mentions_found", "INTEGER"),
+    bigquery.SchemaField("new_mentions_logged", "INTEGER"),
+    bigquery.SchemaField("opportunities_detected", "INTEGER"),
+    
+    # Post-scan assessment
+    bigquery.SchemaField("threat_score_post", "INTEGER"),
+    bigquery.SchemaField("threat_breakdown", "JSON"),
+    
+    # Scheduling
+    bigquery.SchemaField("next_scan_scheduled_for", "TIMESTAMP"),
+    bigquery.SchemaField("scan_interval_ms", "INTEGER"),
+]
+
+# --- MARKET RADAR SCHEMAS (Competitor Intelligence) ---
+
+COMPETITOR_EVENTS_LOG_SCHEMA = [
+    bigquery.SchemaField("event_id", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("competitor_id", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("competitor_name", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("user_id", "STRING", mode="REQUIRED"),
+    
+    # Event classification
+    bigquery.SchemaField("event_type", "STRING", mode="REQUIRED"),  # pricing, product, etc.
+    bigquery.SchemaField("themes", "STRING", mode="REPEATED"),  # Extracted themes
+    
+    # Detection metadata
+    bigquery.SchemaField("detected_at", "TIMESTAMP", mode="REQUIRED"),
+    bigquery.SchemaField("source_url", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("source_type", "STRING"),  # news, rss, social, website_diff
+    
+    # Content
+    bigquery.SchemaField("title", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("summary", "STRING"),
+    bigquery.SchemaField("raw_snippet", "STRING"),
+    
+    # Scoring
+    bigquery.SchemaField("impact_score", "INTEGER"),  # 1-10
+    bigquery.SchemaField("confidence", "FLOAT"),  # 0.0-1.0
+    
+    # Filtering
+    bigquery.SchemaField("region", "STRING"),  # ISO country code
+    bigquery.SchemaField("cluster_id", "STRING"),  # Assigned ThemeCluster ID
+    
+    # Integrity
+    bigquery.SchemaField("event_hash", "STRING"),
+]
+
+THEME_CLUSTERS_LOG_SCHEMA = [
+    bigquery.SchemaField("cluster_id", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("user_id", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("theme_name", "STRING", mode="REQUIRED"),
+    
+    # Aggregation
+    bigquery.SchemaField("event_count", "INTEGER"),
+    bigquery.SchemaField("competitors_involved", "STRING", mode="REPEATED"),
+    
+    # Insights
+    bigquery.SchemaField("why_it_matters", "STRING"),
+    bigquery.SchemaField("suggested_actions", "STRING", mode="REPEATED"),
+    
+    # Metadata
+    bigquery.SchemaField("priority", "INTEGER"),  # 1-10
+    bigquery.SchemaField("time_range_start", "TIMESTAMP", mode="REQUIRED"),
+    bigquery.SchemaField("time_range_end", "TIMESTAMP", mode="REQUIRED"),
+    bigquery.SchemaField("created_at", "TIMESTAMP", mode="REQUIRED"),
+    
+    # Integrity
+    bigquery.SchemaField("cluster_hash", "STRING"),
+]
+
+WEEKLY_DIGESTS_LOG_SCHEMA = [
+    bigquery.SchemaField("digest_id", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("user_id", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("generated_at", "TIMESTAMP", mode="REQUIRED"),
+    
+    # Time range
+    bigquery.SchemaField("time_range_start", "TIMESTAMP", mode="REQUIRED"),
+    bigquery.SchemaField("time_range_end", "TIMESTAMP", mode="REQUIRED"),
+    bigquery.SchemaField("time_range_label", "STRING"),  # 7d, 30d, etc.
+    
+    # Metrics
+    bigquery.SchemaField("total_events", "INTEGER"),
+    bigquery.SchemaField("competitors_active", "INTEGER"),
+    bigquery.SchemaField("high_impact_events", "INTEGER"),
+    bigquery.SchemaField("dominant_theme", "STRING"),
+    
+    # Content references
+    bigquery.SchemaField("top_cluster_ids", "STRING", mode="REPEATED"),
+    bigquery.SchemaField("notable_event_ids", "STRING", mode="REPEATED"),
+    
+    # Export
+    bigquery.SchemaField("export_url", "STRING"),
+    bigquery.SchemaField("export_format", "STRING"),
+]
 
 class BigQueryService:
     """Service for BigQuery operations in ALI Platform."""
@@ -260,6 +375,12 @@ class BigQueryService:
             ("competitor_actions_log", COMPETITOR_ACTIONS_LOG_SCHEMA),
             ("brand_health_scores", BRAND_HEALTH_SCORES_SCHEMA),
             ("anonymized_patterns", ANONYMIZED_PATTERNS_SCHEMA),
+            # Adaptive Scanning
+            ("scan_logs", SCAN_LOGS_SCHEMA),
+            # Market Radar (Competitor Intelligence)
+            ("competitor_events_log", COMPETITOR_EVENTS_LOG_SCHEMA),
+            ("theme_clusters_log", THEME_CLUSTERS_LOG_SCHEMA),
+            ("weekly_digests_log", WEEKLY_DIGESTS_LOG_SCHEMA),
         ]
         
         for table_name, schema in tables:
@@ -386,7 +507,155 @@ class BigQueryService:
         """Insert or update an anonymized pattern."""
         return self._insert_to_table("anonymized_patterns", data, "updated_at")
     
+    # --- MARKET RADAR INSERT METHODS ---
+    
+    def insert_competitor_event(self, data: Dict[str, Any]) -> bool:
+        """Log a competitor event to BigQuery."""
+        return self._insert_to_table("competitor_events_log", data, "detected_at")
+    
+    def insert_competitor_events_batch(self, events: List[Dict[str, Any]]) -> int:
+        """Insert multiple competitor events. Returns count of successful inserts."""
+        if not self.client or not events:
+            return 0
+            
+        table_ref = self._get_table_ref("competitor_events_log")
+        
+        for event in events:
+            event.setdefault("detected_at", datetime.utcnow().isoformat())
+        
+        try:
+            errors = self.client.insert_rows_json(table_ref, events)
+            if errors:
+                logger.error(f"❌ Batch insert errors: {errors}")
+                return len(events) - len(errors)
+            return len(events)
+        except Exception as e:
+            logger.error(f"❌ Failed to batch insert competitor events: {e}")
+            return 0
+    
+    def insert_theme_cluster(self, data: Dict[str, Any]) -> bool:
+        """Log a theme cluster to BigQuery."""
+        return self._insert_to_table("theme_clusters_log", data, "created_at")
+    
+    def insert_weekly_digest(self, data: Dict[str, Any]) -> bool:
+        """Log a weekly digest to BigQuery."""
+        return self._insert_to_table("weekly_digests_log", data, "generated_at")
+    
+    # --- MARKET RADAR QUERY METHODS ---
+    
+    def query_competitor_events(
+        self, 
+        user_id: str, 
+        competitor_id: Optional[str] = None,
+        event_type: Optional[str] = None,
+        theme: Optional[str] = None,
+        region: Optional[str] = None,
+        days: int = 30,
+        limit: int = 100
+    ) -> List[Dict]:
+        """Query competitor events with optional filters."""
+        if not self.client:
+            return []
+        
+        # Build dynamic WHERE clauses
+        conditions = ["user_id = @user_id", "detected_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL @days DAY)"]
+        params = [
+            bigquery.ScalarQueryParameter("user_id", "STRING", user_id),
+            bigquery.ScalarQueryParameter("days", "INT64", days),
+            bigquery.ScalarQueryParameter("limit", "INT64", limit),
+        ]
+        
+        if competitor_id:
+            conditions.append("competitor_id = @competitor_id")
+            params.append(bigquery.ScalarQueryParameter("competitor_id", "STRING", competitor_id))
+        
+        if event_type:
+            conditions.append("event_type = @event_type")
+            params.append(bigquery.ScalarQueryParameter("event_type", "STRING", event_type))
+        
+        if region:
+            conditions.append("region = @region")
+            params.append(bigquery.ScalarQueryParameter("region", "STRING", region))
+        
+        where_clause = " AND ".join(conditions)
+        
+        query = f"""
+        SELECT *
+        FROM `{self._get_table_ref('competitor_events_log')}`
+        WHERE {where_clause}
+        ORDER BY detected_at DESC
+        LIMIT @limit
+        """
+        
+        job_config = bigquery.QueryJobConfig(query_parameters=params)
+        
+        try:
+            results = self.client.query(query, job_config=job_config)
+            return [dict(row) for row in results]
+        except Exception as e:
+            logger.error(f"❌ Competitor events query failed: {e}")
+            return []
+    
+    def query_events_by_theme_summary(self, user_id: str, days: int = 7) -> Dict[str, int]:
+        """Get event count by theme for clustering summary."""
+        if not self.client:
+            return {}
+        
+        query = f"""
+        SELECT theme, COUNT(*) as count
+        FROM `{self._get_table_ref('competitor_events_log')}`,
+        UNNEST(themes) as theme
+        WHERE user_id = @user_id
+          AND detected_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL @days DAY)
+        GROUP BY theme
+        ORDER BY count DESC
+        """
+        
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("user_id", "STRING", user_id),
+                bigquery.ScalarQueryParameter("days", "INT64", days),
+            ]
+        )
+        
+        try:
+            results = self.client.query(query, job_config=job_config)
+            return {row["theme"]: row["count"] for row in results}
+        except Exception as e:
+            logger.error(f"❌ Theme summary query failed: {e}")
+            return {}
+    
+    def query_theme_clusters(self, user_id: str, days: int = 30, min_priority: int = 1) -> List[Dict]:
+        """Query theme clusters with optional filters."""
+        if not self.client:
+            return []
+        
+        query = f"""
+        SELECT *
+        FROM `{self._get_table_ref('theme_clusters_log')}`
+        WHERE user_id = @user_id
+          AND created_at >= TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL @days DAY)
+          AND priority >= @min_priority
+        ORDER BY priority DESC, created_at DESC
+        """
+        
+        job_config = bigquery.QueryJobConfig(
+            query_parameters=[
+                bigquery.ScalarQueryParameter("user_id", "STRING", user_id),
+                bigquery.ScalarQueryParameter("days", "INT64", days),
+                bigquery.ScalarQueryParameter("min_priority", "INT64", min_priority),
+            ]
+        )
+        
+        try:
+            results = self.client.query(query, job_config=job_config)
+            return [dict(row) for row in results]
+        except Exception as e:
+            logger.error(f"❌ Theme clusters query failed: {e}")
+            return []
+
     # --- BRAND INTELLIGENCE QUERY METHODS ---
+
     
     def query_similar_mentions(self, user_id: str, sentiment: str, entity_type: str = "brand", limit: int = 10) -> List[Dict]:
         """Find similar past mentions to power recommendations."""

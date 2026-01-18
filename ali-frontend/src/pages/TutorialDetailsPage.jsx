@@ -1,6 +1,6 @@
 ﻿import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import api from '../api/axiosInterceptor';
+import { apiClient } from '../lib/api-client';
 import { useAuth } from '../hooks/useAuth';
 import ReactMarkdown from 'react-markdown';
 import remarkBreaks from 'remark-breaks';
@@ -283,22 +283,23 @@ export default function TutorialDetailsPage() {
     useEffect(() => {
         if (!currentUser || !id) return;
         const fetchTutorial = async () => {
-            try {
-                // FIXED: Use configured 'api' instance to handle Base URL and Headers automatically
-                setError('');
-                const res = await api.get(`/tutorials/${id}`);
-                setTutorial(res.data);
+            // Use canonical apiClient to handle Base URL and Headers automatically
+            setError('');
+            const result = await apiClient.get(`/tutorials/${id}`);
+            if (result.ok) {
+                setTutorial(result.data);
                 setActiveSectionIndex(0);
-            } catch (err) {
-                console.error(err);
+            } else {
+                console.error(result.error.message);
 
                 // FALLBACK: Check if this ID is a request_id (notification link mismatch fix)
-                if (err.response?.status === 404) {
-                    try {
-                        const fallback = await api.get(`/tutorials/by-request/${id}`);
+                if (result.error.status === 404) {
+                    const fallback = await apiClient.get(`/tutorials/by-request/${id}`);
+                    if (fallback.ok) {
                         if (fallback.data.tutorialId) {
                             // Redirect to the actual tutorial
                             navigate(`/tutorials/${fallback.data.tutorialId}`, { replace: true });
+                            setLoading(false);
                             return;
                         } else if (fallback.data.status && fallback.data.status !== 'COMPLETED') {
                             // Tutorial is still generating - show friendly message
@@ -307,15 +308,13 @@ export default function TutorialDetailsPage() {
                             setLoading(false);
                             return;
                         }
-                    } catch {
-                        // Request ID also not found - genuine 404
                     }
+                    // Request ID also not found - genuine 404
                 }
 
                 setError('Unable to load this tutorial right now. Please try again.');
-            } finally {
-                setLoading(false);
             }
+            setLoading(false);
         };
         fetchTutorial();
     }, [currentUser, id, navigate]);
@@ -333,16 +332,15 @@ export default function TutorialDetailsPage() {
 
     const handleComplete = async (finalScore) => {
         if (finalScore >= 75) {
-            try {
-                await api.post(`/tutorials/${id}/complete`, { score: finalScore });
-
+            const result = await apiClient.post(`/tutorials/${id}/complete`, { body: { score: finalScore } });
+            if (result.ok) {
                 setTutorial(prev => ({ ...prev, is_completed: true }));
                 setToast({ message: "Assessment submitted successfully!", type: "success" });
 
                 // Only redirect if this was the FINAL step
                 setTimeout(() => { navigate('/tutorials'); }, 2500);
-            } catch (e) {
-                console.error("API Error:", e);
+            } else {
+                console.error("API Error:", result.error.message);
                 setToast({ message: "Failed to submit results. Please try again.", type: "error" });
             }
         }
@@ -351,62 +349,61 @@ export default function TutorialDetailsPage() {
     // Remediation API Call (Senior Tutor)
     const callRemediateAPI = async (quizBlock) => {
         setIsRemediating(true);
-        try {
-            const questions = quizBlock.questions || [];
+        const questions = quizBlock.questions || [];
 
-            // Build quiz results with correctness info
-            const quizResults = questions.map((q, qIdx) => {
-                const userIdx = quizAnswers[qIdx];
-                const correctIdx = q.correct_answer !== undefined ? q.correct_answer : q.correct_index;
-                const userOpt = q.options?.[userIdx];
-                const correctOpt = q.options?.[correctIdx];
+        // Build quiz results with correctness info
+        const quizResults = questions.map((q, qIdx) => {
+            const userIdx = quizAnswers[qIdx];
+            const correctIdx = q.correct_answer !== undefined ? q.correct_answer : q.correct_index;
+            const userOpt = q.options?.[userIdx];
+            const correctOpt = q.options?.[correctIdx];
 
-                return {
-                    question: q.question,
-                    userAnswer: typeof userOpt === 'object' ? userOpt.text : userOpt,
-                    correctAnswer: typeof correctOpt === 'object' ? correctOpt.text : correctOpt,
-                    isCorrect: userIdx == correctIdx,
-                    score: score
-                };
-            });
+            return {
+                question: q.question,
+                userAnswer: typeof userOpt === 'object' ? userOpt.text : userOpt,
+                correctAnswer: typeof correctOpt === 'object' ? correctOpt.text : correctOpt,
+                isCorrect: userIdx == correctIdx,
+                score: score
+            };
+        });
 
-            const response = await api.post(`/tutorials/${id}/remediate`, {
+        const response = await apiClient.post(`/tutorials/${id}/remediate`, {
+            body: {
                 sectionIndex: activeSectionIndex,
                 quizResults: quizResults
+            }
+        });
+
+        if (response.ok && response.data.status === 'success') {
+            // Inject the remedial block into the current section
+            setTutorial(prev => {
+                const sections = [...prev.sections];
+                sections[activeSectionIndex] = response.data.updatedSection;
+                return { ...prev, sections };
             });
 
-            if (response.data.status === 'success') {
-                // Inject the remedial block into the current section
-                setTutorial(prev => {
-                    const sections = [...prev.sections];
-                    sections[activeSectionIndex] = response.data.updatedSection;
-                    return { ...prev, sections };
-                });
+            setToast({
+                message: "I've added a new note to help you understand this concept better. Review it and try again!",
+                type: "success"
+            });
 
-                setToast({
-                    message: "I've added a new note to help you understand this concept better. Review it and try again!",
-                    type: "success"
-                });
+            // Reset quiz for retry
+            setQuizSubmitted(false);
+            setQuizAnswers({});
+            setScore(0);
 
-                // Reset quiz for retry
-                setQuizSubmitted(false);
-                setQuizAnswers({});
-                setScore(0);
-
-                // Scroll to the new block
-                if (scrollContainerRef.current) {
-                    scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
-                }
+            // Scroll to the new block
+            if (scrollContainerRef.current) {
+                scrollContainerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
             }
-        } catch (err) {
-            console.error('Remediation error:', err);
+        } else {
+            console.error('Remediation error:', response.error?.message);
             setToast({ message: "Couldn't generate help. Please try again.", type: "error" });
             // Allow simple retry on error
             setQuizSubmitted(false);
             setQuizAnswers({});
-        } finally {
-            setIsRemediating(false);
         }
+        setIsRemediating(false);
     };
 
     if (loading) return <div className="fixed inset-0 z-50 flex items-center justify-center bg-white"><div className="text-slate-400 animate-pulse font-bold">Loading...</div></div>;

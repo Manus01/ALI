@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { FaTimes, FaCloudUploadAlt, FaSpinner } from 'react-icons/fa';
 // Firebase imports removed - Unified Asset Pipeline in use
 import { useAuth } from '../../hooks/useAuth';
-import api from '../../api/axiosInterceptor';
+import { apiClient } from '../../lib/api-client';
 
 export default function EditBrandModal({ isOpen, onClose }) {
     const { currentUser, userProfile, refreshProfile } = useAuth();
@@ -43,38 +43,44 @@ export default function EditBrandModal({ isOpen, onClose }) {
 
     const handleSaveBrand = async () => {
         setIsSavingBrand(true);
-        try {
-            let finalLogoUrl = editFormData.logo_url;
+        let finalLogoUrl = editFormData.logo_url;
 
-            // Upload new logo via Unified Asset Pipeline
-            if (logoFile && currentUser) {
-                const formData = new FormData();
-                formData.append('file', logoFile);
-                formData.append('remove_bg', 'true');
-                formData.append('optimize', 'true');
+        // Upload new logo via Unified Asset Pipeline
+        if (logoFile && currentUser) {
+            const formData = new FormData();
+            formData.append('file', logoFile);
+            formData.append('remove_bg', 'true');
+            formData.append('optimize', 'true');
 
-                const uploadRes = await api.post('/assets/process', formData, {
-                    headers: { 'Content-Type': 'multipart/form-data' }
-                });
-                finalLogoUrl = uploadRes.data.processed_url;
+            const uploadResult = await apiClient.post('/assets/process', { body: formData });
+            if (uploadResult.ok) {
+                finalLogoUrl = uploadResult.data.processed_url;
+            } else {
+                console.error("Failed to upload logo:", uploadResult.error.message);
+                alert("Failed to upload logo. Please try again.");
+                setIsSavingBrand(false);
+                return;
             }
+        }
 
-            await api.put('/auth/me/brand', {
+        const updateResult = await apiClient.put('/auth/me/brand', {
+            body: {
                 brand_name: editFormData.brand_name,
                 logo_url: finalLogoUrl,
                 website_url: editFormData.website_url,
                 description: editFormData.description
-            });
+            }
+        });
 
+        if (updateResult.ok) {
             await refreshProfile();
             onClose();
             setLogoFile(null);
-        } catch (err) {
-            console.error("Failed to update brand", err);
+        } else {
+            console.error("Failed to update brand", updateResult.error.message);
             alert("Failed to update brand. Please try again.");
-        } finally {
-            setIsSavingBrand(false);
         }
+        setIsSavingBrand(false);
     };
 
     if (!isOpen) return null;

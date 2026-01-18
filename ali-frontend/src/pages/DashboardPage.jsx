@@ -10,7 +10,7 @@ import {
     FaInstagram, FaLinkedin, FaFacebook, FaTiktok, FaLayerGroup, FaEdit,
     FaHome, FaBolt, FaChartLine
 } from 'react-icons/fa';
-import api from '../api/axiosInterceptor';
+import { apiClient } from '../lib/api-client';
 import EditBrandModal from '../components/modals/EditBrandModal';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler);
@@ -52,28 +52,27 @@ export default function DashboardPage() {
     const [nextBestActions, setNextBestActions] = useState([]);
 
     const fetchDashboardData = useCallback(async () => {
-        try {
-            if (!currentUser) return;
-            setLoading(true);
-            setError(null);
-            const response = await api.get('/dashboard/overview');
-            setData(response.data);
+        if (!currentUser) return;
+        setLoading(true);
+        setError(null);
+
+        const result = await apiClient.get('/dashboard/overview');
+        if (result.ok) {
+            setData(result.data);
 
             // Fetch user's approved Next Best Actions
-            try {
-                const actionsRes = await api.get('/dashboard/next-actions');
-                setNextBestActions(actionsRes.data.actions || actionsRes.data || []);
-            } catch (actErr) {
-                console.warn("Next actions fetch failed", actErr);
+            const actionsResult = await apiClient.get('/dashboard/next-actions');
+            if (actionsResult.ok) {
+                setNextBestActions(actionsResult.data.actions || actionsResult.data || []);
+            } else {
+                console.warn("Next actions fetch failed", actionsResult.error.message);
             }
-
-            setLoading(false);
-        } catch (error) {
-            console.error('❌ Dashboard Error:', error);
-            const msg = error.response?.data?.detail || "Failed to load dashboard data";
-            setError(msg);
-            setLoading(false);
+        } else {
+            console.error('❌ Dashboard Error:', result.error.message);
+            setError(result.error.message || "Failed to load dashboard data");
         }
+
+        setLoading(false);
     }, [currentUser]);
 
     useEffect(() => {
@@ -83,14 +82,12 @@ export default function DashboardPage() {
     const handleMaintenance = async () => {
         if (!currentUser) return;
         setMaintenanceLoading(true);
-        try {
-            await api.post('/maintenance/run');
-        } catch (err) {
-            console.error(err);
+        const result = await apiClient.post('/maintenance/run');
+        if (!result.ok) {
+            console.error(result.error.message);
             alert("Failed to trigger maintenance.");
-        } finally {
-            setTimeout(() => setMaintenanceLoading(false), 2000);
         }
+        setTimeout(() => setMaintenanceLoading(false), 2000);
     };
 
     const getChartData = () => {
@@ -256,8 +253,8 @@ export default function DashboardPage() {
                                 key={tab.key}
                                 onClick={() => setActiveTab(tab.key)}
                                 className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all flex-shrink-0 ${activeTab === tab.key
-                                        ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20'
-                                        : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'
+                                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/20'
+                                    : 'text-slate-500 hover:bg-slate-50 dark:hover:bg-slate-800'
                                     }`}
                             >
                                 {tab.icon}

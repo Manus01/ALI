@@ -13,7 +13,8 @@ import {
     FaClipboardList,
     FaUserCog,
     FaRocket,
-    FaShieldAlt
+    FaShieldAlt,
+    FaSearchDollar
 } from 'react-icons/fa';
 import { useAuth } from '../hooks/useAuth';
 import { useTheme } from '../context/ThemeContext';
@@ -39,6 +40,7 @@ export default function Sidebar() {
         { to: '/campaign-center', label: 'Creative Studio', icon: <FaRocket /> },
         { to: '/tutorials', label: 'Learning Center', icon: <FaGraduationCap /> },
         { to: '/brand-monitoring', label: 'Brand Monitoring', icon: <FaShieldAlt /> },
+        { to: '/market-radar', label: 'Market Radar', icon: <FaSearchDollar /> },
         { to: '/integrations', label: 'Vault', icon: <FaLock /> },
     ];
 

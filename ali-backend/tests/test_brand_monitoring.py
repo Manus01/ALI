@@ -193,6 +193,233 @@ class TestBrandMonitoringEndpoints:
         routes = [route.path for route in app.routes]
         assert any("/brand-monitoring/crisis-response" in route or "crisis-response" in route for route in routes), \
             "Brand monitoring crisis-response endpoint should be registered"
+    
+    def test_evidence_export_endpoint_exists(self):
+        """Test that the evidence export endpoint is registered."""
+        from app.main import app
+        
+        routes = [route.path for route in app.routes]
+        assert any("evidence-report" in route and "export" in route for route in routes), \
+            "Evidence export endpoint should be registered"
+
+
+class TestEvidencePackageExport:
+    """Tests for Evidence Package ZIP export functionality."""
+    
+    def test_zip_builder_utility_import(self):
+        """Test that zip_builder utility can be imported."""
+        from app.utils.zip_builder import (
+            build_evidence_package_zip,
+            serialize_deterministic,
+            compute_file_hash,
+            flatten_sources,
+            get_export_filename
+        )
+        assert callable(build_evidence_package_zip)
+        assert callable(serialize_deterministic)
+    
+    def test_serialize_deterministic_sorts_keys(self):
+        """Test that JSON serialization is deterministic."""
+        from app.utils.zip_builder import serialize_deterministic
+        
+        # Keys in different order should produce same output
+        data1 = {"b": 1, "a": 2, "c": 3}
+        data2 = {"c": 3, "a": 2, "b": 1}
+        
+        result1 = serialize_deterministic(data1)
+        result2 = serialize_deterministic(data2)
+        
+        assert result1 == result2, "Serialization should be deterministic"
+        assert '"a": 2' in result1, "Keys should be sorted"
+    
+    def test_compute_file_hash_sha256(self):
+        """Test SHA-256 hash computation."""
+        from app.utils.zip_builder import compute_file_hash
+        
+        content = b"test content"
+        hash_result = compute_file_hash(content)
+        
+        assert len(hash_result) == 64, "SHA-256 produces 64-char hex"
+        # Verify against known hash
+        import hashlib
+        expected = hashlib.sha256(content).hexdigest()
+        assert hash_result == expected
+    
+    def test_flatten_sources_sorting(self):
+        """Test that sources are sorted by collected_at then url."""
+        from app.utils.zip_builder import flatten_sources
+        
+        report = {
+            "items": [
+                {
+                    "id": "item-1",
+                    "sources": [
+                        {"id": "src-3", "collected_at": "2026-01-18T03:00:00Z", "url": "https://b.com"},
+                        {"id": "src-1", "collected_at": "2026-01-18T01:00:00Z", "url": "https://a.com"},
+                        {"id": "src-2", "collected_at": "2026-01-18T02:00:00Z", "url": "https://a.com"},
+                    ]
+                }
+            ]
+        }
+        
+        flattened = flatten_sources(report)
+        
+        assert len(flattened) == 3
+        assert flattened[0]["id"] == "src-1"  # Earliest time
+        assert flattened[1]["id"] == "src-2"  # Next time
+        assert flattened[2]["id"] == "src-3"  # Latest time
+    
+    def test_build_evidence_package_zip_structure(self):
+        """Test that ZIP package contains required files."""
+        from app.utils.zip_builder import build_evidence_package_zip
+        import zipfile
+        import io
+        
+        mock_report = {
+            "id": "RPT-TEST123",
+            "chain_valid": True,
+            "report_hash": "abc123def456",
+            "hash_algorithm": "SHA-256",
+            "items": []
+        }
+        
+        zip_bytes = build_evidence_package_zip(
+            report=mock_report,
+            user_id="test-user",
+            request_id="req-123"
+        )
+        
+        # Verify it's a valid ZIP
+        zip_buffer = io.BytesIO(zip_bytes)
+        with zipfile.ZipFile(zip_buffer, 'r') as zf:
+            names = zf.namelist()
+            
+            assert "report.json" in names
+            assert "sources.json" in names
+            assert "integrity.json" in names
+            assert "manifest.json" in names
+            
+            # Verify integrity.json content
+            import json
+            integrity_content = json.loads(zf.read("integrity.json"))
+            assert integrity_content["verified"] == True
+            assert integrity_content["algorithm"] == "SHA-256"
+            assert integrity_content["requestId"] == "req-123"
+    
+    def test_get_export_filename_sanitizes_id(self):
+        """Test filename generation with sanitization."""
+        from app.utils.zip_builder import get_export_filename
+        
+        report = {"id": "RPT-ABC123DEF4"}
+        filename = get_export_filename(report)
+        
+        assert filename == "evidence-RPT-ABC123DEF4.zip"
+        assert "/" not in filename
+        assert "\\" not in filename
+    
+    def test_provenance_json_in_zip(self):
+        """Test that ZIP contains provenance.json with required fields."""
+        from app.utils.zip_builder import build_evidence_package_zip
+        import zipfile
+        import io
+        import json
+        
+        mock_report = {
+            "id": "RPT-PROV123",
+            "chain_valid": True,
+            "report_hash": "abc123",
+            "hash_algorithm": "SHA-256",
+            "items": []
+        }
+        
+        zip_bytes = build_evidence_package_zip(
+            report=mock_report,
+            user_id="test-user@example.com",
+            request_id="req-provenance-test",
+            environment="testing",
+            app_version="1.0.0-test"
+        )
+        
+        zip_buffer = io.BytesIO(zip_bytes)
+        with zipfile.ZipFile(zip_buffer, 'r') as zf:
+            assert "provenance.json" in zf.namelist()
+            
+            provenance = json.loads(zf.read("provenance.json"))
+            
+            # Verify required fields
+            assert "exported_at" in provenance
+            assert provenance["exported_by"] == "test-user@example.com"
+            assert provenance["request_id"] == "req-provenance-test"
+            assert provenance["environment"] == "testing"
+            assert provenance["app_version"] == "1.0.0-test"
+            
+            # Verify exported_at is ISO format with Z suffix
+            assert provenance["exported_at"].endswith("Z")
+    
+    def test_integrity_json_contains_package_hash(self):
+        """Test that integrity.json contains non-empty packageHash."""
+        from app.utils.zip_builder import build_evidence_package_zip
+        import zipfile
+        import io
+        import json
+        
+        mock_report = {
+            "id": "RPT-HASH123",
+            "chain_valid": True,
+            "report_hash": "def456",
+            "hash_algorithm": "SHA-256",
+            "items": []
+        }
+        
+        zip_bytes = build_evidence_package_zip(
+            report=mock_report,
+            user_id="test-user",
+            request_id="req-hash-test"
+        )
+        
+        zip_buffer = io.BytesIO(zip_bytes)
+        with zipfile.ZipFile(zip_buffer, 'r') as zf:
+            integrity = json.loads(zf.read("integrity.json"))
+            
+            assert "packageHash" in integrity
+            assert len(integrity["packageHash"]) == 64  # SHA-256 = 64 hex chars
+            assert integrity["packageHash"] != ""
+    
+    def test_package_hash_matches_manifest_sha256(self):
+        """Test that packageHash equals SHA256(manifest.json bytes)."""
+        from app.utils.zip_builder import build_evidence_package_zip, compute_file_hash
+        import zipfile
+        import io
+        import json
+        
+        mock_report = {
+            "id": "RPT-VERIFY123",
+            "chain_valid": True,
+            "report_hash": "ghi789",
+            "hash_algorithm": "SHA-256",
+            "items": []
+        }
+        
+        zip_bytes = build_evidence_package_zip(
+            report=mock_report,
+            user_id="verifier",
+            request_id="req-verify-test"
+        )
+        
+        zip_buffer = io.BytesIO(zip_bytes)
+        with zipfile.ZipFile(zip_buffer, 'r') as zf:
+            # Read manifest.json raw bytes
+            manifest_bytes = zf.read("manifest.json")
+            
+            # Compute expected hash
+            expected_hash = compute_file_hash(manifest_bytes)
+            
+            # Read packageHash from integrity.json
+            integrity = json.loads(zf.read("integrity.json"))
+            actual_hash = integrity["packageHash"]
+            
+            assert actual_hash == expected_hash, \
+                f"packageHash mismatch: {actual_hash} != {expected_hash}"
 
 
 def run_sync_test():
@@ -218,3 +445,4 @@ def run_sync_test():
 if __name__ == "__main__":
     # Run a quick import check
     run_sync_test()
+

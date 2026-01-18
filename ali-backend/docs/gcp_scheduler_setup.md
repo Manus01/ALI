@@ -2,11 +2,12 @@
 
 ## Overview
 
-The Brand Monitoring scanner runs **every hour** to automatically:
-1. Fetch new mentions for all users
-2. Detect competitor actions  
-3. Log everything to BigQuery
-4. Identify PR opportunities
+The Brand Monitoring scanner runs **every 5 minutes** to check for due scans using the Adaptive Scanning Engine:
+1. Query all scan policies where `next_scan_at <= now`
+2. Calculate current threat score for each due brand
+3. Execute scans with idempotency (skip pending jobs)
+4. Schedule next scan based on threat level (5 min - 6 hours)
+5. Log detailed "why scanning now" metadata to BigQuery
 
 ---
 
@@ -42,9 +43,9 @@ gcloud run services add-iam-policy-binding ali-backend \
 ### 3. Create the Scheduler Job
 
 ```bash
-gcloud scheduler jobs create http brand-monitoring-hourly-scan \
+gcloud scheduler jobs create http brand-monitoring-adaptive-scan \
     --location=us-central1 \
-    --schedule="0 * * * *" \
+    --schedule="*/5 * * * *" \
     --uri="https://YOUR-CLOUD-RUN-URL/internal/scheduler/brand-monitoring-scan" \
     --http-method=POST \
     --oidc-service-account-email="cloud-scheduler-invoker@YOUR-PROJECT-ID.iam.gserviceaccount.com" \

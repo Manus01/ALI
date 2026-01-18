@@ -118,18 +118,23 @@ async def scheduler_health():
     """
     return {"status": "healthy", "service": "watchdog_scheduler"}
 
-
 @router.post("/scheduler/brand-monitoring-scan")
 async def scheduled_brand_monitoring_scan(
     request: Request,
     authorization: Optional[str] = Header(None)
 ):
     """
-    Endpoint called by Cloud Scheduler to run hourly brand monitoring scan.
-    Scans all users for new mentions, detects opportunities, and logs to BigQuery.
+    Endpoint called by Cloud Scheduler to run adaptive brand monitoring scans.
+    
+    Behavior:
+    1. Query all scan_policies where next_scan_at <= now
+    2. For each due policy, calculate threat score and schedule
+    3. Execute scan with idempotency (skip duplicates in same hour bucket)
+    4. Log "why scanning now" metadata to BigQuery
+    5. Apply backoff on consecutive failures
     
     Cloud Scheduler Config:
-    - Frequency: 0 * * * * (every hour)
+    - Frequency: */5 * * * * (every 5 minutes for adaptive responsiveness)
     - Target: HTTP
     - URL: https://YOUR-CLOUD-RUN-URL/internal/scheduler/brand-monitoring-scan
     - HTTP method: POST
@@ -141,26 +146,129 @@ async def scheduled_brand_monitoring_scan(
         logger.warning("🚫 Unauthorized brand monitoring scan attempt")
         raise HTTPException(status_code=401, detail="Unauthorized")
     
-    logger.info("🔍 Scheduled Brand Monitoring: Starting hourly scan...")
+    logger.info("🔍 Adaptive Scanner: Checking for due scans...")
     
     try:
-        from app.services.brand_monitoring_scanner import get_scanner
+        result = await run_adaptive_scans()
         
-        scanner = get_scanner()
-        result = await scanner.run_hourly_scan()
-        
-        logger.info(f"✅ Scheduled Brand Monitoring Complete: {result.get('users_scanned', 0)} users scanned")
+        logger.info(
+            f"✅ Adaptive Scanner Complete: "
+            f"{result['scanned']} scanned, {result['skipped']} skipped (duplicate/pending)"
+        )
         return {
             "status": "success",
-            "triggered_by": "cloud_scheduler",
+            "triggered_by": "cloud_scheduler_adaptive",
             "result": result
         }
         
     except Exception as e:
-        logger.error(f"❌ Scheduled Brand Monitoring Error: {e}")
+        logger.error(f"❌ Adaptive Scanner Error: {e}")
         # Return 200 to prevent Cloud Scheduler from retrying
         return {
             "status": "error",
             "error": str(e)
         }
 
+
+async def run_adaptive_scans() -> dict:
+    """
+    Run adaptive scans for all brands that are due based on their policies.
+    
+    Returns:
+        dict with scanned, skipped, and failed counts
+    """
+    from datetime import datetime
+    from app.services.adaptive_scan_service import get_adaptive_scan_service, ScanPolicy
+    from app.core.security import db
+    
+    service = get_adaptive_scan_service()
+    now = datetime.utcnow()
+    
+    scanned = 0
+    skipped = 0
+    failed = 0
+    
+    try:
+        # Query policies where next_scan_at <= now OR next_scan_at is null (never scheduled)
+        policies_ref = db.collection("scan_policies")
+        
+        # Get all policies and filter in memory (Firestore doesn't support OR on different fields)
+        all_policies = policies_ref.stream()
+        
+        for doc in all_policies:
+            policy_data = doc.to_dict()
+            brand_id = policy_data.get("brand_id")
+            user_id = policy_data.get("user_id")
+            next_scan_at_str = policy_data.get("next_scan_at")
+            
+            if not brand_id or not user_id:
+                continue
+            
+            # Check if scan is due
+            is_due = False
+            if next_scan_at_str is None:
+                # Never scheduled - scan now
+                is_due = True
+            else:
+                try:
+                    next_scan_at = datetime.fromisoformat(next_scan_at_str.replace('Z', '+00:00'))
+                    # Remove timezone info for comparison (both are UTC)
+                    if next_scan_at.tzinfo:
+                        next_scan_at = next_scan_at.replace(tzinfo=None)
+                    is_due = next_scan_at <= now
+                except (ValueError, AttributeError):
+                    # Invalid date format - scan now
+                    is_due = True
+            
+            if not is_due:
+                continue
+            
+            # Check for pending jobs (idempotency)
+            pending_count = await service.get_pending_jobs_count(brand_id)
+            if pending_count > 0:
+                logger.debug(f"⏭️ Skipping {brand_id}: {pending_count} pending jobs")
+                skipped += 1
+                continue
+            
+            # Execute adaptive scan
+            try:
+                policy = ScanPolicy.from_dict(policy_data)
+                
+                # Calculate current threat and schedule
+                assessment = await service.threat_engine.calculate_threat_score(
+                    brand_id, user_id, policy
+                )
+                
+                # Schedule and execute job
+                job = await service.schedule_next_scan(brand_id, user_id, assessment, policy)
+                await service.execute_scan(job)
+                
+                logger.info(
+                    f"🎯 Scanned {brand_id}: threat={assessment.score} ({assessment.label.value}), "
+                    f"next in {assessment.interval_ms // 60000}min"
+                )
+                scanned += 1
+                
+            except Exception as e:
+                logger.error(f"❌ Failed to scan {brand_id}: {e}")
+                failed += 1
+                
+                # Record failure for backoff
+                try:
+                    db.collection("scan_policies").document(brand_id).update({
+                        "last_failure_at": now.isoformat(),
+                        "consecutive_failures": policy_data.get("consecutive_failures", 0) + 1
+                    })
+                except Exception:
+                    pass
+    
+    except Exception as e:
+        logger.error(f"❌ Error querying policies: {e}")
+        raise
+    
+    return {
+        "scanned": scanned,
+        "skipped": skipped,
+        "failed": failed,
+        "timestamp": now.isoformat()
+    }

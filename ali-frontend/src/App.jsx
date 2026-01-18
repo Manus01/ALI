@@ -17,6 +17,7 @@ import AdminPage from './pages/AdminPage';
 import CampaignCenter from './pages/CampaignCenter';
 import BrandOnboarding from './pages/BrandOnboarding';
 import BrandMonitoringPage from './pages/BrandMonitoringPage';
+import MarketRadarPage from './pages/MarketRadarPage';
 
 // Assessment & Tutorials
 import HFTPage from './pages/HFTPage';
@@ -82,44 +83,45 @@ function App() {
                 <NotificationProvider>
                     <Router>
                         <Routes>
-                        {/* --- Public Routes (No Sidebar) --- */}
-                        <Route path="/register" element={<RegisterPage />} />
-                        <Route path="/login" element={<LoginPage />} />
-                        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+                            {/* --- Public Routes (No Sidebar) --- */}
+                            <Route path="/register" element={<RegisterPage />} />
+                            <Route path="/login" element={<LoginPage />} />
+                            <Route path="/forgot-password" element={<ForgotPasswordPage />} />
 
-                        {/* --- Protected App Layout (Has Sidebar) --- */}
-                        <Route element={
-                            <ProtectedRoute>
-                                <Layout />
-                            </ProtectedRoute>
-                        }>
-                            <Route path="/dashboard" element={<DashboardPage />} />
-                            <Route path="/onboarding" element={<BrandOnboarding />} />
-                            <Route path="/integrations" element={<IntegrationsPage />} />
-                            <Route path="/campaign-center" element={<CampaignCenter />} />
-                            <Route path="/campaign-center/:campaignId" element={<CampaignCenter />} />
-                            <Route path="/brand-monitoring" element={<BrandMonitoringPage />} />
+                            {/* --- Protected App Layout (Has Sidebar) --- */}
+                            <Route element={
+                                <ProtectedRoute>
+                                    <Layout />
+                                </ProtectedRoute>
+                            }>
+                                <Route path="/dashboard" element={<DashboardPage />} />
+                                <Route path="/onboarding" element={<BrandOnboarding />} />
+                                <Route path="/integrations" element={<IntegrationsPage />} />
+                                <Route path="/campaign-center" element={<CampaignCenter />} />
+                                <Route path="/campaign-center/:campaignId" element={<CampaignCenter />} />
+                                <Route path="/brand-monitoring" element={<BrandMonitoringPage />} />
+                                <Route path="/market-radar" element={<MarketRadarPage />} />
 
-                            {/* 🔐 The Admin Route (Now inside Layout!) */}
-                            <Route path="/admin" element={
-                                <AdminRoute>
-                                    <AdminPage />
-                                </AdminRoute>
-                            } />
+                                {/* 🔐 The Admin Route (Now inside Layout!) */}
+                                <Route path="/admin" element={
+                                    <AdminRoute>
+                                        <AdminPage />
+                                    </AdminRoute>
+                                } />
 
-                            {/* Assessments */}
-                            <Route path="/quiz/hft" element={<HFTPage />} />
-                            <Route path="/quiz/marketing" element={<MarketingTestPage />} />
-                            <Route path="/quiz/eq" element={<EQTestPage />} />
+                                {/* Assessments */}
+                                <Route path="/quiz/hft" element={<HFTPage />} />
+                                <Route path="/quiz/marketing" element={<MarketingTestPage />} />
+                                <Route path="/quiz/eq" element={<EQTestPage />} />
 
-                            {/* Tutorials */}
-                            <Route path="/tutorials" element={<TutorialsPage />} />
-                            <Route path="/tutorials/:id" element={<TutorialDetailsPage />} />
-                        </Route>
+                                {/* Tutorials */}
+                                <Route path="/tutorials" element={<TutorialsPage />} />
+                                <Route path="/tutorials/:id" element={<TutorialDetailsPage />} />
+                            </Route>
 
-                        {/* Default Redirect */}
-                        <Route path="/" element={<Navigate to="/register" replace />} />
-                    </Routes>
+                            {/* Default Redirect */}
+                            <Route path="/" element={<Navigate to="/register" replace />} />
+                        </Routes>
 
                         <NotificationCenter />
                     </Router>

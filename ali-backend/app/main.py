@@ -21,7 +21,15 @@ from firebase_admin import firestore
 from app.core.security import verify_token, db
 
 # --- 1. GLOBAL LOGGING & ENV ---
-logging.basicConfig(level=logging.INFO)
+# V4.1: Structured logging with JSON output for observability
+try:
+    from app.services.structured_logger import setup_structured_logging
+    # Enable JSON logging in production, human-readable in development
+    json_output = os.getenv("ENVIRONMENT", "production") != "development"
+    setup_structured_logging(service_name="ali-backend", json_output=json_output)
+except ImportError:
+    logging.basicConfig(level=logging.INFO)
+
 logger = logging.getLogger("ali_platform")
 load_dotenv()
 
@@ -85,6 +93,7 @@ assets = safe_import_router("assets")
 saga_map = safe_import_router("saga_map")
 creatives = safe_import_router("creatives")
 ai_web = safe_import_router("ai_web")
+competitors = safe_import_router("competitors")
 
 logger.info("✅ Router imports processed.")
 
@@ -180,6 +189,15 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(SecurityHeadersMiddleware)
 
+# --- 3d. OBSERVABILITY MIDDLEWARE (Request ID & Metrics) ---
+try:
+    from app.middleware.observability import RequestIdMiddleware, MetricsMiddleware
+    app.add_middleware(MetricsMiddleware)  # Collect request metrics
+    app.add_middleware(RequestIdMiddleware)  # Propagate X-Request-ID headers
+    logger.info("✅ Observability middleware registered")
+except ImportError as e:
+    logger.warning(f"⚠️ Observability middleware not loaded: {e}")
+
 # --- 4. CORS CONFIGURATION ---
 origins = [
     "http://localhost:5173",
@@ -216,7 +234,8 @@ routers_map = [
     ("/api/assets", (assets, ["Assets"])),
     ("/api/saga-map", (saga_map, ["Saga Map"])),
     ("/api/creatives", (creatives, ["Creatives"])),
-    ("/api/ai/web", (ai_web, ["AI Web"]))
+    ("/api/ai/web", (ai_web, ["AI Web"])),
+    ("/api", (competitors, ["Competitors"])),  # Market Radar
 ]
 
 for prefix, (module, tags) in routers_map:

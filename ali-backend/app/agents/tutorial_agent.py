@@ -798,8 +798,10 @@ def generate_tutorial(
             
             summary_script = f"Congratulations on completing this course on {topic}. To recap: We explored {metaphor} to understand the core concepts. Remember to apply these strategies on your channels like {', '.join(connected_channels) if connected_channels else 'social media'}. Keep experimenting!"
             
-            summary_url = audio_agent.generate_audio(summary_script, folder="tutorials")
-            if summary_url:
+            summary_result = audio_agent.generate_audio(summary_script, folder="tutorials")
+            # Extract URL from dict result (audio_agent returns {"url": ..., "gcs_object_key": ...})
+            summary_url = summary_result.get("url") if isinstance(summary_result, dict) else summary_result
+            if summary_url and str(summary_url).startswith("http"):
                 final_sections.append({
                     "title": "Course Summary",
                     "blocks": [{ "type": "audio", "url": summary_url, "transcript": summary_script }]

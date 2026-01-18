@@ -3,7 +3,7 @@ import {
     FaExclamationTriangle, FaCheckCircle, FaEye, FaFlag,
     FaRobot, FaSpinner, FaClock, FaArrowRight, FaShieldAlt
 } from 'react-icons/fa';
-import api from '../api/axiosInterceptor';
+import { apiClient } from '../lib/api-client';
 
 /**
  * Priority Actions Component
@@ -17,24 +17,25 @@ export default function PriorityActions({ onActionTaken }) {
     // Fetch priority actions from mentions
     const fetchPriorities = async () => {
         setLoading(true);
-        try {
-            // First get recent mentions
-            const mentionsRes = await api.get('/brand-monitoring/mentions');
-            const mentions = mentionsRes.data?.mentions || [];
-
+        // First get recent mentions
+        const mentionsResult = await apiClient.get('/brand-monitoring/mentions');
+        if (mentionsResult.ok) {
+            const mentions = mentionsResult.data?.mentions || [];
             if (mentions.length > 0) {
                 // Then get priority scoring
-                const priorityRes = await api.post('/brand-monitoring/priority-actions', {
-                    mentions: mentions,
-                    max_items: 10
+                const priorityResult = await apiClient.post('/brand-monitoring/priority-actions', {
+                    body: { mentions, max_items: 10 }
                 });
-                setActions(priorityRes.data?.actions || []);
+                if (priorityResult.ok) {
+                    setActions(priorityResult.data?.actions || []);
+                } else {
+                    console.error('Failed to fetch priorities:', priorityResult.error.message);
+                }
             }
-        } catch (err) {
-            console.error('Failed to fetch priorities:', err);
-        } finally {
-            setLoading(false);
+        } else {
+            console.error('Failed to fetch mentions:', mentionsResult.error.message);
         }
+        setLoading(false);
     };
 
     useEffect(() => {
@@ -43,26 +44,27 @@ export default function PriorityActions({ onActionTaken }) {
 
     // Get action recommendation
     const getRecommendation = async (mention) => {
-        try {
-            const res = await api.post('/brand-monitoring/recommend-action', { mention });
-            return res.data;
-        } catch (err) {
-            console.error('Failed to get recommendation:', err);
-            return null;
+        const result = await apiClient.post('/brand-monitoring/recommend-action', { body: { mention } });
+        if (result.ok) {
+            return result.data;
         }
+        console.error('Failed to get recommendation:', result.error.message);
+        return null;
     };
 
     // Log user action
     const logAction = async (mentionId, actionType) => {
-        try {
-            await api.post('/brand-monitoring/log-action', {
+        const result = await apiClient.post('/brand-monitoring/log-action', {
+            body: {
                 mention_id: mentionId,
                 action_type: actionType,
                 ai_suggested: true
-            });
+            }
+        });
+        if (result.ok) {
             onActionTaken?.();
-        } catch (err) {
-            console.error('Failed to log action:', err);
+        } else {
+            console.error('Failed to log action:', result.error.message);
         }
     };
 

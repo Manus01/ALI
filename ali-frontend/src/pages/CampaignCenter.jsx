@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import api from '../api/axiosInterceptor';
+import { apiClient } from '../lib/api-client';
 import { useAuth } from '../hooks/useAuth';
 import { useNotification } from '../context/NotificationContext';
 import {
@@ -116,14 +116,12 @@ export default function CampaignCenter() {
     useEffect(() => {
         // Fetch User Integrations on Mount to show "Smart Mode" status
         const fetchIntegrations = async () => {
-            try {
-                // We use the Metricool endpoint as it aggregates providers
-                const res = await api.get('/connect/metricool/status');
-                if (res.data.status === 'active' && res.data.connected_providers) {
-                    setDetectedPlatforms(res.data.connected_providers);
-                }
-            } catch (e) {
-                console.warn("Could not fetch integrations for context", e);
+            // We use the Metricool endpoint as it aggregates providers
+            const result = await apiClient.get('/connect/metricool/status');
+            if (result.ok && result.data.status === 'active' && result.data.connected_providers) {
+                setDetectedPlatforms(result.data.connected_providers);
+            } else if (!result.ok) {
+                console.warn("Could not fetch integrations for context", result.error.message);
             }
         };
         fetchIntegrations();
@@ -144,16 +142,16 @@ export default function CampaignCenter() {
         if (campaignIdParam === campaignId && finalAssets && matchesFinalAssets) return;
 
         const restoreCampaignResults = async () => {
-            try {
-                const res = await api.get(`/campaign/results/${campaignIdParam}`);
+            const result = await apiClient.get(`/campaign/results/${campaignIdParam}`);
+            if (result.ok) {
                 setCampaignId(campaignIdParam);
-                setFinalAssets(res.data);
-                setSelectedChannels(res.data.selected_channels || []);
-                setGoal(res.data.goal || '');
+                setFinalAssets(result.data);
+                setSelectedChannels(result.data.selected_channels || []);
+                setGoal(result.data.goal || '');
                 setStage('results');
                 setViewMode('wizard');
-            } catch (err) {
-                console.warn("Failed to load campaign results", err);
+            } else {
+                console.warn("Failed to load campaign results", result.error.message);
             }
         };
 
@@ -163,58 +161,60 @@ export default function CampaignCenter() {
     // --- USER DRAFT REVIEW FUNCTIONS ---
     const fetchUserDrafts = useCallback(async () => {
         setLoadingDrafts(true);
-        try {
-            const [draftsRes, publishedRes] = await Promise.all([
-                api.get('/api/creatives/my-drafts'),
-                api.get('/api/creatives/my-published')
-            ]);
-            setUserDrafts(draftsRes.data.drafts || []);
-            setUserPublished(publishedRes.data.published || []);
-        } catch (err) {
-            console.error("Failed to fetch user assets", err);
-        } finally {
-            setLoadingDrafts(false);
+        const [draftsResult, publishedResult] = await Promise.all([
+            apiClient.get('/creatives/my-drafts'),
+            apiClient.get('/creatives/my-published')
+        ]);
+        if (draftsResult.ok) {
+            setUserDrafts(draftsResult.data.drafts || []);
+        } else {
+            console.error("Failed to fetch user drafts", draftsResult.error.message);
         }
+        if (publishedResult.ok) {
+            setUserPublished(publishedResult.data.published || []);
+        } else {
+            console.error("Failed to fetch published assets", publishedResult.error.message);
+        }
+        setLoadingDrafts(false);
     }, []);
 
     // --- WIZARD DRAFT PERSISTENCE FUNCTIONS (v4.0) ---
     const fetchWizardDrafts = useCallback(async () => {
-        try {
-            const res = await api.get('/campaign/my-wizard-drafts');
-            setWizardDrafts(res.data.drafts || []);
-        } catch (err) {
-            console.warn("Could not fetch wizard drafts", err);
+        const result = await apiClient.get('/campaign/my-wizard-drafts');
+        if (result.ok) {
+            setWizardDrafts(result.data.drafts || []);
+        } else {
+            console.warn("Could not fetch wizard drafts", result.error.message);
         }
     }, []);
 
     const checkCheckpoint = useCallback(async (campaignToCheck) => {
         if (!campaignToCheck) return;
-        try {
-            const res = await api.get(`/campaign/checkpoint/${campaignToCheck}`);
-            if (res.data?.has_checkpoint) {
-                setResumeCheckpoint(res.data);
+        const result = await apiClient.get(`/campaign/checkpoint/${campaignToCheck}`);
+        if (result.ok) {
+            if (result.data?.has_checkpoint) {
+                setResumeCheckpoint(result.data);
             } else {
                 setResumeCheckpoint(null);
             }
-        } catch (err) {
-            console.warn("Could not check campaign checkpoint", err);
+        } else {
+            console.warn("Could not check campaign checkpoint", result.error.message);
         }
     }, []);
 
     const handleResumeCampaign = async () => {
         if (!resumeCheckpoint?.campaign_id) return;
         setIsResumingCampaign(true);
-        try {
-            await api.post(`/campaign/resume/${resumeCheckpoint.campaign_id}`);
+        const result = await apiClient.post(`/campaign/resume/${resumeCheckpoint.campaign_id}`);
+        if (result.ok) {
             setCampaignId(resumeCheckpoint.campaign_id);
             setStage('generating');
             setProgress({ message: 'Resuming campaign generation...', percent: 25 });
             setResumeCheckpoint(null);
-        } catch (err) {
-            console.error("Failed to resume campaign", err);
-        } finally {
-            setIsResumingCampaign(false);
+        } else {
+            console.error("Failed to resume campaign", result.error.message);
         }
+        setIsResumingCampaign(false);
     };
 
     useEffect(() => {
@@ -233,21 +233,23 @@ export default function CampaignCenter() {
         // Only save if there's meaningful data
         if (!goal && selectedChannels.length === 0) return;
 
-        try {
-            const res = await api.post('/campaign/save-draft', {
+        const result = await apiClient.post('/campaign/save-draft', {
+            body: {
                 draft_id: currentDraftId,
                 goal,
                 selected_channels: selectedChannels,
                 questions,
                 answers,
                 stage
-            });
+            }
+        });
+        if (result.ok) {
             if (!currentDraftId) {
-                setCurrentDraftId(res.data.draft_id);
+                setCurrentDraftId(result.data.draft_id);
             }
             console.log('💾 Auto-saved wizard state');
-        } catch (err) {
-            console.warn("Auto-save failed:", err);
+        } else {
+            console.warn("Auto-save failed:", result.error.message);
         }
     }, [currentUser, goal, selectedChannels, questions, answers, stage, currentDraftId]);
 
@@ -273,11 +275,11 @@ export default function CampaignCenter() {
 
     // Delete a wizard draft
     const deleteWizardDraft = useCallback(async (draftId) => {
-        try {
-            await api.delete(`/campaign/wizard-draft/${draftId}`);
+        const result = await apiClient.delete(`/campaign/wizard-draft/${draftId}`);
+        if (result.ok) {
             setWizardDrafts(prev => prev.filter(d => d.draftId !== draftId));
-        } catch (err) {
-            console.warn("Failed to delete wizard draft", err);
+        } else {
+            console.warn("Failed to delete wizard draft", result.error.message);
         }
     }, []);
 
@@ -291,38 +293,31 @@ export default function CampaignCenter() {
 
     const handleApproveAndPublish = async (draftId) => {
         setPublishingId(draftId);
-        try {
-            await api.post(`/api/creatives/${draftId}/publish`);
+        const result = await apiClient.post(`/creatives/${draftId}/publish`);
+        if (result.ok) {
             // Refetch to update UI - draft moves from drafts to published
             await fetchUserDrafts();
-        } catch (err) {
-            console.error("Publish failed", err);
-            alert("Publish failed: " + (err.response?.data?.detail || err.message));
-        } finally {
-            setPublishingId(null);
+        } else {
+            console.error("Publish failed", result.error.message);
+            alert("Publish failed: " + result.error.message);
         }
+        setPublishingId(null);
     };
 
     // --- REMIX FUNCTIONALITY (v3.5) ---
     const handleRemix = async (asset) => {
         setRemixingId(asset.id);
-        try {
-            await api.post(`/api/creatives/${asset.id}/remix`);
-
+        const result = await apiClient.post(`/creatives/${asset.id}/remix`);
+        if (result.ok) {
             // On success, switch to Review Feed / Results for this campaign (or newly created one)
-            // Ideally we want to see the new draft.
-            // Since remix creates a NEW draft, let's refresh drafts and maybe switch view?
+            // Since remix creates a NEW draft, let's refresh drafts
             await fetchUserDrafts();
-
-            // Optional: User feedback
             alert("Remix started! Check your Drafts momentarily.");
-
-        } catch (err) {
-            console.error("Remix failed", err);
-            alert("Remix failed: " + (err.response?.data?.detail || err.message));
-        } finally {
-            setRemixingId(null);
+        } else {
+            console.error("Remix failed", result.error.message);
+            alert("Remix failed: " + result.error.message);
         }
+        setRemixingId(null);
     };
 
     // --- DELETE ASSET HANDLER (v4.0) ---
@@ -333,13 +328,10 @@ export default function CampaignCenter() {
             confirmLabel: 'Delete asset',
             cancelLabel: 'Keep asset',
             onConfirm: async () => {
-                try {
-                    await api.delete(`/api/creatives/${draftId}`);
-                } catch (err) {
-                    if (err.response?.status !== 404) {
-                        console.error("Delete failed", err);
-                        return;
-                    }
+                const result = await apiClient.delete(`/creatives/${draftId}`);
+                if (!result.ok && result.error.status !== 404) {
+                    console.error("Delete failed", result.error.message);
+                    return;
                 }
 
                 if (assetKey && finalAssets?.assets) {
@@ -377,18 +369,18 @@ export default function CampaignCenter() {
     const [regeneratingId, setRegeneratingId] = useState(null);
 
     const regenerateDraft = async (draftId, shouldNotify = true) => {
-        try {
-            await api.post(`/api/creatives/${draftId}/regenerate`);
+        const result = await apiClient.post(`/creatives/${draftId}/regenerate`);
+        if (result.ok) {
             if (shouldNotify) {
                 alert("Regeneration started! The asset will update shortly.");
             }
             setTimeout(() => fetchUserDrafts(), 3000);
-        } catch (err) {
-            console.error("Regeneration failed", err);
+        } else {
+            console.error("Regeneration failed", result.error.message);
             if (shouldNotify) {
-                alert("Regeneration failed: " + (err.response?.data?.detail || err.message));
+                alert("Regeneration failed: " + result.error.message);
             }
-            throw err;
+            throw new Error(result.error.message);
         }
     };
 

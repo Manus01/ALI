@@ -1,7 +1,7 @@
 ﻿import React, { useState, useEffect } from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { FaGripVertical, FaBolt, FaCheckCircle, FaUserEdit } from 'react-icons/fa';
-import api from '../api/axiosInterceptor';
+import { apiClient } from '../lib/api-client';
 
 // Columns Configuration
 const COLUMNS = {
@@ -72,10 +72,10 @@ export default function StrategyKanban({ initialActions }) {
         if (item.tool === 'manual') return;
 
         setExecutingId(item.id);
-        try {
-            const res = await api.post('/api/execute', { tool: item.tool, params: item.params });
+        const result = await apiClient.post('/execute', { body: { tool: item.tool, params: item.params } });
 
-            alert(res.data.message);
+        if (result.ok) {
+            alert(result.data.message);
 
             // Auto-move to completed if successful
             // Find current column
@@ -90,12 +90,10 @@ export default function StrategyKanban({ initialActions }) {
                     completed: { ...prev.completed, items: [item, ...prev.completed.items] }
                 }));
             }
-
-        } catch (err) {
-            alert("Execution failed: " + err.message);
-        } finally {
-            setExecutingId(null);
+        } else {
+            alert("Execution failed: " + result.error.message);
         }
+        setExecutingId(null);
     };
 
     return (

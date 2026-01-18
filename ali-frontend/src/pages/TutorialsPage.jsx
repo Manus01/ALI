@@ -7,7 +7,7 @@ import {
     FaChevronDown, FaPlay, FaRedo
 } from 'react-icons/fa';
 import { getFirestore, collection, query, onSnapshot, orderBy } from 'firebase/firestore';
-import api from '../api/axiosInterceptor';
+import { apiClient } from '../lib/api-client';
 import { useAuth } from '../hooks/useAuth';
 import SagaMapNavigator from '../components/SagaMapNavigator';
 
@@ -57,11 +57,11 @@ export default function TutorialsPage() {
 
         // Fetch suggestions
         const fetchSuggestions = async () => {
-            try {
-                const res = await api.get('/tutorials/suggestions');
-                setSuggestions(res.data || []);
-            } catch (err) {
-                console.error("Suggestion Fetch Error:", err);
+            const result = await apiClient.get('/tutorials/suggestions');
+            if (result.ok) {
+                setSuggestions(result.data || []);
+            } else {
+                console.error("Suggestion Fetch Error:", result.error.message);
                 setSuggestions([]);
             }
         };
@@ -69,11 +69,11 @@ export default function TutorialsPage() {
 
         // Fetch pending requests
         const fetchPendingRequests = async () => {
-            try {
-                const res = await api.get('/tutorials/requests/mine');
-                setPendingRequests(res.data.requests || []);
-            } catch (err) {
-                console.error("Could not fetch pending requests", err);
+            const result = await apiClient.get('/tutorials/requests/mine');
+            if (result.ok) {
+                setPendingRequests(result.data.requests || []);
+            } else {
+                console.error("Could not fetch pending requests", result.error.message);
             }
         };
         fetchPendingRequests();
@@ -88,24 +88,25 @@ export default function TutorialsPage() {
 
         setGenerationState('loading');
         setErrorMessage('');
-        try {
-            const response = await api.post('/tutorials/request', { topic: finalTopic });
+        const response = await apiClient.post('/tutorials/request', { body: { topic: finalTopic } });
+        if (response.ok) {
             setRequestTopic('');
             setShowRequestModal(false);
             setGenerationState('success');
 
             // Refresh pending requests
-            const res = await api.get('/tutorials/requests/mine');
-            setPendingRequests(res.data.requests || []);
+            const res = await apiClient.get('/tutorials/requests/mine');
+            if (res.ok) {
+                setPendingRequests(res.data.requests || []);
+            }
 
             setErrorMessage(`✅ ${response.data.message || "Request submitted! You'll be notified when approved."}`);
             setTimeout(() => { setGenerationState('idle'); setErrorMessage(''); }, 5000);
-        } catch (err) {
-            console.error(err);
-            if (err.response?.status === 403) {
+        } else {
+            if (response.error.status === 403) {
                 setErrorMessage('Tutorial requests require approval. Request submitted for review.');
             } else {
-                setErrorMessage(err.response?.data?.detail || 'Failed to submit request. Try again.');
+                setErrorMessage(response.error.message || 'Failed to submit request. Try again.');
             }
             setGenerationState('idle');
         }
@@ -113,15 +114,16 @@ export default function TutorialsPage() {
 
     const handleDelete = async (type) => {
         if (!deleteModal.tutorialId) return;
-        try {
-            if (type === 'hide') {
-                await api.delete(`/tutorials/${deleteModal.tutorialId}`);
-            } else if (type === 'permanent') {
-                await api.post(`/tutorials/${deleteModal.tutorialId}/request-delete`);
-            }
+        let result;
+        if (type === 'hide') {
+            result = await apiClient.delete(`/tutorials/${deleteModal.tutorialId}`);
+        } else if (type === 'permanent') {
+            result = await apiClient.post(`/tutorials/${deleteModal.tutorialId}/request-delete`);
+        }
+        if (result?.ok) {
             setDeleteModal({ show: false, tutorialId: null, title: '' });
-        } catch (err) {
-            console.error("Delete failed", err);
+        } else {
+            console.error("Delete failed", result?.error?.message);
             alert("Failed to delete tutorial.");
         }
     };
@@ -191,8 +193,8 @@ export default function TutorialsPage() {
                     {/* Error/Success Messages */}
                     {errorMessage && (
                         <div className={`mt-4 p-3 rounded-xl text-sm font-medium ${errorMessage.startsWith('✅')
-                                ? 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 border border-green-100 dark:border-green-900/30'
-                                : 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-100 dark:border-red-900/30'
+                            ? 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 border border-green-100 dark:border-green-900/30'
+                            : 'bg-red-50 dark:bg-red-900/20 text-red-600 dark:text-red-400 border border-red-100 dark:border-red-900/30'
                             }`}>
                             {errorMessage}
                         </div>
@@ -207,8 +209,8 @@ export default function TutorialsPage() {
                                 key={tab.id}
                                 onClick={() => setPrimaryView(tab.id)}
                                 className={`flex items-center gap-2 px-4 py-3 text-sm font-bold whitespace-nowrap border-b-2 transition-all ${primaryView === tab.id
-                                        ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
-                                        : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+                                    ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400'
+                                    : 'border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
                                     }`}
                             >
                                 {tab.icon}
@@ -263,8 +265,8 @@ export default function TutorialsPage() {
                                 <button
                                     onClick={() => setLessonFilter('active')}
                                     className={`px-4 py-2 text-xs font-black rounded-lg transition-all ${lessonFilter === 'active'
-                                            ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-800 dark:text-white'
-                                            : 'text-slate-400 hover:text-slate-600'
+                                        ? 'bg-white dark:bg-slate-700 shadow-sm text-slate-800 dark:text-white'
+                                        : 'text-slate-400 hover:text-slate-600'
                                         }`}
                                 >
                                     Active ({tutorials.filter(t => !t.is_completed && (t.status || 'PUBLISHED') === 'PUBLISHED').length})
@@ -272,8 +274,8 @@ export default function TutorialsPage() {
                                 <button
                                     onClick={() => setLessonFilter('completed')}
                                     className={`px-4 py-2 text-xs font-black rounded-lg transition-all ${lessonFilter === 'completed'
-                                            ? 'bg-white dark:bg-slate-700 shadow-sm text-green-600 dark:text-green-400'
-                                            : 'text-slate-400 hover:text-slate-600'
+                                        ? 'bg-white dark:bg-slate-700 shadow-sm text-green-600 dark:text-green-400'
+                                        : 'text-slate-400 hover:text-slate-600'
                                         }`}
                                 >
                                     Completed ({tutorials.filter(t => t.is_completed && (t.status || 'PUBLISHED') === 'PUBLISHED').length})
@@ -434,8 +436,8 @@ export default function TutorialsPage() {
                                         <div
                                             key={req.id || idx}
                                             className={`bg-white dark:bg-slate-800 rounded-2xl border p-5 transition-all ${isDenied
-                                                    ? 'border-red-200 dark:border-red-800/50'
-                                                    : 'border-slate-100 dark:border-slate-700'
+                                                ? 'border-red-200 dark:border-red-800/50'
+                                                : 'border-slate-100 dark:border-slate-700'
                                                 }`}
                                         >
                                             <div className="flex flex-col sm:flex-row sm:items-center gap-4">
@@ -448,29 +450,29 @@ export default function TutorialsPage() {
                                                     {!isDenied && (
                                                         <div className="flex items-center gap-2 mt-3 text-[10px] font-bold">
                                                             <span className={`px-2.5 py-1 rounded-full ${['PENDING', 'APPROVED', 'GENERATING', 'COMPLETED'].includes(req.status)
-                                                                    ? 'bg-amber-500 text-white'
-                                                                    : 'bg-slate-200 text-slate-500'
+                                                                ? 'bg-amber-500 text-white'
+                                                                : 'bg-slate-200 text-slate-500'
                                                                 }`}>
                                                                 Requested
                                                             </span>
                                                             <FaArrowRight className="text-slate-300" size={10} />
                                                             <span className={`px-2.5 py-1 rounded-full ${['APPROVED', 'GENERATING', 'COMPLETED'].includes(req.status)
-                                                                    ? 'bg-blue-500 text-white'
-                                                                    : 'bg-slate-200 text-slate-500'
+                                                                ? 'bg-blue-500 text-white'
+                                                                : 'bg-slate-200 text-slate-500'
                                                                 }`}>
                                                                 Approved
                                                             </span>
                                                             <FaArrowRight className="text-slate-300" size={10} />
                                                             <span className={`px-2.5 py-1 rounded-full ${['GENERATING', 'COMPLETED'].includes(req.status)
-                                                                    ? 'bg-indigo-500 text-white'
-                                                                    : 'bg-slate-200 text-slate-500'
+                                                                ? 'bg-indigo-500 text-white'
+                                                                : 'bg-slate-200 text-slate-500'
                                                                 }`}>
                                                                 Generating
                                                             </span>
                                                             <FaArrowRight className="text-slate-300" size={10} />
                                                             <span className={`px-2.5 py-1 rounded-full ${req.status === 'COMPLETED'
-                                                                    ? 'bg-green-500 text-white'
-                                                                    : 'bg-slate-200 text-slate-500'
+                                                                ? 'bg-green-500 text-white'
+                                                                : 'bg-slate-200 text-slate-500'
                                                                 }`}>
                                                                 Ready
                                                             </span>

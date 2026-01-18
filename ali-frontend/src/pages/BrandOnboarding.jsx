@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import api from '../api/axiosInterceptor';
+import { apiClient } from '../lib/api-client';
 import {
     FaRocket, FaPalette, FaCheckCircle, FaGlobe, FaArrowLeft,
     FaWindowMaximize, FaEdit, FaCloudUploadAlt, FaInfoCircle,
@@ -71,30 +71,30 @@ function BrandPreviewCard({ dna, isLoading, onEdit, onRegenerate, onApprove, isR
     return (
         <div className="bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden">
             {/* Header with Pattern Preview */}
-            <div 
+            <div
                 className="h-32 relative"
-                style={{ 
+                style={{
                     background: `linear-gradient(135deg, ${colors.primary || '#3B82F6'}20 0%, ${colors.accent || '#6366F1'}20 100%)`,
                 }}
             >
                 {pattern.svg_data && (
-                    <div 
+                    <div
                         className="absolute inset-0 opacity-30"
                         dangerouslySetInnerHTML={{ __html: pattern.svg_data }}
                     />
                 )}
                 <div className="absolute bottom-4 left-6 flex gap-3">
-                    <div 
+                    <div
                         className="w-12 h-12 rounded-xl shadow-lg border-2 border-white"
                         style={{ backgroundColor: colors.primary || '#3B82F6' }}
                         title="Primary"
                     />
-                    <div 
+                    <div
                         className="w-12 h-12 rounded-xl shadow-lg border-2 border-white"
                         style={{ backgroundColor: colors.secondary || '#1E293B' }}
                         title="Secondary"
                     />
-                    <div 
+                    <div
                         className="w-12 h-12 rounded-xl shadow-lg border-2 border-white"
                         style={{ backgroundColor: colors.accent || '#6366F1' }}
                         title="Accent"
@@ -150,7 +150,7 @@ function BrandPreviewCard({ dna, isLoading, onEdit, onRegenerate, onApprove, isR
                         <span className="text-sm font-bold text-slate-600 capitalize">{pattern.template || 'Wave'} Pattern</span>
                         <div className="w-16 h-8 rounded overflow-hidden border border-slate-200">
                             {pattern.svg_data && (
-                                <div 
+                                <div
                                     className="w-full h-full"
                                     dangerouslySetInnerHTML={{ __html: pattern.svg_data }}
                                 />
@@ -238,31 +238,28 @@ export default function BrandOnboarding() {
         if (!url && !description && !pdfFile) return;
 
         setStep('loading');
-        try {
-            // Build FormData for multipart request
-            const formData = new FormData();
-            
-            if (!useDescription && url) {
-                formData.append('url', url);
-            }
-            if (useDescription && description) {
-                formData.append('description', description);
-            }
-            formData.append('countries', JSON.stringify(countries));
-            formData.append('brand_vibe', brandVibe);
-            
-            if (pdfFile) {
-                formData.append('pdf_file', pdfFile);
-            }
+        // Build FormData for multipart request
+        const formData = new FormData();
 
-            const res = await api.post('/onboarding/analyze-brand', formData, {
-                headers: { 'Content-Type': 'multipart/form-data' }
-            });
-            
-            setDna(res.data);
+        if (!useDescription && url) {
+            formData.append('url', url);
+        }
+        if (useDescription && description) {
+            formData.append('description', description);
+        }
+        formData.append('countries', JSON.stringify(countries));
+        formData.append('brand_vibe', brandVibe);
+
+        if (pdfFile) {
+            formData.append('pdf_file', pdfFile);
+        }
+
+        const result = await apiClient.post('/onboarding/analyze-brand', { body: formData });
+        if (result.ok) {
+            setDna(result.data);
             setStep('preview');
-        } catch (err) {
-            console.error("Analysis failed", err);
+        } else {
+            console.error("Analysis failed", result.error.message);
             alert("Analysis failed. Please check your inputs and try again.");
             setStep('input');
         }
@@ -271,20 +268,21 @@ export default function BrandOnboarding() {
     // --- 4. REGENERATE HANDLER ---
     const handleRegenerate = async () => {
         if (!dna) return;
-        
+
         setIsRegenerating(true);
-        try {
-            const res = await api.post('/onboarding/regenerate-dna', {
+        const result = await apiClient.post('/onboarding/regenerate-dna', {
+            body: {
                 current_dna: dna,
                 brand_vibe: brandVibe
-            });
-            setDna(res.data);
-        } catch (err) {
-            console.error("Regeneration failed", err);
+            }
+        });
+        if (result.ok) {
+            setDna(result.data);
+        } else {
+            console.error("Regeneration failed", result.error.message);
             alert("Failed to regenerate. Please try again.");
-        } finally {
-            setIsRegenerating(false);
         }
+        setIsRegenerating(false);
     };
 
     // --- 5. FINAL APPROVAL & ASSET PERSISTENCE ---
@@ -292,34 +290,41 @@ export default function BrandOnboarding() {
         setIsSaving(true);
         let finalLogoUrl = null;
 
-        try {
-            // A. Upload Logo via Asset Processing API (Unified Pipeline)
-            if (logoFile && currentUser) {
-                const formData = new FormData();
-                formData.append('file', logoFile);
-                formData.append('remove_bg', 'true'); // Auto-clean logos
-                formData.append('optimize', 'true');
+        // A. Upload Logo via Asset Processing API (Unified Pipeline)
+        if (logoFile && currentUser) {
+            const formData = new FormData();
+            formData.append('file', logoFile);
+            formData.append('remove_bg', 'true'); // Auto-clean logos
+            formData.append('optimize', 'true');
 
-                const uploadRes = await api.post('/assets/process', formData, {
-                    headers: { 'Content-Type': 'multipart/form-data' }
-                });
-                finalLogoUrl = uploadRes.data.processed_url;
+            const uploadResult = await apiClient.post('/assets/process', { body: formData });
+            if (uploadResult.ok) {
+                finalLogoUrl = uploadResult.data.processed_url;
+            } else {
+                console.error("Failed to upload logo:", uploadResult.error.message);
+                alert("Failed to upload logo. Please try again.");
+                setIsSaving(false);
+                return;
             }
+        }
 
-            // B. Complete Onboarding
-            await api.post('/onboarding/complete', {
+        // B. Complete Onboarding
+        const completeResult = await apiClient.post('/onboarding/complete', {
+            body: {
                 brand_dna: {
                     ...dna,
                     website_url: url,
                     description: description,
                     logo_url: finalLogoUrl
                 }
-            });
+            }
+        });
 
+        if (completeResult.ok) {
             await refreshProfile();
             navigate('/dashboard');
-        } catch (err) {
-            console.error("Failed to save onboarding", err);
+        } else {
+            console.error("Failed to save onboarding", completeResult.error.message);
             alert("Failed to save selection. Please try again.");
             setIsSaving(false);
         }
@@ -337,13 +342,13 @@ export default function BrandOnboarding() {
                         </div>
                         <h2 className="text-3xl font-bold text-slate-800 mb-2 text-center tracking-tight">Establish Your Identity</h2>
                         <p className="text-slate-500 mb-10 max-w-lg mx-auto text-center font-medium">
-                            {pdfFile ? "We'll extract your brand DNA from your guidelines." : 
-                             useDescription ? "Describe your vision and we'll craft your DNA." : 
-                             "Give us your URL and we'll extract your core essence."}
+                            {pdfFile ? "We'll extract your brand DNA from your guidelines." :
+                                useDescription ? "Describe your vision and we'll craft your DNA." :
+                                    "Give us your URL and we'll extract your core essence."}
                         </p>
 
                         <div className="max-w-lg mx-auto space-y-8">
-                            
+
                             {/* Brand Vibe Selector */}
                             <div className="space-y-4">
                                 <label className="block text-left text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] ml-1">
@@ -355,11 +360,10 @@ export default function BrandOnboarding() {
                                             key={vibe.id}
                                             type="button"
                                             onClick={() => setBrandVibe(vibe.id)}
-                                            className={`p-4 rounded-2xl border-2 text-left transition-all ${
-                                                brandVibe === vibe.id 
-                                                    ? 'border-primary bg-blue-50 shadow-lg' 
-                                                    : 'border-slate-100 bg-white hover:border-slate-200'
-                                            }`}
+                                            className={`p-4 rounded-2xl border-2 text-left transition-all ${brandVibe === vibe.id
+                                                ? 'border-primary bg-blue-50 shadow-lg'
+                                                : 'border-slate-100 bg-white hover:border-slate-200'
+                                                }`}
                                         >
                                             <div className="text-2xl mb-2">{vibe.icon}</div>
                                             <p className="font-bold text-slate-800 text-sm">{vibe.label}</p>
@@ -379,14 +383,13 @@ export default function BrandOnboarding() {
                                         <FaInfoCircle /> Optional
                                     </span>
                                 </div>
-                                <div className={`relative group border-2 border-dashed rounded-2xl p-4 transition-all ${
-                                    pdfFile ? 'border-green-400 bg-green-50' : 'border-slate-200 hover:border-primary bg-slate-50/50'
-                                }`}>
-                                    <input 
-                                        type="file" 
-                                        accept=".pdf" 
-                                        className="absolute inset-0 opacity-0 cursor-pointer z-10" 
-                                        onChange={handlePdfChange} 
+                                <div className={`relative group border-2 border-dashed rounded-2xl p-4 transition-all ${pdfFile ? 'border-green-400 bg-green-50' : 'border-slate-200 hover:border-primary bg-slate-50/50'
+                                    }`}>
+                                    <input
+                                        type="file"
+                                        accept=".pdf"
+                                        className="absolute inset-0 opacity-0 cursor-pointer z-10"
+                                        onChange={handlePdfChange}
                                     />
                                     {pdfFile ? (
                                         <div className="flex items-center gap-3">
@@ -395,7 +398,7 @@ export default function BrandOnboarding() {
                                                 <p className="text-sm font-bold text-slate-700 truncate max-w-[200px]">{pdfFile.name}</p>
                                                 <p className="text-xs text-slate-400">{(pdfFile.size / 1024 / 1024).toFixed(2)} MB</p>
                                             </div>
-                                            <button 
+                                            <button
                                                 onClick={(e) => { e.stopPropagation(); setPdfFile(null); }}
                                                 className="ml-auto text-red-400 hover:text-red-600"
                                             >
@@ -418,15 +421,15 @@ export default function BrandOnboarding() {
                                 </label>
                                 {!useDescription ? (
                                     <div className="group relative">
-                                        <input 
-                                            type="text" 
-                                            placeholder="https://your-business.com" 
-                                            className="w-full p-5 rounded-2xl border border-slate-200 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none text-lg text-center transition-all" 
-                                            value={url} 
-                                            onChange={(e) => setUrl(e.target.value)} 
+                                        <input
+                                            type="text"
+                                            placeholder="https://your-business.com"
+                                            className="w-full p-5 rounded-2xl border border-slate-200 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none text-lg text-center transition-all"
+                                            value={url}
+                                            onChange={(e) => setUrl(e.target.value)}
                                         />
-                                        <button 
-                                            onClick={() => setUseDescription(true)} 
+                                        <button
+                                            onClick={() => setUseDescription(true)}
                                             className="w-full mt-4 flex items-center justify-center gap-2 text-xs font-bold text-slate-400 hover:text-primary transition-colors"
                                         >
                                             <FaEdit /> I don't have a website yet
@@ -434,14 +437,14 @@ export default function BrandOnboarding() {
                                     </div>
                                 ) : (
                                     <div className="group relative">
-                                        <textarea 
-                                            placeholder="Describe your products and 'vibe'..." 
-                                            className="w-full p-5 rounded-2xl border border-slate-200 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none text-lg min-h-[140px] transition-all" 
-                                            value={description} 
-                                            onChange={(e) => setDescription(e.target.value)} 
+                                        <textarea
+                                            placeholder="Describe your products and 'vibe'..."
+                                            className="w-full p-5 rounded-2xl border border-slate-200 focus:ring-4 focus:ring-primary/10 focus:border-primary outline-none text-lg min-h-[140px] transition-all"
+                                            value={description}
+                                            onChange={(e) => setDescription(e.target.value)}
                                         />
-                                        <button 
-                                            onClick={() => setUseDescription(false)} 
+                                        <button
+                                            onClick={() => setUseDescription(false)}
                                             className="w-full mt-4 flex items-center justify-center gap-2 text-xs font-bold text-slate-400 hover:text-primary transition-colors"
                                         >
                                             <FaWindowMaximize /> Use a website URL instead
@@ -494,9 +497,9 @@ export default function BrandOnboarding() {
                                 </div>
                             </div>
 
-                            <button 
-                                onClick={handleAnalyze} 
-                                disabled={(!url && !description && !pdfFile)} 
+                            <button
+                                onClick={handleAnalyze}
+                                disabled={(!url && !description && !pdfFile)}
                                 className="w-full bg-gradient-to-r from-primary to-blue-700 text-white py-5 rounded-2xl font-black text-lg shadow-xl shadow-blue-500/30 hover:scale-[1.02] active:scale-[0.98] transition-all disabled:opacity-30 uppercase tracking-widest"
                             >
                                 Build My DNA
@@ -521,7 +524,7 @@ export default function BrandOnboarding() {
                             <p className="text-slate-500 font-medium">Review and approve your generated identity.</p>
                         </div>
 
-                        <BrandPreviewCard 
+                        <BrandPreviewCard
                             dna={dna}
                             isLoading={false}
                             onEdit={() => setStep('input')}
@@ -530,8 +533,8 @@ export default function BrandOnboarding() {
                             isRegenerating={isRegenerating}
                         />
 
-                        <button 
-                            onClick={() => setStep('input')} 
+                        <button
+                            onClick={() => setStep('input')}
                             className="text-slate-400 hover:text-slate-600 font-bold flex items-center gap-2 mx-auto transition-colors"
                         >
                             <FaArrowLeft /> Back to Edit Inputs

@@ -1322,3 +1322,301 @@ def acknowledge_research_alert(alert_id: str, admin: dict = Depends(verify_admin
     except Exception as e:
         logger.error(f"❌ Acknowledge Alert Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ============================================================================
+# SYSTEM HEALTH OBSERVABILITY (Enterprise-Grade Monitoring)
+# ============================================================================
+
+import os
+import sys
+import time
+from datetime import timedelta
+
+# System admin email allowlist (configurable via environment)
+SYSTEM_ADMIN_EMAILS = os.getenv("SYSTEM_ADMIN_EMAILS", "manoliszografos@gmail.com").split(",")
+
+
+def verify_system_admin(user: dict = Depends(verify_token)) -> dict:
+    """
+    Verify user is a system admin (email allowlist or admin flag).
+    More restrictive than verify_admin for sensitive system operations.
+    """
+    email = user.get('email', '')
+    is_admin = user.get('admin', False)
+    
+    # Check allowlist and admin flag
+    if email.strip() not in [e.strip() for e in SYSTEM_ADMIN_EMAILS] and not is_admin:
+        raise HTTPException(status_code=403, detail="System admin access required")
+    
+    return user
+
+
+@router.get("/system-health")
+async def get_system_health(admin: dict = Depends(verify_system_admin)):
+    """
+    Get comprehensive system health metrics for the admin dashboard.
+    
+    Returns:
+    - API latency (p50, p95, p99)
+    - Failure rate (last hour, last 24h)
+    - Queue depths
+    - Scanner status
+    - Endpoint health checks
+    """
+    try:
+        from app.middleware.observability import metrics_collector
+        
+        # === 1. API Latency Metrics ===
+        latency_metrics = metrics_collector.get_latency_percentiles(window_seconds=3600)
+        
+        # === 2. Failure Rate ===
+        failure_1h = metrics_collector.get_failure_rate(window_seconds=3600)
+        failure_24h = metrics_collector.get_failure_rate(window_seconds=86400)
+        
+        failure_metrics = {
+            "last_hour": failure_1h,
+            "last_24h": failure_24h
+        }
+        
+        # === 3. Queue Depths (Firestore-based job queues) ===
+        queued_deepfake_jobs = 0
+        queued_scan_jobs = 0
+        
+        try:
+            # Count deepfake jobs across all users
+            deepfake_query = db.collection_group('deepfake_jobs').where('status', '==', 'queued').limit(100)
+            queued_deepfake_jobs = len(list(deepfake_query.stream()))
+        except Exception as e:
+            logger.warning(f"⚠️ Could not query deepfake jobs: {e}")
+        
+        try:
+            # Count pending scan jobs
+            scan_query = db.collection('scheduled_scans').where('status', '==', 'pending').limit(100)
+            queued_scan_jobs = len(list(scan_query.stream()))
+        except Exception as e:
+            logger.warning(f"⚠️ Could not query scan jobs: {e}")
+        
+        queue_depths = {
+            "deepfake_analysis": queued_deepfake_jobs,
+            "brand_monitoring_scans": queued_scan_jobs,
+            "total": queued_deepfake_jobs + queued_scan_jobs
+        }
+        
+        # === 4. Scanner Status ===
+        scanner_status = {
+            "last_scan_time": None,
+            "last_successful_scan": None,
+            "scanner_job_failures_24h": 0,
+            "scanner_active": True
+        }
+        
+        try:
+            from app.services.brand_monitoring_scanner import get_scanner
+            scanner = get_scanner()
+            if hasattr(scanner, 'last_scan') and scanner.last_scan:
+                # Get system-level last scan
+                last_scan_val = scanner.last_scan.get("system")
+                if last_scan_val:
+                    scanner_status["last_scan_time"] = last_scan_val.isoformat() if hasattr(last_scan_val, 'isoformat') else str(last_scan_val)
+        except Exception as e:
+            logger.warning(f"⚠️ Could not get scanner status: {e}")
+        
+        try:
+            # Find last successful scan
+            last_scan_docs = list(
+                db.collection('scheduled_scans')
+                  .where('status', '==', 'completed')
+                  .order_by('completed_at', direction=firestore.Query.DESCENDING)
+                  .limit(1)
+                  .stream()
+            )
+            if last_scan_docs:
+                last_completed = last_scan_docs[0].to_dict().get('completed_at')
+                if last_completed:
+                    scanner_status["last_successful_scan"] = last_completed.isoformat() if hasattr(last_completed, 'isoformat') else str(last_completed)
+            
+            # Count scanner failures in last 24h
+            yesterday = datetime.utcnow() - timedelta(hours=24)
+            failed_scans = list(
+                db.collection('scheduled_scans')
+                  .where('status', '==', 'failed')
+                  .where('created_at', '>=', yesterday)
+                  .limit(100)
+                  .stream()
+            )
+            scanner_status["scanner_job_failures_24h"] = len(failed_scans)
+        except Exception as e:
+            logger.warning(f"⚠️ Could not query scan history: {e}")
+        
+        # === 5. Endpoint Health Checks ===
+        health_checks = [
+            {
+                "name": "Core Health",
+                "endpoint": "/health",
+                "status": "healthy",
+                "latency_ms": 1.0,
+                "status_code": 200
+            }
+        ]
+        
+        # Internal health check (simplified - no external calls)
+        try:
+            # Test Firestore connectivity
+            start = time.perf_counter()
+            db.collection('admin_tasks').limit(1).get()
+            firestore_latency = (time.perf_counter() - start) * 1000
+            
+            health_checks.append({
+                "name": "Firestore",
+                "endpoint": "firestore:admin_tasks",
+                "status": "healthy",
+                "latency_ms": round(firestore_latency, 2),
+                "status_code": 200
+            })
+        except Exception as e:
+            health_checks.append({
+                "name": "Firestore",
+                "endpoint": "firestore:admin_tasks",
+                "status": "unhealthy",
+                "error": str(e)
+            })
+        
+        # === 6. Overall Status ===
+        overall_status = "healthy"
+        
+        # Check failure rate thresholds
+        if failure_metrics["last_hour"]["failure_rate_pct"] > 1.0:
+            overall_status = "degraded"
+        if failure_metrics["last_hour"]["failure_rate_pct"] > 5.0:
+            overall_status = "critical"
+        
+        # Check for unhealthy endpoints
+        if any(h.get("status") == "unhealthy" for h in health_checks):
+            overall_status = "critical"
+        
+        # Check queue depth
+        if queue_depths["total"] > 50:
+            overall_status = "degraded" if overall_status == "healthy" else overall_status
+        
+        # Log admin access
+        log_audit_action(
+            admin_id=admin.get("uid", "unknown"),
+            admin_email=admin.get("email"),
+            action="VIEW_SYSTEM_HEALTH",
+            target_id="system",
+            target_type="health_dashboard"
+        )
+        
+        return {
+            "status": "success",
+            "overall_status": overall_status,
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "metrics": {
+                "latency": latency_metrics,
+                "failure_rate": failure_metrics,
+                "queue_depths": queue_depths,
+                "scanner": scanner_status,
+                "health_checks": health_checks
+            }
+        }
+        
+    except ImportError as ie:
+        # Metrics collector not available - return partial data
+        logger.warning(f"⚠️ Metrics collector not available: {ie}")
+        return {
+            "status": "success",
+            "overall_status": "unknown",
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "metrics": {
+                "latency": {"p50_ms": 0, "p95_ms": 0, "p99_ms": 0, "sample_size": 0, "period": "unavailable"},
+                "failure_rate": {"last_hour": {"total_requests": 0, "failed_requests": 0, "failure_rate_pct": 0}},
+                "queue_depths": {"total": 0},
+                "scanner": {"scanner_active": True},
+                "health_checks": []
+            },
+            "warning": "Metrics collector not initialized"
+        }
+    except Exception as e:
+        logger.error(f"❌ System health check error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/diagnostics-export")
+async def export_diagnostics(admin: dict = Depends(verify_system_admin)):
+    """
+    Export full diagnostics bundle as JSON for support tickets.
+    
+    Includes:
+    - System health snapshot
+    - Recent error logs (last 50)
+    - Configuration (non-sensitive)
+    - Service versions
+    """
+    try:
+        # Get system health
+        health_data = await get_system_health(admin)
+        
+        # Get recent errors from admin_tasks
+        recent_errors = []
+        try:
+            error_docs = (
+                db.collection('admin_tasks')
+                  .where('type', '==', 'error_report')
+                  .order_by('created_at', direction=firestore.Query.DESCENDING)
+                  .limit(50)
+                  .stream()
+            )
+            for doc in error_docs:
+                data = doc.to_dict()
+                # Omit potentially sensitive fields
+                recent_errors.append({
+                    "id": doc.id,
+                    "title": data.get("title", ""),
+                    "severity": data.get("severity", ""),
+                    "created_at": data.get("created_at").isoformat() if data.get("created_at") and hasattr(data.get("created_at"), 'isoformat') else str(data.get("created_at", "")),
+                    "status": data.get("status", "")
+                })
+        except Exception as e:
+            logger.warning(f"⚠️ Could not fetch recent errors: {e}")
+            recent_errors = [{"error": f"Could not fetch: {e}"}]
+        
+        # Configuration (non-sensitive only)
+        config_snapshot = {
+            "version": "4.0",
+            "environment": os.getenv("ENVIRONMENT", "production"),
+            "region": os.getenv("GOOGLE_CLOUD_REGION", "us-central1"),
+            "max_request_size_bytes": int(os.getenv("MAX_REQUEST_SIZE_BYTES", 5 * 1024 * 1024)),
+            "structured_logging_enabled": True
+        }
+        
+        diagnostics = {
+            "export_timestamp": datetime.utcnow().isoformat() + "Z",
+            "exported_by": admin.get("email", "unknown"),
+            "system_health": health_data.get("metrics", {}),
+            "overall_status": health_data.get("overall_status", "unknown"),
+            "recent_errors": recent_errors,
+            "recent_errors_count": len(recent_errors),
+            "configuration": config_snapshot,
+            "service_info": {
+                "name": "ALI Platform Backend",
+                "version": "4.0",
+                "python_version": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+            }
+        }
+        
+        # Log export action
+        log_audit_action(
+            admin_id=admin.get("uid", "unknown"),
+            admin_email=admin.get("email"),
+            action="EXPORT_DIAGNOSTICS",
+            target_id="system",
+            target_type="diagnostics_bundle"
+        )
+        
+        return diagnostics
+        
+    except Exception as e:
+        logger.error(f"❌ Diagnostics export error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+

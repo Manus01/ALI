@@ -4,10 +4,15 @@ import {
     FaChartLine, FaUserSecret, FaRobot, FaSync, FaEye,
     FaFileAlt, FaFlag, FaBolt, FaMapMarkerAlt, FaClock,
     FaArrowUp, FaArrowDown, FaTimes, FaSpinner, FaPlay,
-    FaLinkedin, FaTwitter, FaFacebook, FaInstagram, FaTiktok, FaYoutube
+    FaLinkedin, FaTwitter, FaFacebook, FaInstagram, FaTiktok, FaYoutube,
+    FaLock, FaUnlock, FaLink, FaDownload, FaChevronDown, FaChevronUp,
+    FaExternalLinkAlt, FaImage, FaCopy, FaCheck
 } from 'react-icons/fa';
-import api from '../api/axiosInterceptor';
+import { apiClient } from '../lib/api-client';
+import { downloadEvidencePackage } from '../lib/brand-monitoring/modules/evidence';
 import PriorityActions from './PriorityActions';
+import ScanPolicyPanel from './ScanPolicyPanel';
+import ScanTimeline from './ScanTimeline';
 
 // ============================================================================
 // BRAND MONITORING DASHBOARD - Modern Redesign
@@ -25,6 +30,10 @@ export default function BrandMonitoringDashboard() {
     const [priorityActions, setPriorityActions] = useState([]);
     const [scanStatus, setScanStatus] = useState(null);
 
+    // Adaptive Scanning state
+    const [scanHistory, setScanHistory] = useState([]);
+    const [threatScoreHistory, setThreatScoreHistory] = useState([]);
+
     // Modal state
     const [reportModalOpen, setReportModalOpen] = useState(false);
     const [selectedPlatform, setSelectedPlatform] = useState(null);
@@ -35,26 +44,47 @@ export default function BrandMonitoringDashboard() {
     const [evidenceReport, setEvidenceReport] = useState(null);
     const [evidenceLoading, setEvidenceLoading] = useState(false);
 
+    // Evidence Chain state (NEW)
+    const [activeReportTab, setActiveReportTab] = useState('summary');
+    const [expandedSources, setExpandedSources] = useState({});
+    const [expandedDeepfake, setExpandedDeepfake] = useState({});
+    const [exportLoading, setExportLoading] = useState(false);
+    const [copySuccess, setCopySuccess] = useState(false);
+
     // Fetch all dashboard data
     const fetchDashboardData = useCallback(async () => {
         setLoading(true);
-        try {
-            const [sourcesRes, healthRes, geoRes, scanRes] = await Promise.all([
-                api.get('/brand-monitoring/sources'),
-                api.get('/brand-monitoring/health-score'),
-                api.get('/brand-monitoring/geographic-insights'),
-                api.get('/brand-monitoring/scan-status')
-            ]);
 
-            setSources(sourcesRes.data);
-            setHealthScore(healthRes.data);
-            setGeoInsights(geoRes.data);
-            setScanStatus(scanRes.data);
-        } catch (err) {
-            console.error('Failed to load dashboard:', err);
-        } finally {
-            setLoading(false);
+        // Fetch all data in parallel using Result pattern
+        const [sourcesRes, healthRes, geoRes, scanRes, telemetryRes] = await Promise.all([
+            apiClient.get('/brand-monitoring/sources'),
+            apiClient.get('/brand-monitoring/health-score'),
+            apiClient.get('/brand-monitoring/geographic-insights'),
+            apiClient.get('/brand-monitoring/scan-status'),
+            apiClient.get('/brand-monitoring/scan-telemetry', { queryParams: { hours: 24 } })
+        ]);
+
+        // Process results
+        if (sourcesRes.ok) setSources(sourcesRes.data);
+        if (healthRes.ok) setHealthScore(healthRes.data);
+        if (geoRes.ok) setGeoInsights(geoRes.data);
+        if (scanRes.ok) setScanStatus(scanRes.data);
+
+        // Set telemetry data if available
+        if (telemetryRes.ok && telemetryRes.data) {
+            setScanHistory(telemetryRes.data.scan_history || []);
+            setThreatScoreHistory(telemetryRes.data.threat_score_history || []);
         }
+
+        // Log any errors
+        [sourcesRes, healthRes, geoRes, scanRes].forEach((res, i) => {
+            if (!res.ok) {
+                const endpoints = ['sources', 'health-score', 'geographic-insights', 'scan-status'];
+                console.error(`Failed to load ${endpoints[i]}:`, res.error.message);
+            }
+        });
+
+        setLoading(false);
     }, []);
 
     useEffect(() => {
@@ -63,11 +93,11 @@ export default function BrandMonitoringDashboard() {
 
     // Trigger manual scan
     const triggerScan = async () => {
-        try {
-            await api.post('/brand-monitoring/scan-now');
+        const result = await apiClient.post('/brand-monitoring/scan-now');
+        if (result.ok) {
             fetchDashboardData();
-        } catch (err) {
-            console.error('Scan failed:', err);
+        } else {
+            console.error('Scan failed:', result.error.message);
         }
     };
 
@@ -75,11 +105,11 @@ export default function BrandMonitoringDashboard() {
     const openReportModal = async (platform) => {
         setSelectedPlatform(platform);
         setReportModalOpen(true);
-        try {
-            const res = await api.get(`/brand-monitoring/reporting-guidance/${platform}`);
-            setReportGuidance(res.data);
-        } catch (err) {
-            console.error('Failed to get guidance:', err);
+        const result = await apiClient.get(`/brand-monitoring/reporting-guidance/${platform}`);
+        if (result.ok) {
+            setReportGuidance(result.data);
+        } else {
+            console.error('Failed to get guidance:', result.error.message);
         }
     };
 
@@ -87,22 +117,26 @@ export default function BrandMonitoringDashboard() {
     const generateEvidenceReport = async () => {
         setEvidenceModalOpen(true);
         setEvidenceLoading(true);
-        try {
-            // Get recent mentions for the report
-            const mentionsRes = await api.get('/brand-monitoring/mentions');
-            const mentions = mentionsRes.data?.mentions || [];
 
-            const res = await api.post('/brand-monitoring/evidence-report', {
+        // Get recent mentions for the report
+        const mentionsResult = await apiClient.get('/brand-monitoring/mentions');
+        const mentions = mentionsResult.ok ? (mentionsResult.data?.mentions || []) : [];
+
+        const result = await apiClient.post('/brand-monitoring/evidence-report', {
+            body: {
                 mentions: mentions.slice(0, 20),
                 include_screenshots: false
-            });
-            setEvidenceReport(res.data);
-        } catch (err) {
-            console.error('Failed to generate evidence report:', err);
+            }
+        });
+
+        if (result.ok) {
+            setEvidenceReport(result.data);
+        } else {
+            console.error('Failed to generate evidence report:', result.error.message);
             setEvidenceReport({ error: 'Failed to generate report. Please try again.' });
-        } finally {
-            setEvidenceLoading(false);
         }
+
+        setEvidenceLoading(false);
     };
 
     // Health score color
@@ -273,6 +307,15 @@ export default function BrandMonitoringDashboard() {
                             </button>
                         </div>
                     </div>
+
+                    {/* Adaptive Scanning Section */}
+                    <div className="lg:col-span-3 space-y-4 md:space-y-6">
+                        <ScanPolicyPanel onScanTriggered={fetchDashboardData} />
+                        <ScanTimeline
+                            scanHistory={scanHistory}
+                            threatScoreHistory={threatScoreHistory}
+                        />
+                    </div>
                 </div>
             )}
 
@@ -422,28 +465,84 @@ export default function BrandMonitoringDashboard() {
                 </div>
             )}
 
-            {/* Evidence Report Modal */}
+            {/* Evidence Report Modal - Enhanced with Evidence Chain */}
             {evidenceModalOpen && (
                 <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-3 md:p-4">
-                    <div className="bg-slate-800 rounded-xl md:rounded-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-                        <div className="sticky top-0 bg-slate-800 p-4 border-b border-slate-700 flex items-center justify-between z-10">
-                            <h2 className="text-lg md:text-xl font-semibold flex items-center gap-2">
-                                <FaFileAlt className="text-purple-400" />
-                                Evidence Report
-                            </h2>
-                            <button
-                                onClick={() => { setEvidenceModalOpen(false); setEvidenceReport(null); }}
-                                className="p-2 hover:bg-slate-700 rounded-lg touch-manipulation"
-                            >
-                                <FaTimes />
-                            </button>
+                    <div className="bg-slate-800 rounded-xl md:rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto">
+                        {/* Header with Chain Verification Badge */}
+                        <div className="sticky top-0 bg-slate-800 p-4 border-b border-slate-700 z-10">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3">
+                                    <FaFileAlt className="text-purple-400 text-xl" />
+                                    <div>
+                                        <h2 className="text-lg md:text-xl font-semibold">Evidence Report</h2>
+                                        {evidenceReport?.id && (
+                                            <p className="text-xs text-slate-400">{evidenceReport.id}</p>
+                                        )}
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                    {/* Chain Verification Badge */}
+                                    {evidenceReport && !evidenceLoading && (
+                                        <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium ${evidenceReport.chain_valid
+                                            ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                            : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                                            }`}>
+                                            {evidenceReport.chain_valid ? <FaLock /> : <FaUnlock />}
+                                            {evidenceReport.chain_valid ? 'Verified' : 'Unverified'}
+                                        </div>
+                                    )}
+                                    <button
+                                        onClick={() => {
+                                            setEvidenceModalOpen(false);
+                                            setEvidenceReport(null);
+                                            setActiveReportTab('summary');
+                                            setExpandedSources({});
+                                            setExpandedDeepfake({});
+                                        }}
+                                        className="p-2 hover:bg-slate-700 rounded-lg touch-manipulation"
+                                    >
+                                        <FaTimes />
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Tab Navigation */}
+                            {evidenceReport && !evidenceLoading && !evidenceReport.error && (
+                                <div className="flex gap-2 mt-4">
+                                    <button
+                                        onClick={() => setActiveReportTab('summary')}
+                                        className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm transition-colors ${activeReportTab === 'summary'
+                                            ? 'bg-purple-600 text-white'
+                                            : 'bg-slate-700/50 text-slate-400 hover:text-white'
+                                            }`}
+                                    >
+                                        <FaFileAlt /> Summary
+                                    </button>
+                                    <button
+                                        onClick={() => setActiveReportTab('sources')}
+                                        className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm transition-colors ${activeReportTab === 'sources'
+                                            ? 'bg-purple-600 text-white'
+                                            : 'bg-slate-700/50 text-slate-400 hover:text-white'
+                                            }`}
+                                    >
+                                        <FaLink /> Sources & Proof
+                                        {evidenceReport?.items?.length > 0 && (
+                                            <span className="bg-slate-600 px-1.5 py-0.5 rounded text-xs">
+                                                {evidenceReport.items.length}
+                                            </span>
+                                        )}
+                                    </button>
+                                </div>
+                            )}
                         </div>
+
                         <div className="p-4 md:p-6">
                             {evidenceLoading ? (
                                 <div className="text-center py-12">
                                     <FaSpinner className="animate-spin text-3xl mx-auto mb-3 text-purple-400" />
                                     <p className="text-slate-400">Generating evidence report...</p>
-                                    <p className="text-xs text-slate-500 mt-2">This may take a moment</p>
+                                    <p className="text-xs text-slate-500 mt-2">Building tamper-evident chain</p>
                                 </div>
                             ) : evidenceReport?.error ? (
                                 <div className="text-center py-8">
@@ -452,73 +551,295 @@ export default function BrandMonitoringDashboard() {
                                 </div>
                             ) : evidenceReport ? (
                                 <>
-                                    {/* Executive Summary */}
-                                    <div className="mb-6">
-                                        <h3 className="font-semibold text-purple-400 mb-2">Executive Summary</h3>
-                                        <p className="text-sm md:text-base text-slate-300">
-                                            {evidenceReport.executive_summary || 'Report generated successfully.'}
-                                        </p>
-                                    </div>
+                                    {/* Summary Tab Content */}
+                                    {activeReportTab === 'summary' && (
+                                        <>
+                                            {/* Executive Summary */}
+                                            <div className="mb-6">
+                                                <h3 className="font-semibold text-purple-400 mb-2">Executive Summary</h3>
+                                                <p className="text-sm md:text-base text-slate-300">
+                                                    {evidenceReport.executive_summary || 'Report generated successfully.'}
+                                                </p>
+                                            </div>
 
-                                    {/* Pattern Analysis */}
-                                    {evidenceReport.pattern_analysis && (
-                                        <div className="mb-6">
-                                            <h3 className="font-semibold text-purple-400 mb-2">Pattern Analysis</h3>
-                                            <p className="text-sm text-slate-300">{evidenceReport.pattern_analysis}</p>
+                                            {/* Pattern Analysis */}
+                                            {evidenceReport.pattern_analysis && (
+                                                <div className="mb-6">
+                                                    <h3 className="font-semibold text-purple-400 mb-2">Pattern Analysis</h3>
+                                                    <p className="text-sm text-slate-300">{evidenceReport.pattern_analysis}</p>
+                                                </div>
+                                            )}
+
+                                            {/* Legal Violations */}
+                                            {evidenceReport.potential_legal_violations?.length > 0 && (
+                                                <div className="mb-6">
+                                                    <h3 className="font-semibold text-red-400 mb-2">Potential Legal Violations</h3>
+                                                    <ul className="space-y-2">
+                                                        {evidenceReport.potential_legal_violations.map((v, i) => (
+                                                            <li key={i} className="text-sm text-slate-300 bg-red-500/10 p-3 rounded-lg border border-red-500/20">
+                                                                {v}
+                                                            </li>
+                                                        ))}
+                                                    </ul>
+                                                </div>
+                                            )}
+
+                                            {/* Recommended Next Steps */}
+                                            {evidenceReport.recommended_next_steps?.length > 0 && (
+                                                <div className="mb-6">
+                                                    <h3 className="font-semibold text-blue-400 mb-2">Recommended Next Steps</h3>
+                                                    <ol className="space-y-2">
+                                                        {evidenceReport.recommended_next_steps.map((step, i) => (
+                                                            <li key={i} className="text-sm text-slate-300 flex gap-2">
+                                                                <span className="flex-shrink-0 w-5 h-5 bg-blue-600 rounded-full flex items-center justify-center text-xs">
+                                                                    {i + 1}
+                                                                </span>
+                                                                {step}
+                                                            </li>
+                                                        ))}
+                                                    </ol>
+                                                </div>
+                                            )}
+
+                                            {/* Disclaimer */}
+                                            <div className="mt-8 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
+                                                <p className="text-xs text-yellow-400">
+                                                    ⚠️ <strong>Legal Disclaimer:</strong> This report is for informational purposes only and does not constitute legal advice. Please consult with a qualified legal professional before taking any legal action.
+                                                </p>
+                                            </div>
+                                        </>
+                                    )}
+
+                                    {/* Sources & Proof Tab Content */}
+                                    {activeReportTab === 'sources' && (
+                                        <div className="space-y-4">
+                                            {/* Chain Integrity Info */}
+                                            <div className={`p-3 rounded-lg border ${evidenceReport.chain_valid
+                                                ? 'bg-emerald-500/10 border-emerald-500/30'
+                                                : 'bg-red-500/10 border-red-500/30'
+                                                }`}>
+                                                <div className="flex items-center gap-2 text-sm">
+                                                    {evidenceReport.chain_valid ? (
+                                                        <>
+                                                            <FaLock className="text-emerald-400" />
+                                                            <span className="text-emerald-400 font-medium">Chain Integrity Verified</span>
+                                                        </>
+                                                    ) : (
+                                                        <>
+                                                            <FaUnlock className="text-red-400" />
+                                                            <span className="text-red-400 font-medium">Chain Integrity Issue Detected</span>
+                                                        </>
+                                                    )}
+                                                </div>
+                                                <p className="text-xs text-slate-400 mt-1">
+                                                    Hash: {evidenceReport.report_hash?.slice(0, 16)}...{evidenceReport.report_hash?.slice(-8)}
+                                                </p>
+                                            </div>
+
+                                            {/* Evidence Items with Sources */}
+                                            {evidenceReport.items?.map((item, idx) => (
+                                                <div key={item.id || idx} className="bg-slate-700/50 rounded-lg border border-slate-600/50 overflow-hidden">
+                                                    {/* Item Header */}
+                                                    <div className="p-4">
+                                                        <div className="flex items-start justify-between gap-3">
+                                                            <div className="flex-1">
+                                                                <div className="flex items-center gap-2 mb-1">
+                                                                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${item.type === 'defamation' ? 'bg-red-500/20 text-red-400' :
+                                                                        item.type === 'deepfake' ? 'bg-orange-500/20 text-orange-400' :
+                                                                            item.type === 'violation' ? 'bg-yellow-500/20 text-yellow-400' :
+                                                                                'bg-blue-500/20 text-blue-400'
+                                                                        }`}>
+                                                                        {item.type?.toUpperCase() || 'EVIDENCE'}
+                                                                    </span>
+                                                                    <span className="text-xs text-slate-400">
+                                                                        Severity: {item.severity}/10
+                                                                    </span>
+                                                                </div>
+                                                                <p className="text-sm text-slate-200">{item.claim_text}</p>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* View Sources Toggle */}
+                                                        <button
+                                                            onClick={() => setExpandedSources(prev => ({
+                                                                ...prev,
+                                                                [item.id]: !prev[item.id]
+                                                            }))}
+                                                            className="mt-3 flex items-center gap-2 text-xs text-purple-400 hover:text-purple-300 transition-colors"
+                                                        >
+                                                            {expandedSources[item.id] ? <FaChevronUp /> : <FaChevronDown />}
+                                                            View {item.sources?.length || 0} Source(s)
+                                                        </button>
+                                                    </div>
+
+                                                    {/* Expanded Sources */}
+                                                    {expandedSources[item.id] && item.sources?.length > 0 && (
+                                                        <div className="border-t border-slate-600/50 bg-slate-800/50 p-4 space-y-3">
+                                                            {item.sources.map((source, sIdx) => (
+                                                                <div key={source.id || sIdx} className="p-3 bg-slate-700/50 rounded-lg border border-slate-600/30">
+                                                                    <div className="flex items-center gap-2 mb-2">
+                                                                        <span className="text-xs px-2 py-0.5 bg-slate-600 rounded text-slate-300">
+                                                                            {source.platform || 'web'}
+                                                                        </span>
+                                                                        <span className="text-xs text-slate-400">
+                                                                            <FaClock className="inline mr-1" />
+                                                                            {new Date(source.collected_at).toLocaleString()}
+                                                                        </span>
+                                                                    </div>
+
+                                                                    {/* Snippet */}
+                                                                    <p className="text-xs text-slate-300 bg-slate-800/50 p-2 rounded border-l-2 border-purple-500/50 mb-2">
+                                                                        "{source.redacted_snippet || source.raw_snippet?.slice(0, 200)}..."
+                                                                    </p>
+
+                                                                    {/* Source Actions */}
+                                                                    <div className="flex items-center gap-3 text-xs">
+                                                                        {source.url && (
+                                                                            <a
+                                                                                href={source.url}
+                                                                                target="_blank"
+                                                                                rel="noopener noreferrer"
+                                                                                className="flex items-center gap-1 text-blue-400 hover:text-blue-300"
+                                                                            >
+                                                                                <FaExternalLinkAlt /> Original
+                                                                            </a>
+                                                                        )}
+                                                                        {source.screenshot_ref && (
+                                                                            <button className="flex items-center gap-1 text-slate-400 hover:text-slate-300">
+                                                                                <FaImage /> Screenshot
+                                                                            </button>
+                                                                        )}
+                                                                    </div>
+
+                                                                    {/* Deepfake Analysis Badge */}
+                                                                    {source.deepfake_analysis && (
+                                                                        <div className="mt-3 pt-3 border-t border-slate-600/30">
+                                                                            <div className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-xs font-medium ${source.deepfake_analysis.verdict === 'likely_authentic'
+                                                                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                                                                : source.deepfake_analysis.verdict === 'likely_manipulated' || source.deepfake_analysis.verdict === 'confirmed_synthetic'
+                                                                                    ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                                                                                    : 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
+                                                                                }`}>
+                                                                                <FaRobot className="text-[10px]" />
+                                                                                {source.deepfake_analysis.verdict_label || source.deepfake_analysis.verdict}
+                                                                                <span className="opacity-70">
+                                                                                    ({Math.round(source.deepfake_analysis.confidence * 100)}%)
+                                                                                </span>
+                                                                            </div>
+
+                                                                            {/* Top Signals */}
+                                                                            {source.deepfake_analysis.signals?.slice(0, 2).map((signal, i) => (
+                                                                                <div key={i} className="text-[10px] text-slate-400 mt-1 ml-2">
+                                                                                    • {signal.description || signal.signal_type}
+                                                                                </div>
+                                                                            ))}
+
+                                                                            {/* Expandable Details */}
+                                                                            <button
+                                                                                onClick={() => setExpandedDeepfake(prev => ({
+                                                                                    ...prev,
+                                                                                    [source.id]: !prev[source.id]
+                                                                                }))}
+                                                                                className="text-[10px] text-purple-400 hover:text-purple-300 mt-1 block"
+                                                                            >
+                                                                                {expandedDeepfake[source.id] ? '▼ Hide details' : '▶ View analysis details'}
+                                                                            </button>
+
+                                                                            {expandedDeepfake[source.id] && (
+                                                                                <div className="mt-2 p-2 bg-slate-800/50 rounded text-xs space-y-1">
+                                                                                    <p className="text-slate-300">{source.deepfake_analysis.user_explanation}</p>
+                                                                                    <p className="text-slate-500 text-[10px]">
+                                                                                        Analyzed: {new Date(source.deepfake_analysis.completed_at).toLocaleString()}
+                                                                                    </p>
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                    )}
+
+                                                                    {/* Source Hash */}
+                                                                    <p className="text-[10px] text-slate-500 mt-2 font-mono">
+                                                                        Hash: {source.source_hash?.slice(0, 12)}...
+                                                                    </p>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            ))}
+
+                                            {(!evidenceReport.items || evidenceReport.items.length === 0) && (
+                                                <div className="text-center py-8 text-slate-400">
+                                                    <FaLink className="text-2xl mx-auto mb-2 opacity-50" />
+                                                    <p className="text-sm">No linked sources available</p>
+                                                </div>
+                                            )}
                                         </div>
                                     )}
 
-                                    {/* Legal Violations */}
-                                    {evidenceReport.potential_legal_violations?.length > 0 && (
-                                        <div className="mb-6">
-                                            <h3 className="font-semibold text-red-400 mb-2">Potential Legal Violations</h3>
-                                            <ul className="space-y-2">
-                                                {evidenceReport.potential_legal_violations.map((v, i) => (
-                                                    <li key={i} className="text-sm text-slate-300 bg-red-500/10 p-3 rounded-lg border border-red-500/20">
-                                                        {v}
-                                                    </li>
-                                                ))}
-                                            </ul>
-                                        </div>
-                                    )}
-
-                                    {/* Recommended Next Steps */}
-                                    {evidenceReport.recommended_next_steps?.length > 0 && (
-                                        <div className="mb-6">
-                                            <h3 className="font-semibold text-blue-400 mb-2">Recommended Next Steps</h3>
-                                            <ol className="space-y-2">
-                                                {evidenceReport.recommended_next_steps.map((step, i) => (
-                                                    <li key={i} className="text-sm text-slate-300 flex gap-2">
-                                                        <span className="flex-shrink-0 w-5 h-5 bg-blue-600 rounded-full flex items-center justify-center text-xs">
-                                                            {i + 1}
-                                                        </span>
-                                                        {step}
-                                                    </li>
-                                                ))}
-                                            </ol>
-                                        </div>
-                                    )}
-
-                                    {/* Disclaimer */}
-                                    <div className="mt-8 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
-                                        <p className="text-xs text-yellow-400">
-                                            ⚠️ <strong>Legal Disclaimer:</strong> This report is for informational purposes only and does not constitute legal advice. Please consult with a qualified legal professional before taking any legal action.
-                                        </p>
-                                    </div>
-
-                                    {/* Download/Copy Actions */}
-                                    <div className="mt-6 flex gap-3">
+                                    {/* Action Buttons */}
+                                    <div className="mt-6 flex flex-wrap gap-3">
+                                        {/* Deepfake Summary */}
+                                        {(() => {
+                                            const deepfakeCount = evidenceReport.items?.reduce((acc, item) =>
+                                                acc + (item.sources?.filter(s => s.deepfake_analysis).length || 0), 0) || 0;
+                                            return deepfakeCount > 0 ? (
+                                                <div className="w-full text-xs text-slate-400 mb-2 flex items-center gap-1">
+                                                    <FaRobot className="text-purple-400" />
+                                                    Deepfake analyses included: {deepfakeCount}
+                                                </div>
+                                            ) : null;
+                                        })()}
                                         <button
                                             onClick={() => {
                                                 const text = JSON.stringify(evidenceReport, null, 2);
                                                 navigator.clipboard.writeText(text);
+                                                setCopySuccess(true);
+                                                setTimeout(() => setCopySuccess(false), 2000);
                                             }}
-                                            className="flex-1 py-2.5 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors text-sm touch-manipulation"
+                                            className="flex-1 min-w-[120px] flex items-center justify-center gap-2 py-2.5 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors text-sm touch-manipulation"
                                         >
-                                            Copy to Clipboard
+                                            {copySuccess ? <FaCheck className="text-emerald-400" /> : <FaCopy />}
+                                            {copySuccess ? 'Copied!' : 'Copy JSON'}
                                         </button>
                                         <button
-                                            onClick={() => { setEvidenceModalOpen(false); setEvidenceReport(null); }}
+                                            onClick={async () => {
+                                                if (!evidenceReport?.report?.id) {
+                                                    // Fallback: direct JSON download if no report ID
+                                                    const blob = new Blob([JSON.stringify(evidenceReport, null, 2)], { type: 'application/json' });
+                                                    const url = URL.createObjectURL(blob);
+                                                    const a = document.createElement('a');
+                                                    a.href = url;
+                                                    a.download = `evidence_report_${evidenceReport.id || 'export'}.json`;
+                                                    a.click();
+                                                    URL.revokeObjectURL(url);
+                                                    return;
+                                                }
+
+                                                setExportLoading(true);
+                                                const result = await downloadEvidencePackage(
+                                                    evidenceReport.report.id,
+                                                    evidenceReport
+                                                );
+                                                setExportLoading(false);
+
+                                                if (result.ok && result.data.usedFallback) {
+                                                    console.info('Exported as JSON (fallback)');
+                                                }
+                                            }}
+                                            disabled={exportLoading}
+                                            className="flex-1 min-w-[120px] flex items-center justify-center gap-2 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-wait rounded-lg transition-colors text-sm touch-manipulation"
+                                        >
+                                            {exportLoading ? <FaSpinner className="animate-spin" /> : <FaDownload />}
+                                            {exportLoading ? 'Preparing…' : '📦 Export Package'}
+                                        </button>
+                                        <button
+                                            onClick={() => {
+                                                setEvidenceModalOpen(false);
+                                                setEvidenceReport(null);
+                                                setActiveReportTab('summary');
+                                                setExpandedSources({});
+                                                setExpandedDeepfake({});
+                                            }}
                                             className="px-6 py-2.5 bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors text-sm touch-manipulation"
                                         >
                                             Done

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FaBook, FaLock, FaCheckCircle, FaStar, FaMapMarkerAlt, FaSpinner, FaGraduationCap, FaChevronDown, FaChevronRight, FaPlay } from 'react-icons/fa';
-import api from '../api/axiosInterceptor';
+import { apiClient } from '../lib/api-client';
 
 /**
  * SagaMapNavigator Component
@@ -31,15 +31,14 @@ export default function SagaMapNavigator({ onModuleSelect, compact = false }) {
     }, [courses]);
 
     const fetchCourses = async () => {
-        try {
-            const res = await api.get('/saga-map/courses');
-            setCourses(res.data.courses || []);
-        } catch (err) {
-            console.error('Failed to fetch courses:', err);
+        const result = await apiClient.get('/saga-map/courses');
+        if (result.ok) {
+            setCourses(result.data.courses || []);
+        } else {
+            console.error('Failed to fetch courses:', result.error.message);
             setError('Failed to load your saga map.');
-        } finally {
-            setLoading(false);
         }
+        setLoading(false);
     };
 
     const toggleCourse = (courseId) => {

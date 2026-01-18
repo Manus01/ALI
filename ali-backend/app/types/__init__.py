@@ -26,6 +26,20 @@ from .course_manifest import (
     DEFAULT_MODULE_TITLE,
 )
 
+from .competitor_models import (
+    EventType,
+    SourceType,
+    Competitor,
+    CompetitorEvent,
+    ThemeCluster,
+    DigestMetrics,
+    WeeklyDigest,
+    THEME_KEYWORDS,
+    INSIGHT_TEMPLATES,
+    compute_event_hash,
+    compute_cluster_hash,
+)
+
 __all__ = [
     # Tutorial Lifecycle
     "TutorialStatus",
@@ -50,4 +64,17 @@ __all__ = [
     "DEFAULT_COURSE_TITLE",
     "DEFAULT_MODULE_ID",
     "DEFAULT_MODULE_TITLE",
+    # Market Radar (Competitor Intelligence)
+    "EventType",
+    "SourceType",
+    "Competitor",
+    "CompetitorEvent",
+    "ThemeCluster",
+    "DigestMetrics",
+    "WeeklyDigest",
+    "THEME_KEYWORDS",
+    "INSIGHT_TEMPLATES",
+    "compute_event_hash",
+    "compute_cluster_hash",
 ]
+

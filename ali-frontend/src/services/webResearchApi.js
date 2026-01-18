@@ -1,30 +1,32 @@
-import api from '../api/axiosInterceptor';
+import { apiClient, unwrapOrThrow } from '../lib/api-client';
 
 export const fetchKnowledgePacks = async ({ topicTags } = {}) => {
-    const params = {};
+    const queryParams = {};
     if (topicTags?.length) {
-        params.topic_tags = topicTags.join(',');
+        queryParams.topic_tags = topicTags.join(',');
     }
-    const response = await api.get('/ai/web/packs', { params });
-    return response.data;
+    const result = await apiClient.get('/ai/web/packs', { queryParams });
+    return unwrapOrThrow(result);
 };
 
 export const fetchMonitoringAlerts = async ({ severity } = {}) => {
-    const params = {};
+    const queryParams = {};
     if (severity?.length) {
-        params.severity = severity.join(',');
+        queryParams.severity = severity.join(',');
     }
-    const response = await api.get('/ai/web/monitor/alerts', { params });
-    return response.data;
+    const result = await apiClient.get('/ai/web/monitor/alerts', { queryParams });
+    return unwrapOrThrow(result);
 };
 
 export const queryKnowledge = async ({ queryText, topK = 10, threshold = 0.78, topicFilter, minCredibilityScore }) => {
-    const response = await api.post('/ai/web/knowledge/query', {
-        queryText,
-        topK,
-        threshold,
-        topicFilter,
-        minCredibilityScore
+    const result = await apiClient.post('/ai/web/knowledge/query', {
+        body: {
+            queryText,
+            topK,
+            threshold,
+            topicFilter,
+            minCredibilityScore
+        }
     });
-    return response.data;
+    return unwrapOrThrow(result);
 };

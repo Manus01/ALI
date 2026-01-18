@@ -6,7 +6,7 @@ import {
     FaThumbsUp, FaThumbsDown
 } from 'react-icons/fa';
 import { useNavigate } from 'react-router-dom';
-import api from '../api/axiosInterceptor';
+import { apiClient } from '../lib/api-client';
 import { useNotification } from '../context/NotificationContext';
 import { fetchMonitoringAlerts } from '../services/webResearchApi';
 
@@ -52,16 +52,20 @@ export default function BrandMonitoringSection({ brandName }) {
                 params.brand_name = brandName;
             }
 
-            const response = await api.get('/brand-monitoring/mentions', { params });
-            setMentionsData(response.data);
+            const result = await apiClient.get('/brand-monitoring/mentions', { queryParams: params });
+            if (result.ok) {
+                setMentionsData(result.data);
+            } else {
+                throw new Error(result.error.message);
+            }
 
             // Fetch settings if we haven't yet (to populate tabs)
             if (currentKeywords.length === 0) {
-                api.get('/brand-monitoring/settings').then(res => {
-                    if (res.data.status === 'success') {
+                apiClient.get('/brand-monitoring/settings').then(res => {
+                    if (res.ok && res.data.status === 'success') {
                         setCurrentKeywords(res.data.settings.keywords || []);
                     }
-                }).catch(e => console.error(e));
+                });
             }
         } catch (err) {
             console.error('❌ Failed to fetch brand mentions:', err);
@@ -171,32 +175,27 @@ export default function BrandMonitoringSection({ brandName }) {
 
     const openSettings = async () => {
         setSettingsModalOpen(true);
-        try {
-            const res = await api.get('/brand-monitoring/settings');
-            if (res.data.status === 'success') {
-                setCurrentKeywords(res.data.settings.keywords || []);
-            }
-        } catch (err) {
-            console.error("Failed to fetch settings:", err);
+        const result = await apiClient.get('/brand-monitoring/settings');
+        if (result.ok && result.data.status === 'success') {
+            setCurrentKeywords(result.data.settings.keywords || []);
+        } else if (!result.ok) {
+            console.error("Failed to fetch settings:", result.error.message);
         }
     };
 
     const fetchSuggestions = async () => {
         setSuggestionsLoading(true);
-        try {
-            const res = await api.post('/brand-monitoring/keywords/suggest');
-            if (res.data.status === 'success') {
-                // Filter out keywords already in use
-                const newSuggestions = res.data.suggestions.filter(
-                    s => !currentKeywords.includes(s)
-                );
-                setSuggestedKeywords(newSuggestions);
-            }
-        } catch (err) {
-            console.error("Failed to fetch suggestions:", err);
-        } finally {
-            setSuggestionsLoading(false);
+        const result = await apiClient.post('/brand-monitoring/keywords/suggest');
+        if (result.ok && result.data.status === 'success') {
+            // Filter out keywords already in use
+            const newSuggestions = result.data.suggestions.filter(
+                s => !currentKeywords.includes(s)
+            );
+            setSuggestedKeywords(newSuggestions);
+        } else if (!result.ok) {
+            console.error("Failed to fetch suggestions:", result.error.message);
         }
+        setSuggestionsLoading(false);
     };
 
     const addKeyword = (keyword) => {
@@ -215,21 +214,22 @@ export default function BrandMonitoringSection({ brandName }) {
 
     const saveSettings = async () => {
         setSettingsSaving(true);
-        try {
-            await api.put('/brand-monitoring/settings', {
+        const result = await apiClient.put('/brand-monitoring/settings', {
+            body: {
                 brand_name: brandName || "", // Keep existing brand name
                 keywords: currentKeywords,
                 auto_monitor: true,
                 alert_threshold: 5
-            });
+            }
+        });
+        if (result.ok) {
             setSettingsModalOpen(false);
             fetchMentions(); // Refresh mentions to reflect changes
-        } catch (err) {
-            console.error("Failed to save settings:", err);
+        } else {
+            console.error("Failed to save settings:", result.error.message);
             alert("Failed to save settings");
-        } finally {
-            setSettingsSaving(false);
         }
+        setSettingsSaving(false);
     };
 
     // --- CRISIS HANDLERS ---
@@ -240,21 +240,20 @@ export default function BrandMonitoringSection({ brandName }) {
         setCrisisLoading(true);
         setCrisisResponse(null);
 
-        try {
-            const response = await api.post('/brand-monitoring/crisis-response', {
-                article: mention
-            });
-            setCrisisResponse(response.data);
-        } catch (err) {
-            console.error('❌ Failed to get crisis response:', err);
+        const result = await apiClient.post('/brand-monitoring/crisis-response', {
+            body: { article: mention }
+        });
+        if (result.ok) {
+            setCrisisResponse(result.data);
+        } else {
+            console.error('❌ Failed to get crisis response:', result.error.message);
             setCrisisResponse({
                 status: 'error',
                 executive_summary: 'Failed to generate AI response. Please try again or consult your PR team.',
                 escalation_level: 'high'
             });
-        } finally {
-            setCrisisLoading(false);
         }
+        setCrisisLoading(false);
     };
 
     const closeModal = () => {
@@ -599,12 +598,17 @@ function MentionCard({ mention, onCrisisResponse, onRemove }) {
                 setRemovalTimeout(timeout);
             }
 
-            await api.post('/brand-monitoring/feedback', {
-                mention_id: mention.url || mention.title, // Use URL or Title as ID
-                title: mention.title,
-                snippet: mention.description || mention.content,
-                feedback_type: type
+            const result = await apiClient.post('/brand-monitoring/feedback', {
+                body: {
+                    mention_id: mention.url || mention.title, // Use URL or Title as ID
+                    title: mention.title,
+                    snippet: mention.description || mention.content,
+                    feedback_type: type
+                }
             });
+            if (!result.ok) {
+                throw new Error(result.error.message);
+            }
             console.log(`Vote ${type} submitted for ${mention.title}`);
         } catch (err) {
             console.error("Feedback failed:", err);

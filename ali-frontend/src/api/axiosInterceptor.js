@@ -2,10 +2,35 @@ import axios from 'axios';
 import { auth } from '../firebase';
 import { API_URL } from '../api_config';
 
+// =============================================================================
+// REQUEST ID GENERATION (Correlation ID)
+// =============================================================================
+
+/**
+ * Generate a unique request ID for correlation.
+ * Uses crypto.randomUUID() if available, otherwise falls back to timestamp + random.
+ * @returns {string} Unique request ID
+ */
+function generateRequestId() {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+        return crypto.randomUUID();
+    }
+    // Fallback: timestamp (base36) + random hex
+    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 11)}`;
+}
+
+// =============================================================================
+// AXIOS INSTANCE SETUP
+// =============================================================================
+
 // 1. Clean baseURL: Force it to be just the domain
 const cleanBaseURL = API_URL.replace(/\/api\/?$/, '').replace(/\/$/, '');
 
 const api = axios.create({ baseURL: cleanBaseURL });
+
+// =============================================================================
+// REQUEST INTERCEPTOR
+// =============================================================================
 
 api.interceptors.request.use(async (config) => {
     // 2. Surgical Pathing: Prepend /api ONLY if missing
@@ -13,6 +38,20 @@ api.interceptors.request.use(async (config) => {
         config.url = `/api/${config.url.replace(/^\//, '')}`;
     }
 
+    // 3. Generate and attach Request ID (Correlation ID)
+    const requestId = config.headers?.['X-Request-ID'] || generateRequestId();
+    config.headers = {
+        ...config.headers,
+        'X-Request-ID': requestId
+    };
+
+    // Store globally for error boundary access
+    window.__lastRequestId = requestId;
+
+    // Also store the request start time for latency tracking
+    config.metadata = { startTime: Date.now(), requestId };
+
+    // 4. Attach auth token
     const user = auth.currentUser;
     if (user) {
         const token = await user.getIdToken();
@@ -21,6 +60,7 @@ api.interceptors.request.use(async (config) => {
     }
     return config;
 });
+
 
 // 3. Self-Healing: Auto-logout on 401 (Unauthorized) from backend
 // 4. FAILED_PRECONDITION: Catch missing Firestore composite index errors

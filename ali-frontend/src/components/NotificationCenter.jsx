@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react';
 import { getFirestore, collection, onSnapshot, updateDoc, doc } from 'firebase/firestore';
-import api from '../api/axiosInterceptor';
+import { apiClient } from '../lib/api-client';
 import { useAuth } from '../hooks/useAuth';
 // Note: useAuth used for context
 import { FaBell, FaCheck, FaRobot, FaSpinner, FaTimes } from 'react-icons/fa';
@@ -87,10 +87,9 @@ export default function NotificationCenter() {
 
     const handleDelete = async (e, noteId) => {
         e.stopPropagation();
-        try {
-            await api.delete(`/api/notifications/${noteId}`);
-        } catch (err) {
-            console.error("Failed to delete notification", err);
+        const result = await apiClient.delete(`/notifications/${noteId}`);
+        if (!result.ok) {
+            console.error("Failed to delete notification", result.error.message);
         }
     };
 

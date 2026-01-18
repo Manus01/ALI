@@ -1,5 +1,11 @@
-import api from '../api/axiosInterceptor';
+import { apiClient } from '../lib/api-client';
 
+/**
+ * Frontend Logger Service
+ * 
+ * Sends client-side logs to the backend for centralized monitoring.
+ * Uses the canonical apiClient for consistent X-Request-ID correlation.
+ */
 class LoggerService {
     constructor() {
         this.buffer = [];
@@ -44,11 +50,11 @@ class LoggerService {
     }
 
     async _send(entry) {
-        try {
-            await api.post('/api/monitoring/logs/client', entry);
-        } catch (e) {
+        // Use apiClient with Result pattern - silently fail to avoid loops
+        const result = await apiClient.post('/monitoring/logs/client', { body: entry });
+        if (!result.ok) {
             // Fallback: console log if backend unreachable to avoid infinite loops
-            console.error("LoggerService failed to send log:", e);
+            console.error("LoggerService failed to send log:", result.error.message);
         }
     }
 }

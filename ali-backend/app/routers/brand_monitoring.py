@@ -3,10 +3,14 @@ Brand Monitoring Router
 API endpoints for brand reputation monitoring, crisis management,
 competitor tracking, and PR content generation.
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response, Request
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
 import logging
+import uuid
+import asyncio
+from datetime import datetime, timedelta
+from urllib.parse import urlparse
 
 from app.core.security import verify_token, db
 from app.services.news_client import NewsClient
@@ -17,6 +21,12 @@ from app.agents.competitor_agent import CompetitorAgent
 from app.agents.pr_agent import PRAgent
 from app.agents.learning_agent import LearningAgent
 from app.agents.protection_agent import ProtectionAgent
+from app.types.deepfake_models import (
+    DeepfakeAnalysis, DeepfakeJobStatus, DeepfakeVerdict, MediaType,
+    DeepfakeSignal, DeepfakeCheckEnqueueRequest, DeepfakeCheckEnqueueResponse,
+    DeepfakeCheckStatusResponse, get_verdict_from_score, get_verdict_label,
+    get_verdict_explanation, get_verdict_action
+)
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -1003,15 +1013,293 @@ async def get_priority_actions(
 
 
 @router.post("/deepfake-check")
-async def check_for_deepfake(
+async def enqueue_deepfake_check(
+    request: DeepfakeCheckEnqueueRequest,
+    user: dict = Depends(verify_token)
+):
+    """
+    Enqueue media for deepfake analysis (async job).
+    
+    Rate Limits:
+    - 10 requests per user per hour (normal priority)
+    - 3 requests per user per hour (high priority)
+    
+    Returns job_id for polling status via GET /deepfake-check/{job_id}
+    """
+    user_id = user['uid']
+    
+    try:
+        # === Rate Limit Check ===
+        one_hour_ago = datetime.utcnow() - timedelta(hours=1)
+        jobs_ref = db.collection('users').document(user_id).collection('deepfake_jobs')
+        
+        # Count recent jobs
+        recent_jobs = list(jobs_ref.where('created_at', '>=', one_hour_ago).stream())
+        recent_count = len(recent_jobs)
+        
+        # Apply rate limits
+        max_jobs = 3 if request.priority == "high" else 10
+        if recent_count >= max_jobs:
+            raise HTTPException(
+                status_code=429, 
+                detail=f"Rate limit exceeded. Maximum {max_jobs} {'high priority ' if request.priority == 'high' else ''}jobs per hour."
+            )
+        
+        # === URL Validation ===
+        parsed_url = urlparse(request.media_url)
+        if parsed_url.scheme not in ('http', 'https'):
+            raise HTTPException(status_code=400, detail="Only HTTP/HTTPS URLs are allowed")
+        
+        if not parsed_url.netloc:
+            raise HTTPException(status_code=400, detail="Invalid URL format")
+        
+        # Block internal IPs (basic check)
+        hostname = parsed_url.hostname or ""
+        if hostname in ('localhost', '127.0.0.1', '0.0.0.0') or hostname.startswith('192.168.') or hostname.startswith('10.'):
+            raise HTTPException(status_code=400, detail="Internal URLs are not allowed")
+        
+        # === Create Job ===
+        job_id = f"DFA-{uuid.uuid4().hex[:10].upper()}"
+        now = datetime.utcnow()
+        
+        # Determine media type from URL if not provided
+        media_type = request.media_type or "unknown"
+        if media_type == "unknown":
+            url_lower = request.media_url.lower()
+            if any(ext in url_lower for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp']):
+                media_type = "image"
+            elif any(ext in url_lower for ext in ['.mp4', '.webm', '.mov', '.avi']):
+                media_type = "video"
+            elif any(ext in url_lower for ext in ['.mp3', '.wav', '.ogg', '.m4a']):
+                media_type = "audio"
+        
+        job_doc = {
+            "id": job_id,
+            "user_id": user_id,
+            "media_ref": request.media_url,
+            "media_type": media_type,
+            "source_mention_id": request.mention_id,
+            "status": "queued",
+            "created_at": now,
+            "priority": request.priority,
+            "attach_to_evidence": request.attach_to_evidence,
+            "confidence": None,
+            "verdict": None,
+            "verdict_label": None,
+            "signals": [],
+            "user_explanation": None,
+            "recommended_action": None,
+            "raw_output": None,
+            "error_message": None,
+            "started_at": None,
+            "completed_at": None
+        }
+        
+        jobs_ref.document(job_id).set(job_doc)
+        logger.info(f"✅ Deepfake job {job_id} enqueued for user {user_id}")
+        
+        # === Trigger Background Processing ===
+        # Use asyncio.create_task for fire-and-forget processing
+        asyncio.create_task(_process_deepfake_job(user_id, job_id))
+        
+        return DeepfakeCheckEnqueueResponse(
+            status="success",
+            job_id=job_id,
+            job_status="queued",
+            estimated_wait_seconds=30,
+            poll_url=f"/api/brand-monitoring/deepfake-check/{job_id}",
+            message="Deepfake analysis job enqueued successfully"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Deepfake enqueue error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/deepfake-check/{job_id}")
+async def get_deepfake_check_status(
+    job_id: str,
+    user: dict = Depends(verify_token)
+):
+    """
+    Get current status and results of a deepfake analysis job.
+    
+    Status values:
+    - queued: Waiting in queue
+    - running: Analysis in progress
+    - completed: Results available
+    - failed: Analysis failed (check error field)
+    
+    Poll every 2-5 seconds while queued/running.
+    """
+    user_id = user['uid']
+    
+    try:
+        job_ref = db.collection('users').document(user_id).collection('deepfake_jobs').document(job_id)
+        doc = job_ref.get()
+        
+        if not doc.exists:
+            raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+        
+        job = doc.to_dict()
+        
+        # Verify ownership
+        if job.get('user_id') != user_id:
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        # Calculate progress estimate for running jobs
+        progress_pct = None
+        if job.get('status') == 'running':
+            started = job.get('started_at')
+            if started:
+                elapsed = (datetime.utcnow() - started).total_seconds()
+                # Estimate 30 second completion time
+                progress_pct = min(95, int((elapsed / 30) * 100))
+        elif job.get('status') == 'completed':
+            progress_pct = 100
+        
+        return DeepfakeCheckStatusResponse(
+            status="success",
+            job_id=job_id,
+            job_status=job.get('status', 'unknown'),
+            progress_pct=progress_pct,
+            confidence=job.get('confidence'),
+            verdict=job.get('verdict'),
+            verdict_label=job.get('verdict_label'),
+            signals=job.get('signals'),
+            user_explanation=job.get('user_explanation'),
+            recommended_action=job.get('recommended_action'),
+            evidence_source_id=job.get('evidence_source_id'),
+            error=job.get('error_message'),
+            retry_allowed=job.get('status') == 'failed',
+            created_at=job.get('created_at').isoformat() if job.get('created_at') else None,
+            started_at=job.get('started_at').isoformat() if job.get('started_at') else None,
+            completed_at=job.get('completed_at').isoformat() if job.get('completed_at') else None
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Deepfake status error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+async def _process_deepfake_job(user_id: str, job_id: str):
+    """
+    Background worker for deepfake analysis.
+    
+    State transitions: queued -> running -> completed/failed
+    """
+    job_ref = db.collection('users').document(user_id).collection('deepfake_jobs').document(job_id)
+    
+    try:
+        # 1. Update status to RUNNING
+        now = datetime.utcnow()
+        job_ref.update({
+            "status": "running",
+            "started_at": now
+        })
+        
+        job = job_ref.get().to_dict()
+        logger.info(f"🔄 Processing deepfake job {job_id}")
+        
+        # 2. Perform analysis using existing ProtectionAgent
+        protection_agent = ProtectionAgent()
+        
+        result = await protection_agent.detect_potential_deepfake({
+            "url": job.get("media_ref", ""),
+            "content_snippet": "",
+            "title": "",
+            "source_type": job.get("media_type", "unknown")
+        })
+        
+        # 3. Map result to verdict
+        risk_score = result.get("risk_score", 0)
+        verdict = get_verdict_from_score(risk_score)
+        verdict_label = get_verdict_label(verdict)
+        user_explanation = get_verdict_explanation(verdict)
+        recommended_action = get_verdict_action(verdict)
+        
+        # Add any specific indicators to explanation
+        if result.get("indicators"):
+            user_explanation += " " + result.get("recommendation", "")
+        
+        # 4. Build signals from indicators
+        signals = []
+        for i, indicator in enumerate(result.get("indicators", [])):
+            severity = "high" if "deepfake" in indicator.lower() else "medium"
+            signals.append({
+                "signal_id": f"SIG-{i}",
+                "signal_type": "keyword_match",
+                "severity": severity,
+                "description": indicator,
+                "confidence": 0.7
+            })
+        
+        # 5. Calculate confidence
+        confidence = min(risk_score / 10.0, 1.0)
+        
+        # 6. Update job with results
+        job_ref.update({
+            "status": "completed",
+            "completed_at": datetime.utcnow(),
+            "confidence": confidence,
+            "verdict": verdict.value if hasattr(verdict, 'value') else verdict,
+            "verdict_label": verdict_label,
+            "signals": signals,
+            "user_explanation": user_explanation,
+            "recommended_action": recommended_action,
+            "raw_output": result
+        })
+        
+        logger.info(f"✅ Deepfake job {job_id} completed: {verdict_label}")
+        
+        # 7. Auto-attach to evidence if requested and mention_id provided
+        if job.get("attach_to_evidence") and job.get("source_mention_id"):
+            try:
+                await _attach_analysis_to_evidence(user_id, job_id, job.get("source_mention_id"))
+            except Exception as attach_err:
+                logger.warning(f"⚠️ Failed to attach analysis to evidence: {attach_err}")
+        
+    except Exception as e:
+        logger.error(f"❌ Deepfake job {job_id} failed: {e}")
+        job_ref.update({
+            "status": "failed",
+            "completed_at": datetime.utcnow(),
+            "error_message": str(e)
+        })
+
+
+async def _attach_analysis_to_evidence(user_id: str, job_id: str, mention_id: str):
+    """
+    Link a completed deepfake analysis to an evidence source.
+    
+    This allows the analysis results to appear in Evidence Reports.
+    """
+    # TODO: Implement full evidence chain integration
+    # For now, just log the linkage
+    logger.info(f"📎 Attaching deepfake analysis {job_id} to mention {mention_id} for user {user_id}")
+    
+    # Update the job with evidence linkage info
+    job_ref = db.collection('users').document(user_id).collection('deepfake_jobs').document(job_id)
+    job_ref.update({
+        "evidence_linked": True,
+        "evidence_linked_at": datetime.utcnow()
+    })
+
+
+# === Legacy endpoint for backward compatibility ===
+@router.post("/deepfake-check-sync")
+async def check_for_deepfake_sync(
     request: Dict[str, Any],
     user: dict = Depends(verify_token)
 ):
     """
-    Analyze content for potential deepfake/AI-generated indicators.
+    [DEPRECATED] Synchronous deepfake check - use POST /deepfake-check for async.
     
-    Request body:
-        content: Dict - The content to analyze (title, url, content_snippet)
+    Kept for backward compatibility with existing integrations.
     """
     content = request.get('content', {})
     
@@ -1024,6 +1312,8 @@ async def check_for_deepfake(
         
         return {
             "status": "success",
+            "deprecated": True,
+            "message": "This endpoint is deprecated. Use POST /deepfake-check for async analysis.",
             **result
         }
         
@@ -1063,15 +1353,22 @@ async def generate_evidence_report(
     user: dict = Depends(verify_token)
 ):
     """
-    Generate formal evidence report for legal/police filing.
+    Generate formal evidence report for legal/police filing with tamper-evident hash chain.
     
     Request body:
         mentions: List[Dict] - Evidence items to include
         report_purpose: str - "legal", "police", or "platform"
+        save_report: bool - Whether to persist to Firestore (default: True)
+    
+    Response:
+        report: EvidenceReport with items, sources, and hash chain
+        chain_valid: bool - Whether hash chain verified successfully
+        saved_id: str - Report ID if saved
     """
     user_id = user['uid']
     mentions = request.get('mentions', [])
     report_purpose = request.get('report_purpose', 'legal')
+    save_report = request.get('save_report', True)
     
     if not mentions:
         raise HTTPException(status_code=400, detail="Mentions required for report")
@@ -1088,16 +1385,260 @@ async def generate_evidence_report(
         report = await protection_agent.generate_evidence_report(
             mentions=mentions,
             brand_name=brand_name,
-            report_purpose=report_purpose
+            report_purpose=report_purpose,
+            user_id=user_id
         )
+        
+        saved_id = None
+        
+        # Optionally persist the report
+        if save_report:
+            try:
+                report_ref = db.collection('users').document(user_id).collection('evidence_reports').document(report['id'])
+                report_ref.set(report)
+                saved_id = report['id']
+                logger.info(f"✅ Evidence report {saved_id} saved for user {user_id}")
+            except Exception as save_err:
+                logger.warning(f"⚠️ Failed to save report: {save_err}")
         
         return {
             "status": "success",
-            "report": report
+            "report": report,
+            "chain_valid": report.get("chain_valid", False),
+            "saved_id": saved_id
         }
         
     except Exception as e:
         logger.error(f"❌ Evidence report error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/evidence-report/{report_id}")
+async def get_evidence_report(
+    report_id: str,
+    user: dict = Depends(verify_token)
+):
+    """
+    Retrieve a previously generated evidence report.
+    
+    Response:
+        report: EvidenceReport
+        chain_valid: bool - Re-verified on retrieval
+    """
+    user_id = user['uid']
+    
+    try:
+        from app.types.evidence_models import verify_chain_integrity
+        
+        report_ref = db.collection('users').document(user_id).collection('evidence_reports').document(report_id)
+        doc = report_ref.get()
+        
+        if not doc.exists:
+            raise HTTPException(status_code=404, detail=f"Report {report_id} not found")
+        
+        report = doc.to_dict()
+        
+        # Re-verify chain integrity on retrieval
+        verification = verify_chain_integrity(report)
+        report['chain_valid'] = verification['valid']
+        report['chain_verified_at'] = verification['verified_at']
+        
+        if not verification['valid']:
+            logger.warning(f"⚠️ Report {report_id} chain integrity issues: {verification['errors']}")
+        
+        return {
+            "status": "success",
+            "report": report,
+            "chain_valid": verification['valid'],
+            "verification_errors": verification['errors'] if not verification['valid'] else []
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Get evidence report error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/evidence-report/{report_id}/export")
+async def export_evidence_report(
+    report_id: str,
+    request: Request,
+    user: dict = Depends(verify_token)
+):
+    """
+    Export evidence report as a downloadable ZIP package.
+    
+    ZIP Contents:
+    - report.json: Full EvidenceReport object
+    - sources.json: Flattened list of EvidenceSource objects (sorted, redacted)
+    - integrity.json: Chain verification result with hash and algorithm
+    - manifest.json: File list with SHA-256 checksums
+    
+    Response Headers:
+    - Content-Type: application/zip
+    - Content-Disposition: attachment; filename="evidence-{id}.zip"
+    """
+    user_id = user['uid']
+    
+    # Get correlation ID from request headers
+    request_id = request.headers.get('X-Request-ID', str(uuid.uuid4()))
+    
+    try:
+        from app.types.evidence_models import verify_chain_integrity
+        from app.utils.zip_builder import build_evidence_package_zip, get_export_filename
+        
+        # Fetch the report
+        report_ref = db.collection('users').document(user_id).collection('evidence_reports').document(report_id)
+        doc = report_ref.get()
+        
+        if not doc.exists:
+            raise HTTPException(status_code=404, detail=f"Report {report_id} not found")
+        
+        report = doc.to_dict()
+        
+        # Re-verify chain integrity before export
+        verification = verify_chain_integrity(report)
+        report['chain_valid'] = verification['valid']
+        report['chain_verified_at'] = verification['verified_at']
+        
+        if not verification['valid']:
+            logger.warning(f"⚠️ Exporting report {report_id} with chain integrity issues: {verification['errors']}")
+        
+        # Build the ZIP package
+        zip_bytes = build_evidence_package_zip(
+            report=report,
+            user_id=user_id,
+            request_id=request_id
+        )
+        
+        filename = get_export_filename(report)
+        
+        logger.info(f"📦 Evidence package exported: {filename}, {len(zip_bytes)} bytes, request_id={request_id}")
+        
+        # Return as downloadable attachment
+        return Response(
+            content=zip_bytes,
+            media_type="application/zip",
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "X-Request-ID": request_id,
+                "X-Chain-Valid": str(verification['valid']).lower()
+            }
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Export evidence report error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/evidence-report/verify")
+async def verify_evidence_report(
+    request: Dict[str, Any],
+    user: dict = Depends(verify_token)
+):
+    """
+    Verify hash chain integrity of a report.
+    
+    Request body:
+        report: Dict - Direct report payload to verify
+        OR
+        report_id: str - ID of saved report to verify
+    
+    Response:
+        valid: bool
+        errors: List[str]
+        verified_at: datetime
+    """
+    user_id = user['uid']
+    
+    try:
+        from app.types.evidence_models import verify_chain_integrity
+        
+        report = request.get('report')
+        report_id = request.get('report_id')
+        
+        if not report and not report_id:
+            raise HTTPException(status_code=400, detail="Either 'report' or 'report_id' required")
+        
+        # Fetch report if ID provided
+        if report_id and not report:
+            report_ref = db.collection('users').document(user_id).collection('evidence_reports').document(report_id)
+            doc = report_ref.get()
+            if not doc.exists:
+                raise HTTPException(status_code=404, detail=f"Report {report_id} not found")
+            report = doc.to_dict()
+        
+        # Verify the chain
+        verification = verify_chain_integrity(report)
+        
+        # Count deepfake analyses in the report
+        deepfake_count = sum(
+            1 for item in report.get('items', [])
+            for source in item.get('sources', [])
+            if source.get('deepfake_analysis')
+        )
+        
+        log_level = "✅" if verification['valid'] else "⚠️"
+        logger.info(f"{log_level} Chain verification for report: valid={verification['valid']}, deepfake_analyses={deepfake_count}")
+        
+        return {
+            "status": "success",
+            "valid": verification['valid'],
+            "errors": verification['errors'],
+            "verified_at": verification['verified_at'],
+            "report_id": report.get('id', report_id),
+            "report_hash": report.get('report_hash', ''),
+            "deepfake_analyses_included": deepfake_count
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Verify evidence report error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/evidence-reports")
+async def list_evidence_reports(
+    limit: int = 20,
+    user: dict = Depends(verify_token)
+):
+    """
+    List all evidence reports for the current user.
+    
+    Response:
+        reports: List of report summaries (id, created_at, subject, total_incidents, chain_valid)
+    """
+    user_id = user['uid']
+    
+    try:
+        reports_ref = db.collection('users').document(user_id).collection('evidence_reports')
+        docs = reports_ref.order_by('created_at', direction='DESCENDING').limit(limit).stream()
+        
+        reports = []
+        for doc in docs:
+            data = doc.to_dict()
+            reports.append({
+                "id": data.get('id', doc.id),
+                "created_at": data.get('created_at'),
+                "subject": data.get('subject', 'Unknown'),
+                "total_incidents": data.get('total_incidents', 0),
+                "report_purpose": data.get('report_purpose', 'legal'),
+                "chain_valid": data.get('chain_valid', None),
+                "report_hash": data.get('report_hash', '')[:16] + '...' if data.get('report_hash') else ''
+            })
+        
+        return {
+            "status": "success",
+            "reports": reports,
+            "total": len(reports)
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ List evidence reports error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -1222,40 +1763,8 @@ async def log_action_outcome(
 
 # ============================================================================
 # SCANNER & AUTOMATION ENDPOINTS
+# Note: POST /scan-now is defined in ADAPTIVE SCANNING section below (line ~2111)
 # ============================================================================
-
-@router.post("/scan-now")
-async def trigger_scan_now(
-    user: dict = Depends(verify_token)
-):
-    """
-    Manually trigger a scan for the current user.
-    Use this to get immediate results instead of waiting for hourly scan.
-    """
-    user_id = user['uid']
-    
-    try:
-        from app.services.brand_monitoring_scanner import trigger_manual_scan
-        
-        # Get user config
-        settings_doc = db.collection('user_integrations').document(f"{user_id}_brand_monitoring").get()
-        
-        if not settings_doc.exists:
-            raise HTTPException(status_code=400, detail="Brand monitoring not configured")
-        
-        config = settings_doc.to_dict()
-        result = await trigger_manual_scan(user_id, config)
-        
-        return {
-            "status": "success",
-            "scan_result": result
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"❌ Manual scan error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/scan-status")
@@ -1399,3 +1908,293 @@ async def get_supported_sources():
     }
 
 
+# ============================================================================
+# ADAPTIVE SCANNING ENDPOINTS
+# ============================================================================
+
+class ThresholdRuleRequest(BaseModel):
+    """A single threshold rule for adaptive scanning."""
+    min_score: int
+    max_score: int
+    interval_min: int  # minutes
+    interval_max: int  # minutes
+    label: str
+
+
+class QuietHoursConfigRequest(BaseModel):
+    """Quiet hours configuration."""
+    enabled: bool = False
+    start: str = "22:00"
+    end: str = "07:00"
+    interval_minutes: int = 360
+
+
+class ScanPolicyUpdateRequest(BaseModel):
+    """Request to update scan policy."""
+    mode: Optional[str] = None  # "adaptive" | "fixed"
+    fixed_interval_minutes: Optional[int] = None
+    thresholds: Optional[List[ThresholdRuleRequest]] = None
+    min_interval_minutes: Optional[int] = None
+    max_interval_minutes: Optional[int] = None
+    backoff_multiplier: Optional[float] = None
+    quiet_hours: Optional[QuietHoursConfigRequest] = None
+    manual_priority: Optional[str] = None  # "urgent" | "watch" | "normal"
+
+
+@router.get("/scan-policy")
+async def get_scan_policy(user: dict = Depends(verify_token)):
+    """
+    Get current scan policy and threat assessment.
+    
+    Returns:
+        - Current policy configuration
+        - Current threat score and breakdown
+        - Next scan time and reason
+        - Scan status
+    """
+    user_id = user['uid']
+    
+    try:
+        from app.services.adaptive_scan_service import get_adaptive_scan_service
+        
+        service = get_adaptive_scan_service()
+        
+        # Get brand ID (for MVP, use user_id as brand_id)
+        brand_id = user_id
+        
+        # Get policy
+        policy = await service.get_policy(brand_id, user_id)
+        
+        # Calculate current threat
+        assessment = await service.calculate_current_threat(brand_id, user_id)
+        
+        return {
+            "status": "success",
+            "policy": {
+                "mode": policy.mode.value,
+                "fixed_interval_minutes": policy.fixed_interval_ms // 60000,
+                "thresholds": [t.to_dict() for t in policy.thresholds],
+                "min_interval_minutes": policy.min_interval_ms // 60000,
+                "max_interval_minutes": policy.max_interval_ms // 60000,
+                "backoff_multiplier": policy.backoff_multiplier,
+                "quiet_hours": policy.quiet_hours.to_dict(),
+                "manual_priority": policy.manual_priority
+            },
+            "current_threat": {
+                "score": assessment.score,
+                "label": assessment.label.value,
+                "breakdown": assessment.breakdown.to_dict(),
+                "reason": assessment.reason
+            },
+            "schedule": {
+                "last_scan_at": policy.last_scan_at.isoformat() if policy.last_scan_at else None,
+                "next_scan_at": policy.next_scan_at.isoformat() if policy.next_scan_at else None,
+                "next_scan_reason": assessment.reason,
+                "next_scan_interval_minutes": assessment.interval_ms // 60000
+            },
+            "scan_status": "idle"  # TODO: Check for running scans
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Scan policy fetch error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.put("/scan-policy")
+async def update_scan_policy(
+    request: ScanPolicyUpdateRequest,
+    user: dict = Depends(verify_token)
+):
+    """
+    Update scan policy configuration.
+    
+    Args:
+        request: Policy updates (partial update supported)
+    
+    Returns:
+        Updated policy and recalculated threat assessment
+    """
+    user_id = user['uid']
+    
+    try:
+        from app.services.adaptive_scan_service import get_adaptive_scan_service
+        
+        service = get_adaptive_scan_service()
+        brand_id = user_id
+        
+        # Build updates dict from non-None values
+        updates = {}
+        if request.mode is not None:
+            updates["mode"] = request.mode
+        if request.fixed_interval_minutes is not None:
+            updates["fixed_interval_minutes"] = request.fixed_interval_minutes
+        if request.thresholds is not None:
+            updates["thresholds"] = [t.dict() for t in request.thresholds]
+        if request.min_interval_minutes is not None:
+            updates["min_interval_minutes"] = request.min_interval_minutes
+        if request.max_interval_minutes is not None:
+            updates["max_interval_minutes"] = request.max_interval_minutes
+        if request.backoff_multiplier is not None:
+            updates["backoff_multiplier"] = request.backoff_multiplier
+        if request.quiet_hours is not None:
+            updates["quiet_hours"] = request.quiet_hours.dict()
+        if request.manual_priority is not None:
+            updates["manual_priority"] = request.manual_priority
+        
+        # Update policy
+        policy = await service.update_policy(brand_id, user_id, updates)
+        
+        # Recalculate threat with new policy
+        assessment = await service.calculate_current_threat(brand_id, user_id)
+        
+        logger.info(f"✅ Updated scan policy for user: {user_id}")
+        
+        return {
+            "status": "success",
+            "policy": {
+                "mode": policy.mode.value,
+                "fixed_interval_minutes": policy.fixed_interval_ms // 60000,
+                "thresholds": [t.to_dict() for t in policy.thresholds],
+                "min_interval_minutes": policy.min_interval_ms // 60000,
+                "max_interval_minutes": policy.max_interval_ms // 60000,
+                "backoff_multiplier": policy.backoff_multiplier,
+                "quiet_hours": policy.quiet_hours.to_dict(),
+                "manual_priority": policy.manual_priority
+            },
+            "current_threat": {
+                "score": assessment.score,
+                "label": assessment.label.value,
+                "reason": assessment.reason
+            },
+            "schedule": {
+                "next_scan_at": policy.next_scan_at.isoformat() if policy.next_scan_at else None,
+                "next_scan_interval_minutes": assessment.interval_ms // 60000
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Scan policy update error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/scan-telemetry")
+async def get_scan_telemetry(
+    hours: int = 24,
+    user: dict = Depends(verify_token)
+):
+    """
+    Get scan execution history and metrics for the last N hours.
+    
+    Args:
+        hours: Hours of history to fetch (default 24)
+    
+    Returns:
+        - Scan history timeline
+        - Aggregated metrics (duration, failures, etc.)
+        - Queue depth
+        - Health indicators
+    """
+    user_id = user['uid']
+    
+    try:
+        from app.services.adaptive_scan_service import get_adaptive_scan_service
+        from datetime import datetime
+        
+        service = get_adaptive_scan_service()
+        brand_id = user_id
+        
+        # Get scan history
+        history = await service.get_scan_history(brand_id, user_id, hours=hours)
+        
+        # Calculate metrics
+        total_scans = len(history)
+        successful_scans = [h for h in history if h.get("status") == "success"]
+        failed_scans = [h for h in history if h.get("status") == "failed"]
+        
+        avg_duration_ms = 0
+        if successful_scans:
+            avg_duration_ms = sum(h.get("duration_ms", 0) for h in successful_scans) / len(successful_scans)
+        
+        # Find last successful scan
+        last_successful = None
+        for h in history:
+            if h.get("status") == "success":
+                last_successful = h.get("completed_at")
+                break
+        
+        # Count consecutive failures
+        consecutive_failures = 0
+        for h in history:
+            if h.get("status") == "failed":
+                consecutive_failures += 1
+            else:
+                break
+        
+        # Get pending jobs count
+        pending_jobs = await service.get_pending_jobs_count(brand_id)
+        
+        return {
+            "status": "success",
+            "scan_history": history[:50],  # Limit to 50 entries
+            "metrics": {
+                "total_scans_24h": total_scans,
+                "successful_scans": len(successful_scans),
+                "failed_scans": len(failed_scans),
+                "avg_duration_ms": int(avg_duration_ms),
+                "avg_duration_seconds": round(avg_duration_ms / 1000, 1)
+            },
+            "queue": {
+                "pending_jobs": pending_jobs
+            },
+            "health": {
+                "last_successful_scan": last_successful,
+                "consecutive_failures": consecutive_failures,
+                "status": "healthy" if consecutive_failures < 3 else "degraded" if consecutive_failures < 5 else "unhealthy"
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Scan telemetry error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/scan-now")
+async def trigger_manual_scan(user: dict = Depends(verify_token)):
+    """
+    Trigger an immediate manual scan.
+    
+    This bypasses the adaptive scheduler and executes a scan immediately.
+    The next scheduled scan will be recalculated after this scan completes.
+    
+    Returns:
+        Job information and results summary
+    """
+    user_id = user['uid']
+    
+    try:
+        from app.services.adaptive_scan_service import get_adaptive_scan_service
+        
+        service = get_adaptive_scan_service()
+        brand_id = user_id
+        
+        logger.info(f"🔍 Manual scan triggered by user: {user_id}")
+        
+        # Trigger manual scan
+        job = await service.trigger_manual_scan(brand_id, user_id)
+        
+        return {
+            "status": "success",
+            "message": "Scan completed",
+            "job": {
+                "job_id": job.job_id,
+                "trigger_reason": job.trigger_reason.value,
+                "status": job.status,
+                "started_at": job.started_at.isoformat() if job.started_at else None,
+                "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+                "result_summary": job.result_summary
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Manual scan error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

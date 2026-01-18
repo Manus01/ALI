@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import api from "../api/axiosInterceptor";
+import { apiClient } from "../lib/api-client";
 
 const QUESTIONS = [
     {
@@ -78,15 +78,17 @@ export default function EQTestPage() {
         const totalScore = Object.values(finalScores).reduce((a, b) => a + b, 0);
         const averageScore = Math.round(totalScore / QUESTIONS.length);
 
-        try {
-            await api.post('/api/assessments/eq', {
+        const result = await apiClient.post('/assessments/eq', {
+            body: {
                 score: averageScore,
                 details: []
-            });
+            }
+        });
+        if (result.ok) {
             // Final Destination: Dashboard
             navigate("/dashboard");
-        } catch (e) {
-            console.error("Save failed", e);
+        } else {
+            console.error("Save failed", result.error.message);
             setIsSubmitting(false);
         }
     };

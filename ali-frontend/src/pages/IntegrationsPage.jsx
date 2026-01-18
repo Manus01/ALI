@@ -1,6 +1,6 @@
 ﻿import React, { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '../hooks/useAuth';
-import api from '../api/axiosInterceptor';
+import { apiClient } from '../lib/api-client';
 import {
     FaHashtag,
     FaCheckCircle,
@@ -48,10 +48,9 @@ export default function IntegrationsPage() {
     const [refreshing, setRefreshing] = useState(false);
 
     const reportIntegrationIssue = async (message, context = 'metricool_status_fetch') => {
-        try {
-            await api.post('/integrations/report-error', { message, context });
-        } catch (reportErr) {
-            console.error('Failed to notify admin about integration issue', reportErr);
+        const result = await apiClient.post('/integrations/report-error', { body: { message, context } });
+        if (!result.ok) {
+            console.error('Failed to notify admin about integration issue', result.error.message);
         }
     };
 
@@ -89,21 +88,20 @@ export default function IntegrationsPage() {
     const fetchDetails = useCallback(async () => {
         if (status !== 'active') return;
         setRefreshing(true);
-        try {
-            const res = await api.get('/connect/metricool/status');
-            if (res.data?.error) {
-                await reportIntegrationIssue(res.data.error, 'metricool_status_response');
+        const result = await apiClient.get('/connect/metricool/status');
+        if (result.ok) {
+            if (result.data?.error) {
+                await reportIntegrationIssue(result.data.error, 'metricool_status_response');
             }
-            const providers = (res.data.connected_providers || [])
+            const providers = (result.data.connected_providers || [])
                 .filter(Boolean)
                 .map(p => p.toString().toLowerCase());
             setConnectedProviders([...new Set(providers)]);
-        } catch (err) {
-            console.error("Failed to fetch providers", err);
-            await reportIntegrationIssue(err.response?.data?.detail || err.message);
-        } finally {
-            setRefreshing(false);
+        } else {
+            console.error("Failed to fetch providers", result.error.message);
+            await reportIntegrationIssue(result.error.message);
         }
+        setRefreshing(false);
     }, [status]);
 
     useEffect(() => {
@@ -114,10 +112,9 @@ export default function IntegrationsPage() {
 
     // --- 2. Request Access Handler ---
     const handleRequestAccess = async () => {
-        try {
-            await api.post('/connect/metricool/request', {});
-        } catch (err) {
-            console.error(err);
+        const result = await apiClient.post('/connect/metricool/request');
+        if (!result.ok) {
+            console.error(result.error.message);
             alert("Failed to request access.");
         }
     };
@@ -126,12 +123,12 @@ export default function IntegrationsPage() {
     const handleDisconnect = async () => {
         if (!window.confirm("Are you sure you want to disconnect Metricool? You will lose access to analytics until re-connected.")) return;
 
-        try {
-            await api.delete('/connect/metricool');
+        const result = await apiClient.delete('/connect/metricool');
+        if (result.ok) {
             setStatus(null);
             setConnectedProviders([]);
-        } catch (err) {
-            console.error("Failed to disconnect", err);
+        } else {
+            console.error("Failed to disconnect", result.error.message);
             alert("Failed to disconnect.");
         }
     };

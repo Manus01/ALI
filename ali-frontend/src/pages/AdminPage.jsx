@@ -1,12 +1,13 @@
 ﻿import React, { useState, useEffect } from 'react';
-import api from '../api/axiosInterceptor';
+import { apiClient } from '../lib/api-client';
 import { useAuth } from '../hooks/useAuth';
 import Logger from '../services/Logger';
 import {
     FaUserCog, FaDatabase, FaPlay, FaBell, FaLink,
     FaSync, FaInstagram, FaLinkedin, FaFacebook, FaTiktok, FaSpinner, FaFileCsv, FaSearch, FaExclamationTriangle,
-    FaCheckCircle, FaTimesCircle, FaLightbulb, FaThList, FaTrash, FaRedo
+    FaCheckCircle, FaTimesCircle, FaLightbulb, FaThList, FaTrash, FaRedo, FaHeartbeat
 } from 'react-icons/fa';
+import SystemHealthPanel from '../components/SystemHealthPanel';
 
 const CHANNEL_ICONS = {
     instagram: <FaInstagram className="text-pink-500" />,
@@ -21,7 +22,7 @@ const ADMIN_TABS = [
     { id: 'tutorials', label: 'Tutorials', icon: <FaDatabase /> },
     { id: 'users', label: 'Users', icon: <FaUserCog /> },
     { id: 'integrations', label: 'Integrations', icon: <FaLink /> },
-    { id: 'system', label: 'System', icon: <FaExclamationTriangle /> }
+    { id: 'system', label: 'System', icon: <FaHeartbeat /> }
 ];
 
 export default function AdminPage() {
@@ -80,11 +81,13 @@ export default function AdminPage() {
         if (!isAdmin) return;
         const fetchBrands = async () => {
             setIsBrandsLoading(true);
-            try {
-                const res = await api.get('/api/admin/metricool/brands');
-                setAvailableBrands(res.data.brands || []);
-            } catch (err) { console.error("Brand fetch error:", err); }
-            finally { setIsBrandsLoading(false); }
+            const result = await apiClient.get('/admin/metricool/brands');
+            if (result.ok) {
+                setAvailableBrands(result.data.brands || []);
+            } else {
+                console.error("Brand fetch error:", result.error.message);
+            }
+            setIsBrandsLoading(false);
         };
         fetchBrands();
     }, [isAdmin]);
@@ -92,243 +95,257 @@ export default function AdminPage() {
     // --- ORCHESTRATION HUB FETCH FUNCTIONS ---
     const fetchTutorialRequests = async () => {
         setLoadingRequests(true);
-        try {
-            const res = await api.get('/api/admin/tutorial-requests');
-            setTutorialRequests(res.data.requests || []);
-        } catch (err) { console.error("Failed to fetch tutorial requests", err); }
-        finally { setLoadingRequests(false); }
+        const result = await apiClient.get('/admin/tutorial-requests');
+        if (result.ok) {
+            setTutorialRequests(result.data.requests || []);
+        } else {
+            console.error("Failed to fetch tutorial requests", result.error.message);
+        }
+        setLoadingRequests(false);
     };
 
     const fetchRecommendations = async () => {
         setLoadingRecommendations(true);
-        try {
-            const res = await api.get('/api/admin/recommendations');
-            setRecommendations(res.data.recommendations || []);
-        } catch (err) { console.error("Failed to fetch recommendations", err); }
-        finally { setLoadingRecommendations(false); }
+        const result = await apiClient.get('/admin/recommendations');
+        if (result.ok) {
+            setRecommendations(result.data.recommendations || []);
+        } else {
+            console.error("Failed to fetch recommendations", result.error.message);
+        }
+        setLoadingRecommendations(false);
     };
 
     const fetchResearchAlerts = async () => {
         setLoadingAlerts(true);
-        try {
-            const res = await api.get('/api/admin/research-alerts');
-            setResearchAlerts(res.data.alerts || []);
-        } catch (err) { console.error("Failed to fetch research alerts", err); }
-        finally { setLoadingAlerts(false); }
+        const result = await apiClient.get('/admin/research-alerts');
+        if (result.ok) {
+            setResearchAlerts(result.data.alerts || []);
+        } else {
+            console.error("Failed to fetch research alerts", result.error.message);
+        }
+        setLoadingAlerts(false);
     };
 
     // --- ORCHESTRATION HUB ACTION HANDLERS ---
     const handleApproveTutorialRequest = async (requestId) => {
-        try {
-            await api.post(`/api/admin/tutorial-requests/${requestId}/approve`);
+        const result = await apiClient.post(`/admin/tutorial-requests/${requestId}/approve`);
+        if (result.ok) {
             setActionMsg("✅ Request Approved!");
             fetchTutorialRequests();
-        } catch (err) {
-            console.error(err);
-            alert("Approval failed: " + (err.response?.data?.detail || err.message));
+        } else {
+            console.error(result.error.message);
+            alert("Approval failed: " + result.error.message);
         }
     };
 
     const handleDenyTutorialRequest = async (requestId) => {
         const reason = prompt("Please provide feedback for the user (e.g., 'Please narrow down the topic to focus on a specific platform.'):");
         if (reason === null) return; // User cancelled the prompt
-        try {
-            await api.post(`/api/admin/tutorial-requests/${requestId}/deny`, {
-                reason: reason || "Request not approved at this time."
-            });
+        const result = await apiClient.post(`/admin/tutorial-requests/${requestId}/deny`, {
+            body: { reason: reason || "Request not approved at this time." }
+        });
+        if (result.ok) {
             setActionMsg("❌ Request Denied with Feedback");
             fetchTutorialRequests();
-        } catch (err) {
-            console.error(err);
-            alert("Denial failed: " + (err.response?.data?.detail || err.message));
+        } else {
+            console.error(result.error.message);
+            alert("Denial failed: " + result.error.message);
         }
     };
 
     const handleTriggerGeneration = async (requestId) => {
-        try {
-            await api.post(`/api/admin/tutorial-requests/${requestId}/generate`);
+        const result = await apiClient.post(`/admin/tutorial-requests/${requestId}/generate`);
+        if (result.ok) {
             setActionMsg("🚀 Generation Triggered!");
             fetchTutorialRequests();
-        } catch (err) {
-            console.error(err);
-            alert("Generation trigger failed: " + (err.response?.data?.detail || err.message));
+        } else {
+            console.error(result.error.message);
+            alert("Generation trigger failed: " + result.error.message);
         }
     };
 
     const handleDeleteTutorialRequest = async (requestId) => {
         if (!window.confirm("Are you sure you want to delete this request? This cannot be undone.")) return;
-        try {
-            await api.delete(`/api/admin/tutorial-requests/${requestId}`);
+        const result = await apiClient.delete(`/admin/tutorial-requests/${requestId}`);
+        if (result.ok) {
             setActionMsg("🗑️ Request Deleted");
             fetchTutorialRequests();
-        } catch (err) {
-            console.error(err);
-            alert("Delete failed: " + (err.response?.data?.detail || err.message));
+        } else {
+            console.error(result.error.message);
+            alert("Delete failed: " + result.error.message);
         }
     };
 
     const handleRetryTutorialRequest = async (requestId) => {
-        try {
-            await api.post(`/api/admin/tutorial-requests/${requestId}/retry`);
+        const result = await apiClient.post(`/admin/tutorial-requests/${requestId}/retry`);
+        if (result.ok) {
             setActionMsg("🔄 Request Reset for Retry");
             fetchTutorialRequests();
-        } catch (err) {
-            console.error(err);
-            alert("Retry failed: " + (err.response?.data?.detail || err.message));
+        } else {
+            console.error(result.error.message);
+            alert("Retry failed: " + result.error.message);
         }
     };
 
     const handleApproveRecommendation = async (recommendationId) => {
-        try {
-            await api.post(`/api/admin/recommendations/${recommendationId}/approve`);
+        const result = await apiClient.post(`/admin/recommendations/${recommendationId}/approve`);
+        if (result.ok) {
             setActionMsg("✅ Action Approved!");
             fetchRecommendations();
-        } catch (err) {
-            console.error(err);
-            alert("Approval failed: " + (err.response?.data?.detail || err.message));
+        } else {
+            console.error(result.error.message);
+            alert("Approval failed: " + result.error.message);
         }
     };
 
     const handleAcknowledgeAlert = async (alertId) => {
-        try {
-            await api.post(`/api/admin/research-alerts/${alertId}/acknowledge`);
+        const result = await apiClient.post(`/admin/research-alerts/${alertId}/acknowledge`);
+        if (result.ok) {
             setActionMsg("✅ Alert Acknowledged");
             fetchResearchAlerts();
-        } catch (err) {
-            console.error(err);
-            alert("Acknowledge failed: " + (err.response?.data?.detail || err.message));
+        } else {
+            console.error(result.error.message);
+            alert("Acknowledge failed: " + result.error.message);
         }
     };
 
 
     const fetchLogs = async () => {
-        try {
-            const res = await api.get('/api/admin/research/logs');
-            setLogs(res.data.data);
-        } catch (err) { console.error("Failed to fetch logs", err); }
+        const result = await apiClient.get('/admin/research/logs');
+        if (result.ok) {
+            setLogs(result.data.data);
+        } else {
+            console.error("Failed to fetch logs", result.error.message);
+        }
     };
 
     const fetchAiReports = async () => {
-        try {
-            const res = await api.get('/api/admin/tasks/reports');
-            setAiReports(res.data.reports || []);
-        } catch (err) { console.error("Failed to fetch reports", err); }
+        const result = await apiClient.get('/admin/tasks/reports');
+        if (result.ok) {
+            setAiReports(result.data.reports || []);
+        } else {
+            console.error("Failed to fetch reports", result.error.message);
+        }
     };
 
     const handleRunTroubleshooter = async () => {
         setLoadingAI(true);
-        try {
-            await api.post('/api/admin/research/troubleshoot');
+        const result = await apiClient.post('/admin/research/troubleshoot');
+        if (result.ok) {
             setActionMsg("✅ Analysis Complete.");
             // Wait a sec for Firestore to propagate
             setTimeout(fetchAiReports, 2000);
-        } catch (err) {
-            console.error(err);
+        } else {
+            console.error(result.error.message);
             alert("Analysis failed.");
-        } finally {
-            setLoadingAI(false);
         }
+        setLoadingAI(false);
     };
 
     // fetchIntegrationAlerts removed
 
     const fetchConnections = async () => {
-        try {
-            const res = await api.get('/api/admin/connections');
-            setConnections(res.data.connections || []);
-        } catch (err) { console.error("Failed to fetch connections", err); }
+        const result = await apiClient.get('/admin/connections');
+        if (result.ok) {
+            setConnections(result.data.connections || []);
+        } else {
+            console.error("Failed to fetch connections", result.error.message);
+        }
     };
 
     const fetchResearchUsers = async () => {
-        try {
-            const res = await api.get('/api/admin/research/users');
-            setResearchUsers(res.data.users);
-        } catch (err) { console.error("Failed to fetch research users", err); }
+        const result = await apiClient.get('/admin/research/users');
+        if (result.ok) {
+            setResearchUsers(result.data.users);
+        } else {
+            console.error("Failed to fetch research users", result.error.message);
+        }
     };
 
     const fetchTutorials = async () => {
-        try {
-            const res = await api.get('/api/admin/tutorials');
-            setTutorials(res.data.tutorials);
-        } catch (err) { console.error("Failed to fetch tutorials", err); }
+        const result = await apiClient.get('/admin/tutorials');
+        if (result.ok) {
+            setTutorials(result.data.tutorials);
+        } else {
+            console.error("Failed to fetch tutorials", result.error.message);
+        }
     };
 
     const fetchPendingTasks = async () => {
-        try {
-            const res = await api.get('/api/admin/tasks/pending');
-            setPendingTasks(res.data.tasks || []);
-        } catch (err) { console.error("Failed to fetch pending tasks", err); }
+        const result = await apiClient.get('/admin/tasks/pending');
+        if (result.ok) {
+            setPendingTasks(result.data.tasks || []);
+        } else {
+            console.error("Failed to fetch pending tasks", result.error.message);
+        }
     };
 
     const handleDeleteTutorial = async (id) => {
         if (!window.confirm("Are you sure you want to delete this tutorial? This cannot be undone.")) return;
-        try {
-            await api.delete(`/api/admin/tutorials/${id}`);
+        const result = await apiClient.delete(`/admin/tutorials/${id}`);
+        if (result.ok) {
             setTutorials(prev => prev.filter(t => t.id !== id));
             setActionMsg("✅ Tutorial Deleted.");
-        } catch {
+        } else {
             alert("Failed to delete tutorial");
         }
     };
 
     const handleDeleteReport = async (id) => {
         if (!window.confirm("Delete this report?")) return;
-        try {
-            await api.delete(`/api/admin/tasks/${id}`);
+        const result = await apiClient.delete(`/admin/tasks/${id}`);
+        if (result.ok) {
             setAiReports(prev => prev.filter(r => r.id !== id));
             setActionMsg("✅ Report Deleted.");
-        } catch (err) {
-            console.error(err);
+        } else {
+            console.error(result.error.message);
             alert("Failed to delete report");
         }
     };
 
     const handleClearAllReports = async () => {
         if (!window.confirm("⚠️ Are you sure you want to delete ALL error reports? This cannot be undone.")) return;
-        try {
-            const res = await api.delete('/api/admin/tasks/reports/all');
+        const result = await apiClient.delete('/admin/tasks/reports/all');
+        if (result.ok) {
             setAiReports([]);
-            setActionMsg(`🧹 Cleared ${res.data.deleted_count || 'all'} reports.`);
-        } catch (err) {
-            console.error(err);
-            alert("Failed to clear reports: " + (err.response?.data?.detail || err.message));
+            setActionMsg(`🧹 Cleared ${result.data.deleted_count || 'all'} reports.`);
+        } else {
+            console.error(result.error.message);
+            alert("Failed to clear reports: " + result.error.message);
         }
     };
 
     const handleRunJob = async () => {
         setLoadingJob(true);
-        try {
-            await api.post('/api/admin/jobs/trigger-nightly-log', {});
+        const result = await apiClient.post('/admin/jobs/trigger-nightly-log');
+        if (result.ok) {
             setActionMsg("✅ Nightly Job Complete.");
             fetchLogs();
-        } catch { alert("Job Failed"); }
-        finally { setLoadingJob(false); }
+        } else {
+            alert("Job Failed");
+        }
+        setLoadingJob(false);
     };
 
     const handleLinkAndVerify = async () => {
         if (!targetUid || !blogId) return;
-        try {
-            await api.post('/api/admin/users/link-metricool', { target_user_id: targetUid, metricool_blog_id: blogId });
-            setActionMsg("✅ User Linked. Verifying channels...");
+        const linkResult = await apiClient.post('/admin/users/link-metricool', {
+            body: { target_user_id: targetUid, metricool_blog_id: blogId }
+        });
+        if (!linkResult.ok) {
+            console.error("Link/Verify Error:", linkResult.error.message);
+            alert(`Linking failed: ${linkResult.error.message}`);
+            return;
+        }
+        setActionMsg("✅ User Linked. Verifying channels...");
 
-            const verifyRes = await api.get(`/api/admin/users/${targetUid}/verify-channels`);
-            setVerifiedChannels(verifyRes.data.connected_channels);
+        const verifyResult = await apiClient.get(`/admin/users/${targetUid}/verify-channels`);
+        if (verifyResult.ok) {
+            setVerifiedChannels(verifyResult.data.connected_channels);
             setActionMsg("✅ User Linked & Verified.");
             setTargetUid(""); setBlogId("");
-        } catch (err) {
-            console.error("Link/Verify Error:", err);
-            // Properly serialize error message - handle object responses
-            let errorMsg = "Unknown error";
-            if (err.response?.data?.detail) {
-                errorMsg = typeof err.response.data.detail === 'string'
-                    ? err.response.data.detail
-                    : JSON.stringify(err.response.data.detail);
-            } else if (err.message) {
-                errorMsg = typeof err.message === 'string'
-                    ? err.message
-                    : JSON.stringify(err.message);
-            }
-            alert(`Linking failed: ${errorMsg}`);
+        } else {
+            alert(`Verification failed: ${verifyResult.error.message}`);
         }
     };
 
@@ -595,6 +612,11 @@ export default function AdminPage() {
                                 </div>
                             )}
                         </div>
+                    )}
+
+                    {/* TAB 5: System (System Health Panel) */}
+                    {activeTab === 'system' && (
+                        <SystemHealthPanel />
                     )}
                 </div>
             </div>
