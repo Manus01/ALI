@@ -29,6 +29,7 @@ export default function BrandMonitoringDashboard() {
     const [geoInsights, setGeoInsights] = useState(null);
     const [priorityActions, setPriorityActions] = useState([]);
     const [scanStatus, setScanStatus] = useState(null);
+    const [monitoringConfig, setMonitoringConfig] = useState(null);
 
     // Adaptive Scanning state
     const [scanHistory, setScanHistory] = useState([]);
@@ -56,12 +57,13 @@ export default function BrandMonitoringDashboard() {
         setLoading(true);
 
         // Fetch all data in parallel using Result pattern
-        const [sourcesRes, healthRes, geoRes, scanRes, telemetryRes] = await Promise.all([
+        const [sourcesRes, healthRes, geoRes, scanRes, telemetryRes, configRes] = await Promise.all([
             apiClient.get('/brand-monitoring/sources'),
             apiClient.get('/brand-monitoring/health-score'),
             apiClient.get('/brand-monitoring/geographic-insights'),
             apiClient.get('/brand-monitoring/scan-status'),
-            apiClient.get('/brand-monitoring/scan-telemetry', { queryParams: { hours: 24 } })
+            apiClient.get('/brand-monitoring/scan-telemetry', { queryParams: { hours: 24 } }),
+            apiClient.get('/brand-monitoring/entity-config')
         ]);
 
         // Process results
@@ -69,6 +71,7 @@ export default function BrandMonitoringDashboard() {
         if (healthRes.ok) setHealthScore(healthRes.data);
         if (geoRes.ok) setGeoInsights(geoRes.data);
         if (scanRes.ok) setScanStatus(scanRes.data);
+        if (configRes.ok) setMonitoringConfig(configRes.data?.config || null);
 
         // Set telemetry data if available
         if (telemetryRes.ok && telemetryRes.data) {
@@ -172,6 +175,24 @@ export default function BrandMonitoringDashboard() {
                         Brand Intelligence
                     </h1>
                     <p className="text-slate-400 mt-1 text-sm md:text-base">Real-time reputation monitoring & protection</p>
+                    {/* Monitoring Target Indicator */}
+                    {monitoringConfig && (monitoringConfig.company_name || monitoringConfig.personal_name) && (
+                        <div className="mt-2 flex items-center gap-2 flex-wrap">
+                            <span className="text-xs text-slate-500">Currently monitoring:</span>
+                            {monitoringConfig.company_name && (
+                                <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-500/20 text-blue-300 border border-blue-500/30 rounded-full text-sm font-medium">
+                                    <FaEye className="text-xs" />
+                                    {monitoringConfig.company_name}
+                                </span>
+                            )}
+                            {monitoringConfig.personal_name && (
+                                <span className="inline-flex items-center gap-1.5 px-3 py-1 bg-purple-500/20 text-purple-300 border border-purple-500/30 rounded-full text-sm font-medium">
+                                    <FaUserSecret className="text-xs" />
+                                    {monitoringConfig.personal_name}
+                                </span>
+                            )}
+                        </div>
+                    )}
                 </div>
                 <div className="flex items-center gap-3 flex-wrap">
                     <button

@@ -149,6 +149,24 @@ export default function MarketRadarPage() {
                             </button>
                         </div>
                     </div>
+
+                    {/* Competitors Tracking Indicator */}
+                    {competitors.state.data?.competitors?.length > 0 && (
+                        <div className="mt-4 p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700">
+                            <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-xs text-slate-500 dark:text-slate-400 font-medium">Currently tracking:</span>
+                                {competitors.state.data.competitors.map((comp, idx) => (
+                                    <span
+                                        key={comp.id || idx}
+                                        className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500/10 text-amber-700 dark:text-amber-300 border border-amber-500/20 rounded-full text-sm font-medium"
+                                    >
+                                        <FaSatelliteDish className="text-xs" />
+                                        {comp.name}
+                                    </span>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* Filters */}
