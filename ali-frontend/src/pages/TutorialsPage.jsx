@@ -141,8 +141,15 @@ export default function TutorialsPage() {
     };
 
     const displayedTutorials = tutorials.filter((t) => {
+        // Only show PUBLISHED tutorials (not DRAFT, IN_REVIEW, or ARCHIVED)
         const status = t.status || 'PUBLISHED';
         if (status !== 'PUBLISHED') return false;
+
+        // Only show tutorials with actual content (fully functional)
+        const hasContent = (t.sections && t.sections.length > 0) || (t.blocks && t.blocks.length > 0);
+        if (!hasContent) return false;
+
+        // Filter by active/completed
         return lessonFilter === 'active' ? !t.is_completed : t.is_completed;
     });
 
@@ -269,7 +276,7 @@ export default function TutorialsPage() {
                                         : 'text-slate-400 hover:text-slate-600'
                                         }`}
                                 >
-                                    Active ({tutorials.filter(t => !t.is_completed && (t.status || 'PUBLISHED') === 'PUBLISHED').length})
+                                    Active ({tutorials.filter(t => !t.is_completed && (t.status || 'PUBLISHED') === 'PUBLISHED' && ((t.sections && t.sections.length > 0) || (t.blocks && t.blocks.length > 0))).length})
                                 </button>
                                 <button
                                     onClick={() => setLessonFilter('completed')}
@@ -278,7 +285,7 @@ export default function TutorialsPage() {
                                         : 'text-slate-400 hover:text-slate-600'
                                         }`}
                                 >
-                                    Completed ({tutorials.filter(t => t.is_completed && (t.status || 'PUBLISHED') === 'PUBLISHED').length})
+                                    Completed ({tutorials.filter(t => t.is_completed && (t.status || 'PUBLISHED') === 'PUBLISHED' && ((t.sections && t.sections.length > 0) || (t.blocks && t.blocks.length > 0))).length})
                                 </button>
                             </div>
                         </div>

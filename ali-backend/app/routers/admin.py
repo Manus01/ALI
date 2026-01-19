@@ -621,6 +621,58 @@ def delete_admin_task(task_id: str, admin: dict = Depends(verify_admin)):
         logger.error(f"❌ Delete Task Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@router.get("/tasks/deletion-requests")
+def get_deletion_requests(admin: dict = Depends(verify_admin)):
+    """
+    Fetches pending tutorial deletion requests from users.
+    These are created when users request permanent deletion of their tutorials.
+    """
+    try:
+        tasks_ref = db.collection("admin_tasks")\
+                      .where(filter=FieldFilter("type", "==", "delete_tutorial_request"))\
+                      .order_by("created_at", direction=firestore.Query.DESCENDING)\
+                      .limit(50)
+        
+        requests = []
+        user_cache = {}
+        
+        for doc in tasks_ref.stream():
+            t = doc.to_dict()
+            t["id"] = doc.id
+            
+            # Enrich with user info
+            requester_id = t.get("requester_id")
+            if requester_id:
+                if requester_id in user_cache:
+                    t["requester_email"] = user_cache[requester_id]
+                else:
+                    user_doc = db.collection("users").document(requester_id).get()
+                    if user_doc.exists:
+                        email = user_doc.to_dict().get("email", "Unknown")
+                        user_cache[requester_id] = email
+                        t["requester_email"] = email
+                    else:
+                        t["requester_email"] = "Unknown"
+            
+            # Get tutorial title
+            tutorial_id = t.get("tutorial_id")
+            if tutorial_id:
+                tutorial_doc = db.collection("tutorials").document(tutorial_id).get()
+                if tutorial_doc.exists:
+                    t["tutorial_title"] = tutorial_doc.to_dict().get("title", "Untitled")
+                else:
+                    t["tutorial_title"] = "(Deleted)"
+            
+            requests.append(t)
+        
+        return {"deletion_requests": requests}
+    except Exception as e:
+        logger.error(f"❌ Fetch Deletion Requests Error: {e}")
+        return {"deletion_requests": [], "error": str(e)}
+
+
+
 @router.get("/connections")
 def get_established_connections(admin: dict = Depends(verify_admin)):
     """
