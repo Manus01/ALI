@@ -284,6 +284,83 @@ WEEKLY_DIGESTS_LOG_SCHEMA = [
     bigquery.SchemaField("export_format", "STRING"),
 ]
 
+# --- LEARNING ANALYTICS SCHEMA (Adaptive Tutorial Engine) ---
+
+LEARNING_ANALYTICS_SCHEMA = [
+    bigquery.SchemaField("event_id", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("user_id", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("tutorial_id", "STRING"),
+    bigquery.SchemaField("section_index", "INTEGER"),
+    bigquery.SchemaField("section_title", "STRING"),
+    
+    # Event classification
+    bigquery.SchemaField("event_type", "STRING", mode="REQUIRED"),  # section_start, quiz_attempt, etc.
+    
+    # Performance metrics
+    bigquery.SchemaField("time_spent_seconds", "INTEGER"),
+    bigquery.SchemaField("scroll_depth_percent", "FLOAT"),
+    bigquery.SchemaField("replay_count", "INTEGER"),
+    bigquery.SchemaField("quiz_score", "FLOAT"),
+    bigquery.SchemaField("quiz_pass", "BOOLEAN"),
+    
+    # Context
+    bigquery.SchemaField("device_type", "STRING"),  # desktop, mobile, tablet
+    bigquery.SchemaField("session_id", "STRING"),
+    bigquery.SchemaField("user_agent", "STRING"),
+    
+    # Tutorial metadata (for aggregation)
+    bigquery.SchemaField("tutorial_topic", "STRING"),
+    bigquery.SchemaField("tutorial_difficulty", "STRING"),
+    bigquery.SchemaField("tutorial_category", "STRING"),
+    
+    # Timestamps
+    bigquery.SchemaField("created_at", "TIMESTAMP", mode="REQUIRED"),
+]
+
+LEARNING_GAPS_SCHEMA = [
+    bigquery.SchemaField("gap_id", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("user_id", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("topic", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("severity", "FLOAT"),  # 1-10
+    bigquery.SchemaField("evidence", "JSON"),  # List of quiz/section evidence
+    bigquery.SchemaField("suggested_tutorial_type", "STRING"),  # deep_dive, practice, review
+    bigquery.SchemaField("priority", "INTEGER"),  # 1-10
+    bigquery.SchemaField("status", "STRING"),  # open, addressed, dismissed
+    bigquery.SchemaField("created_at", "TIMESTAMP", mode="REQUIRED"),
+    bigquery.SchemaField("addressed_at", "TIMESTAMP"),
+]
+
+TUTORIAL_RECOMMENDATIONS_SCHEMA = [
+    bigquery.SchemaField("recommendation_id", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("user_id", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("topic", "STRING", mode="REQUIRED"),
+    bigquery.SchemaField("trigger_reason", "STRING", mode="REQUIRED"),  # quiz_failure, skill_gap, etc.
+    bigquery.SchemaField("priority", "INTEGER"),  # 1-10
+    
+    # Source data
+    bigquery.SchemaField("source_gap_id", "STRING"),
+    bigquery.SchemaField("source_tutorial_id", "STRING"),
+    bigquery.SchemaField("source_quiz_score", "FLOAT"),
+    
+    # Generation config
+    bigquery.SchemaField("suggested_complexity", "FLOAT"),
+    bigquery.SchemaField("suggested_duration_minutes", "INTEGER"),
+    bigquery.SchemaField("prerequisites", "JSON"),
+    
+    # Approval workflow
+    bigquery.SchemaField("approval_status", "STRING"),  # pending, approved, rejected, auto_approved
+    bigquery.SchemaField("requires_admin_approval", "BOOLEAN"),
+    bigquery.SchemaField("approved_by", "STRING"),
+    
+    # Result
+    bigquery.SchemaField("generated_tutorial_id", "STRING"),
+    
+    # Timestamps
+    bigquery.SchemaField("created_at", "TIMESTAMP", mode="REQUIRED"),
+    bigquery.SchemaField("approved_at", "TIMESTAMP"),
+    bigquery.SchemaField("generated_at", "TIMESTAMP"),
+]
+
 class BigQueryService:
     """Service for BigQuery operations in ALI Platform."""
     
@@ -381,6 +458,10 @@ class BigQueryService:
             ("competitor_events_log", COMPETITOR_EVENTS_LOG_SCHEMA),
             ("theme_clusters_log", THEME_CLUSTERS_LOG_SCHEMA),
             ("weekly_digests_log", WEEKLY_DIGESTS_LOG_SCHEMA),
+            # Adaptive Tutorial Engine (Learning Analytics)
+            ("learning_analytics_log", LEARNING_ANALYTICS_SCHEMA),
+            ("learning_gaps", LEARNING_GAPS_SCHEMA),
+            ("tutorial_recommendations", TUTORIAL_RECOMMENDATIONS_SCHEMA),
         ]
         
         for table_name, schema in tables:

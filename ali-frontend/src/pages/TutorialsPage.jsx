@@ -10,6 +10,8 @@ import { getFirestore, collection, query, onSnapshot, orderBy } from 'firebase/f
 import { apiClient } from '../lib/api-client';
 import { useAuth } from '../hooks/useAuth';
 import SagaMapNavigator from '../components/SagaMapNavigator';
+import RecommendedForYou from '../components/RecommendedForYou';
+import LearningJourneyVisualization from '../components/LearningJourneyVisualization';
 
 export default function TutorialsPage() {
     const { currentUser } = useAuth();
@@ -239,6 +241,11 @@ export default function TutorialsPage() {
                 {/* === MY LESSONS TAB === */}
                 {primaryView === 'lessons' && (
                     <div className="animate-fade-in">
+                        {/* Personalized Recommendations - NEW */}
+                        <div className="mb-6">
+                            <RecommendedForYou maxItems={3} showViewAll={true} />
+                        </div>
+
                         {/* Suggestions Accordion */}
                         {suggestions.length > 0 && (
                             <div className="mb-6">
@@ -390,11 +397,18 @@ export default function TutorialsPage() {
 
                 {/* === LEARNING JOURNEY TAB === */}
                 {primaryView === 'journey' && (
-                    <div className="animate-fade-in">
-                        <SagaMapNavigator
-                            onModuleSelect={(module) => module?.id && navigate(`/tutorials/${module.id}`)}
-                            compact={false}
-                        />
+                    <div className="animate-fade-in space-y-6">
+                        {/* Learning Journey Progress - NEW */}
+                        <LearningJourneyVisualization compact={false} />
+
+                        {/* Saga Map Navigator */}
+                        <div className="mt-6">
+                            <h3 className="text-lg font-bold text-slate-800 dark:text-white mb-4">Course Catalog</h3>
+                            <SagaMapNavigator
+                                onModuleSelect={(module) => module?.id && navigate(`/tutorials/${module.id}`)}
+                                compact={false}
+                            />
+                        </div>
                     </div>
                 )}
 

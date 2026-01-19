@@ -95,6 +95,7 @@ creatives = safe_import_router("creatives")
 ai_web = safe_import_router("ai_web")
 competitors = safe_import_router("competitors")
 execution = safe_import_router("execution")
+learning_journey = safe_import_router("learning_journey")
 
 logger.info("✅ Router imports processed.")
 
@@ -238,6 +239,7 @@ routers_map = [
     ("/api/ai/web", (ai_web, ["AI Web"])),
     ("/api", (competitors, ["Competitors"])),  # Market Radar
     ("/api", (execution, ["Execution"])),  # Marketing action execution
+    ("/api", (learning_journey, ["Learning Journey"])),  # Adaptive Tutorial Engine
 ]
 
 for prefix, (module, tags) in routers_map:

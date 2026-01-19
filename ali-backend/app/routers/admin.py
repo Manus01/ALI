@@ -1672,3 +1672,213 @@ async def export_diagnostics(admin: dict = Depends(verify_system_admin)):
         logger.error(f"❌ Diagnostics export error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
+# --- LEARNING ANALYTICS ADMIN ENDPOINTS (Adaptive Tutorial Engine) ---
+
+@router.get("/learning-analytics/users")
+def get_all_users_learning_summary(
+    limit: int = 50,
+    admin: dict = Depends(verify_admin)
+):
+    """
+    ADMIN: Get learning performance summary for all users.
+    Used for admin dashboard overview of academic performance.
+    """
+    try:
+        from app.agents.performance_analyzer_agent import get_performance_analyzer
+        
+        analyzer = get_performance_analyzer()
+        summaries = analyzer.get_all_users_summary(limit)
+        
+        return {
+            "users": summaries,
+            "total": len(summaries)
+        }
+    except Exception as e:
+        logger.error(f"❌ Learning analytics users error: {e}")
+        return {"users": [], "error": str(e)}
+
+
+@router.get("/learning-analytics/user/{user_id}")
+def get_user_academic_performance(
+    user_id: str,
+    admin: dict = Depends(verify_admin)
+):
+    """
+    ADMIN: Get detailed academic performance for a specific user.
+    Includes quiz pass rates, skill levels, struggles, and recommendations.
+    """
+    try:
+        from app.agents.performance_analyzer_agent import get_performance_analyzer
+        
+        analyzer = get_performance_analyzer()
+        performance = analyzer.analyze_user_performance(
+            user_id,
+            include_trend=True,
+            include_recommendations=True
+        )
+        
+        return performance
+    except Exception as e:
+        logger.error(f"❌ User performance error: {e}")
+        return {"error": str(e), "user_id": user_id}
+
+
+@router.get("/learning-analytics/tutorial-audit")
+def get_tutorial_generation_audit(
+    user_id: Optional[str] = None,
+    days: int = 30,
+    admin: dict = Depends(verify_admin)
+):
+    """
+    ADMIN: Get audit trail of tutorial generations.
+    Shows who generated what, why (trigger type), and when.
+    
+    Trigger types:
+    - user_requested: User manually requested the tutorial
+    - quiz_failure_remediation: Auto-generated for failed quizzes
+    - skill_gap_detected: Auto-generated for skill gaps
+    - performance_decline: Auto-generated for declining performance
+    - admin_assigned: Admin manually assigned the tutorial
+    """
+    try:
+        from app.agents.performance_analyzer_agent import get_performance_analyzer
+        
+        analyzer = get_performance_analyzer()
+        audit_trail = analyzer.get_tutorial_generation_audit(user_id, days)
+        
+        return {
+            "audit_trail": audit_trail,
+            "total": len(audit_trail),
+            "filter_user_id": user_id,
+            "filter_days": days
+        }
+    except Exception as e:
+        logger.error(f"❌ Tutorial audit error: {e}")
+        return {"audit_trail": [], "error": str(e)}
+
+
+@router.get("/learning-analytics/recommendations/pending")
+def get_pending_tutorial_recommendations(admin: dict = Depends(verify_admin)):
+    """
+    ADMIN: Get pending tutorial recommendations awaiting approval.
+    These are automated recommendations that need admin review.
+    """
+    try:
+        from app.services.learning_analytics_service import get_learning_analytics_service
+        
+        service = get_learning_analytics_service()
+        pending = service.get_pending_recommendations()
+        
+        return {
+            "recommendations": pending,
+            "total": len(pending)
+        }
+    except Exception as e:
+        logger.error(f"❌ Pending recommendations error: {e}")
+        return {"recommendations": [], "error": str(e)}
+
+
+@router.post("/learning-analytics/recommendations/{recommendation_id}/decide")
+def decide_tutorial_recommendation(
+    recommendation_id: str,
+    payload: Dict = Body(...),
+    admin: dict = Depends(verify_admin)
+):
+    """
+    ADMIN: Approve or reject a tutorial recommendation.
+    
+    Body: {"approved": true/false, "notes": "optional reason"}
+    
+    If approved, creates a tutorial_request with status APPROVED.
+    """
+    try:
+        approved = payload.get("approved", False)
+        notes = payload.get("notes", "")
+        
+        # Find the admin task for this recommendation
+        tasks = db.collection("admin_tasks").where(
+            "recommendation_id", "==", recommendation_id
+        ).limit(1).stream()
+        
+        task_found = False
+        for task in tasks:
+            task_found = True
+            task_data = task.to_dict()
+            status = "approved" if approved else "rejected"
+            
+            task.reference.update({
+                "status": status,
+                "resolved_by": admin.get("email"),
+                "resolved_at": firestore.SERVER_TIMESTAMP,
+                "notes": notes
+            })
+            
+            if approved:
+                # Create tutorial request
+                db.collection("tutorial_requests").add({
+                    "userId": task_data.get("user_id"),
+                    "topic": task_data.get("topic"),
+                    "context": f"Auto-generated from learning gap analysis. {notes}",
+                    "status": "APPROVED",
+                    "source": "adaptive_tutorial_engine",
+                    "trigger_reason": task_data.get("trigger_reason", "skill_gap_detected"),
+                    "recommendation_id": recommendation_id,
+                    "approvedBy": admin.get("email"),
+                    "createdAt": firestore.SERVER_TIMESTAMP
+                })
+                
+                logger.info(f"✅ Recommendation {recommendation_id} approved by {admin.get('email')}")
+            else:
+                logger.info(f"❌ Recommendation {recommendation_id} rejected by {admin.get('email')}")
+            
+            # Audit trail
+            log_audit_action(
+                admin_id=admin.get("uid", "unknown"),
+                admin_email=admin.get("email"),
+                action="DECIDE_TUTORIAL_RECOMMENDATION",
+                target_id=recommendation_id,
+                target_type="tutorial_recommendation",
+                details={
+                    "decision": status,
+                    "topic": task_data.get("topic"),
+                    "user_id": task_data.get("user_id"),
+                    "notes": notes
+                }
+            )
+            
+            return {
+                "status": "success",
+                "decision": status,
+                "message": f"Recommendation {status}"
+            }
+        
+        if not task_found:
+            raise HTTPException(status_code=404, detail="Recommendation not found")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"❌ Recommendation decision error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/learning-analytics/complexity/{topic}")
+def analyze_topic_complexity(
+    topic: str,
+    admin: dict = Depends(verify_admin)
+):
+    """
+    ADMIN: Analyze complexity of a topic before tutorial generation.
+    Returns complexity score, prerequisites, and recommended skill level.
+    """
+    try:
+        from app.agents.complexity_analyzer_agent import get_complexity_analyzer
+        
+        analyzer = get_complexity_analyzer()
+        analysis = analyzer.analyze_topic_complexity(topic)
+        
+        return analysis
+    except Exception as e:
+        logger.error(f"❌ Complexity analysis error: {e}")
+        return {"error": str(e), "topic": topic}

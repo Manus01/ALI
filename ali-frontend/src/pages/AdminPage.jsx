@@ -8,6 +8,7 @@ import {
     FaCheckCircle, FaTimesCircle, FaLightbulb, FaThList, FaTrash, FaRedo, FaHeartbeat
 } from 'react-icons/fa';
 import SystemHealthPanel from '../components/SystemHealthPanel';
+import LearningAnalyticsPanel from '../components/LearningAnalyticsPanel';
 
 const CHANNEL_ICONS = {
     instagram: <FaInstagram className="text-pink-500" />,
@@ -20,6 +21,7 @@ const CHANNEL_ICONS = {
 const ADMIN_TABS = [
     { id: 'approvals', label: 'Approvals', icon: <FaPlay /> },
     { id: 'tutorials', label: 'Tutorials', icon: <FaDatabase /> },
+    { id: 'learning', label: 'Learning', icon: <FaUserCog /> },
     { id: 'users', label: 'Users', icon: <FaUserCog /> },
     { id: 'integrations', label: 'Integrations', icon: <FaLink /> },
     { id: 'system', label: 'System', icon: <FaHeartbeat /> }
@@ -614,7 +616,12 @@ export default function AdminPage() {
                         </div>
                     )}
 
-                    {/* TAB 5: System (System Health Panel) */}
+                    {/* TAB: Learning Analytics */}
+                    {activeTab === 'learning' && (
+                        <LearningAnalyticsPanel />
+                    )}
+
+                    {/* TAB: System (System Health Panel) */}
                     {activeTab === 'system' && (
                         <SystemHealthPanel />
                     )}

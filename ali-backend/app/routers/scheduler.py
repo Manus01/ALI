@@ -272,3 +272,125 @@ async def run_adaptive_scans() -> dict:
         "failed": failed,
         "timestamp": now.isoformat()
     }
+
+
+# --- ADAPTIVE TUTORIAL ENGINE SCHEDULER ENDPOINTS ---
+
+@router.post("/scheduler/ate-nightly-analysis")
+async def scheduled_ate_nightly_analysis(
+    request: Request,
+    authorization: Optional[str] = Header(None)
+):
+    """
+    Endpoint called by Cloud Scheduler to run nightly learning gap analysis.
+    Analyzes all active users, detects gaps, and queues tutorials.
+    
+    Cloud Scheduler Config:
+    - Frequency: 0 3 * * * (every day at 3 AM UTC)
+    - Target: HTTP
+    - URL: https://YOUR-CLOUD-RUN-URL/internal/scheduler/ate-nightly-analysis
+    - HTTP method: POST
+    - Auth header: Add OIDC token
+    - Service account: Cloud Scheduler service account with invoker permissions
+    """
+    # Verify caller is Cloud Scheduler
+    if not verify_scheduler_token(authorization):
+        logger.warning("🚫 Unauthorized ATE nightly analysis attempt")
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    
+    logger.info("🌙 ATE Nightly Analysis: Starting gap analysis for all users...")
+    
+    try:
+        from app.services.adaptive_tutorial_orchestrator import get_adaptive_orchestrator
+        
+        orchestrator = get_adaptive_orchestrator()
+        result = orchestrator.run_nightly_analysis()
+        
+        logger.info(
+            f"✅ ATE Nightly Analysis Complete: {result.get('users_analyzed', 0)} users, "
+            f"{result.get('gaps_detected', 0)} gaps, {result.get('tutorials_queued', 0)} queued"
+        )
+        return {
+            "status": "success",
+            "triggered_by": "cloud_scheduler",
+            "result": result
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ ATE Nightly Analysis Error: {e}")
+        # Return 200 to prevent Cloud Scheduler from retrying
+        return {
+            "status": "error",
+            "error": str(e)
+        }
+
+
+@router.post("/scheduler/ate-queue-processor")
+async def scheduled_ate_queue_processor(
+    request: Request,
+    authorization: Optional[str] = Header(None)
+):
+    """
+    Endpoint called by Cloud Scheduler to process the tutorial generation queue.
+    Generates tutorials for queued items based on priority.
+    
+    Cloud Scheduler Config:
+    - Frequency: */30 * * * * (every 30 minutes)
+    - Target: HTTP
+    - URL: https://YOUR-CLOUD-RUN-URL/internal/scheduler/ate-queue-processor
+    - HTTP method: POST
+    - Auth header: Add OIDC token
+    - Service account: Cloud Scheduler service account with invoker permissions
+    """
+    # Verify caller is Cloud Scheduler
+    if not verify_scheduler_token(authorization):
+        logger.warning("🚫 Unauthorized ATE queue processor attempt")
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    
+    logger.info("📥 ATE Queue Processor: Processing tutorial generation queue...")
+    
+    try:
+        from app.services.adaptive_tutorial_orchestrator import get_adaptive_orchestrator
+        
+        orchestrator = get_adaptive_orchestrator()
+        result = orchestrator.process_queue(max_items=5)  # Process 5 items per run
+        
+        logger.info(
+            f"✅ ATE Queue Processor Complete: {result.get('succeeded', 0)} succeeded, "
+            f"{result.get('failed', 0)} failed"
+        )
+        return {
+            "status": "success",
+            "triggered_by": "cloud_scheduler",
+            "result": result
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ ATE Queue Processor Error: {e}")
+        return {
+            "status": "error",
+            "error": str(e)
+        }
+
+
+@router.get("/scheduler/ate-health")
+async def ate_orchestrator_health():
+    """
+    Health check endpoint for the Adaptive Tutorial Engine orchestrator.
+    Returns component status and any alerts.
+    """
+    try:
+        from app.services.adaptive_tutorial_orchestrator import get_adaptive_orchestrator
+        
+        orchestrator = get_adaptive_orchestrator()
+        status = orchestrator.get_health_status()
+        
+        return status
+        
+    except Exception as e:
+        logger.error(f"❌ ATE Health Check Error: {e}")
+        return {
+            "healthy": False,
+            "error": str(e)
+        }
+
