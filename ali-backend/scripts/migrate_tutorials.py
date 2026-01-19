@@ -189,7 +189,7 @@ def migrate_tutorial(doc, db, course_id: str, module_id: str, dry_run: bool = Fa
                 "versionId": f"v1_{content_hash}",
                 "hash": content_hash,
                 "timestamp": timestamp_str,
-                "modelVersion": data.get("model_version", "gemini-1.5-pro"),
+                "modelVersion": data.get("model_version", "gemini-2.5-pro"),
                 "publishedBy": "migration_script"
             }],
             "currentVersion": f"v1_{content_hash}",

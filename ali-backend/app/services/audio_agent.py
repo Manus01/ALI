@@ -213,6 +213,28 @@ class AudioAgent:
             # Use retry-wrapped internal method for resilience against transient failures
             response = self._generate_tts_with_retry(clean_text, generation_config)
             
+            # === BLOCKED CONTENT DETECTION ===
+            # Check if content was blocked by safety filters
+            if response and hasattr(response, 'candidates') and response.candidates:
+                candidate = response.candidates[0]
+                finish_reason = getattr(candidate, 'finish_reason', None)
+                if finish_reason and hasattr(finish_reason, 'name'):
+                    finish_reason_name = finish_reason.name
+                    blocked_reasons = ['SAFETY', 'RECITATION', 'BLOCKLIST', 'PROHIBITED_CONTENT', 'SPII']
+                    if finish_reason_name in blocked_reasons:
+                        logger.warning(
+                            f"🚫 [GENERATION_BLOCKED] TTS blocked. "
+                            f"Reason: {finish_reason_name}, "
+                            f"Text preview: {clean_text[:80]}..."
+                        )
+                        # Return None to trigger retry/fallback handling
+                        return None
+                    elif finish_reason_name != 'STOP':
+                        logger.warning(
+                            f"⚠️ [CONTENT_ALERT] TTS non-standard finish. "
+                            f"Reason: {finish_reason_name}"
+                        )
+            
             logger.info(f"   ✅ TTS generation succeeded.")
             
             # === DEBUG LOGGING: Log raw response structure ===
